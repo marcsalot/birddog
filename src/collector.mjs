@@ -6,6 +6,7 @@
 
 import path from 'node:path';
 import { createItem, sortItems } from './items.mjs';
+import { isEnabled } from './sources/index.mjs';
 import { readJson, writeJson } from './store.mjs';
 
 const SOURCE_TIMEOUT_MS = 60_000;
@@ -25,9 +26,11 @@ export class Collector {
    * @param {string} opts.dir           config dir (cache.json lives here)
    * @param {() => object} opts.getConfig  returns the current config
    * @param {() => number} [opts.now]
+   * @param {object} [opts.context]  services every source gets in ctx (fetch, secret(), github)
    */
-  constructor({ sources, dir, getConfig, now = () => Date.now(), timeoutMs = SOURCE_TIMEOUT_MS, log = console }) {
+  constructor({ sources, dir, getConfig, now = () => Date.now(), timeoutMs = SOURCE_TIMEOUT_MS, log = console, context = {} }) {
     this.sources = sources;
+    this.context = context;
     this.file = path.join(dir, 'cache.json');
     this.getConfig = getConfig;
     this.now = now;
@@ -45,8 +48,8 @@ export class Collector {
   }
 
   enabledSources() {
-    const cfg = this.getConfig().sources ?? {};
-    return this.sources.filter((s) => cfg[s.id]?.enabled !== false);
+    const config = this.getConfig();
+    return this.sources.filter((s) => isEnabled(s, config));
   }
 
   /** Refresh all enabled sources. Concurrent callers share one run. */
@@ -67,6 +70,7 @@ export class Collector {
       try {
         const raw = await withTimeout(
           Promise.resolve().then(() => src.collect(config.sources?.[src.id] ?? {}, {
+            ...this.context,
             now: started, warn: (w) => warnings.push(String(w)), summary: (s) => { summary = String(s); },
           })),
           this.timeoutMs, src.name);

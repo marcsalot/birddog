@@ -167,7 +167,8 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .shortcuts .grid div{display:flex;justify-content:space-between;align-items:center;font-size:13px;gap:8px}
 
 /* Setup */
-.setup{width:min(720px,94vw)}
+.setup{width:min(720px,94vw);display:flex;flex-direction:column;max-height:calc(100vh - 12vh - 24px)}
+.setup .cards{overflow-y:auto;min-height:0}
 .setup header{padding:22px 24px 6px}
 .setup h2{margin:0 0 4px;letter-spacing:-.02em}
 .setup p{margin:0;color:var(--muted)}
@@ -184,9 +185,15 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .card.err .state{color:var(--now);font-weight:600}
 .card textarea{width:100%;min-height:64px;resize:vertical;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:var(--text);font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 .card label{font-size:12px;color:var(--muted)}
+.card .fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card .fields label{display:flex;flex-direction:column;gap:4px}
+.card .fields label.full{grid-column:1/-1}
+.card .fields a{color:var(--accent)}
+.card input{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:var(--text);font:inherit;font-size:13px}
+.card input:focus,.card textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent);outline-offset:1px}
 .card .msg{font-size:12px;color:var(--muted)}
 .card .msg.good{color:var(--ok)}
-.card .msg.bad,.card.err .msg{color:var(--now)}
+.card .msg.bad{color:var(--now)}
 .card .row-btns{display:flex;gap:8px;flex-wrap:wrap}
 .card .btn{padding:6px 12px;font-size:13px}
 .setup footer{display:flex;align-items:center;padding:14px 24px 20px;gap:10px}
@@ -231,6 +238,7 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
   .content{padding:16px 16px 60px}
   .appear-btn span{display:none}
   .cards{grid-template-columns:1fr}
+  .card .fields{grid-template-columns:1fr}
   .updated{display:none}
   .row .actions{display:none!important}
   .row .age{display:inline!important}

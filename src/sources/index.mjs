@@ -2,15 +2,20 @@
 // (see README "Writing a source") and add it to SOURCES.
 
 import * as git from './git.mjs';
+import * as github from './github.mjs';
+import * as jira from './jira.mjs';
 
-export const SOURCES = [git];
+export const SOURCES = [git, github, jira];
 
 /** Sources that appear in setup but are not built yet. */
 export const COMING_SOON = [
-  { id: 'github', name: 'GitHub', description: 'Review requests, your PRs with failing checks, mentions and assigned issues.' },
-  { id: 'jira', name: 'Jira Cloud', description: 'Tickets assigned to you, blocked work and sprint deadlines.' },
   { id: 'cal', name: 'Calendar', description: 'Upcoming meetings from any iCal link, so nothing sneaks up on you.' },
 ];
+
+/** Is this source switched on? Sources are on unless config says otherwise or they opt in (enabledByDefault: false). */
+export function isEnabled(src, config) {
+  return config.sources?.[src.id]?.enabled ?? (src.enabledByDefault !== false);
+}
 
 export function validateSource(mod) {
   for (const key of ['id', 'name']) {

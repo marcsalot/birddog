@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ago, rank, RULES } from '../src/rules.mjs';
+import { ago, rank, RULES, until } from '../src/rules.mjs';
 
 describe('rank', () => {
   it('unpushed commits escalate with age', () => {
@@ -33,8 +33,40 @@ describe('rank', () => {
     assert.ok(a.rule.order < b.rule.order);
   });
 
+  it('review requests: waiting a day is Now, fresh is Today, team or draft is Later', () => {
+    const base = { requester: 'ana', team: null, draft: false };
+    assert.equal(rank('review-request', { ...base, ageDays: 2 }).why, '**@ana** requested your review **2 days** ago · they are waiting on you');
+    assert.equal(rank('review-request', { ...base, ageDays: 0.2 }).urgency, 'today');
+    assert.equal(rank('review-request', { ...base, team: '@acme/web', ageDays: 9 }).urgency, 'later');
+    assert.equal(rank('review-request', { ...base, draft: true, ageDays: 9 }).urgency, 'later');
+  });
+
+  it('people waiting on you sort before deadlines, and both before local git hygiene', () => {
+    const order = (kind, s) => rank(kind, s).rule.order;
+    const review = order('review-request', { requester: 'a', draft: false, team: null, ageDays: 3 });
+    const overdue = order('jira-issue', { dueDays: -1, sprintDays: null, status: 'To Do', blockedBy: [] });
+    const unpushed = order('unpushed', { count: 1, ageDays: 9, hasUpstream: true });
+    assert.ok(review < overdue && overdue < unpushed);
+  });
+
+  it('jira tickets: blocked beats due soon, and everything else is Later', () => {
+    const base = { status: 'In Progress', priority: 'Medium', dueDays: null, sprint: null, sprintDays: null, blockedBy: [], flagged: false, blockedStatus: false, ageDays: 1 };
+    assert.equal(rank('jira-issue', { ...base, blockedBy: ['B-1'], dueDays: 2 }).rule.id, 'jira-blocked');
+    assert.equal(rank('jira-issue', { ...base, priority: 'High' }).why, '**High** priority · In Progress');
+    assert.equal(rank('jira-issue', base).urgency, 'later');
+  });
+
   it('throws for unknown kinds', () => {
     assert.throws(() => rank('mystery', {}), /no ranking rule/);
+  });
+});
+
+describe('until', () => {
+  it('reads deadlines naturally', () => {
+    assert.equal(until(-2.5), '2 days ago');
+    assert.equal(until(0.3), 'today');
+    assert.equal(until(1.5), 'tomorrow');
+    assert.equal(until(4.2), 'in 4 days');
   });
 });
 

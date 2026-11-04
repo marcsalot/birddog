@@ -24,7 +24,7 @@ const URG = {
 };
 const VIEWS = [['all', 'All', '◎'], ['now', 'Now'], ['today', 'Today'], ['later', 'Later'], ['snoozed', 'Snoozed', '☾'], ['done', 'Done', '✓']];
 const HEADINGS = { all: 'Needs me', now: 'Now', today: 'Today', later: 'Later', snoozed: 'Snoozed', done: 'Done' };
-const COMING = [['github', 'GitHub'], ['jira', 'Jira Cloud'], ['cal', 'Calendar']];
+const COMING = [['cal', 'Calendar']];
 
 // ---------------------------------------------------------------------------
 // State
@@ -450,51 +450,92 @@ function runP(n) { const c = pItems[n]; closeAll(); c?.run(); }
 // ---------------------------------------------------------------------------
 // Setup wizard
 
-function cardHTML(src) {
-  const info = srcInfo(src.id);
-  const ui = st.cards[src.id] ?? {};
+// Each source gets its own card. They share the header, the status label and the message line.
+function cardTop(id, nameText, state, cls = '', wide = true) {
+  const info = srcInfo(id);
+  return `<div class="card ${wide ? 'wide' : ''} ${cls}"><div class="top"><div class="badge ${info.cls ?? ''}" style="--c:${info.c}">${info.short}</div><span class="name">${esc(nameText)}</span><span class="state">${state}</span></div>`;
+}
+
+function cardState(src, ui) {
   const status = src.status?.status ?? 'pending';
+  return {
+    status,
+    cls: ui.busy ? '' : status === 'stale' && !ui.msgGood ? 'err' : status === 'ok' ? 'ok' : '',
+    label: ui.busy ? 'Working…' : status === 'ok' ? '✓ Connected' : status === 'stale' ? 'Needs attention' : 'Checking…',
+    msg: ui.msg
+      ? `<div class="msg ${ui.msgGood ? 'good' : 'bad'}">${esc(ui.msg)}</div>`
+      : status === 'stale' ? `<div class="msg bad">${esc(src.status.error)}</div>` : '',
+    summary: src.status?.summary ? ` · ${esc(src.status.summary)}` : '',
+  };
+}
+
+function gitCardHTML(src) {
+  const ui = st.cards[src.id] ?? {};
+  const { status, cls, label, msg, summary } = cardState(src, ui);
   const roots = src.settings?.roots ?? [];
   const editing = ui.editing || status === 'stale';
-  const cls = ui.busy ? '' : status === 'stale' && !ui.msgGood ? 'err' : status === 'ok' ? 'ok' : '';
-  const label = ui.busy ? 'Working…' : status === 'ok' ? '✓ Connected' : status === 'stale' ? 'Needs attention' : 'Scanning…';
-  const summary = src.status?.summary ? ` · ${esc(src.status.summary)}` : '';
-  const msg = ui.msg
-    ? `<div class="msg ${ui.msgGood ? 'good' : 'bad'}">${esc(ui.msg)}</div>`
-    : status === 'stale' ? `<div class="msg">${esc(src.status.error)}</div>` : '';
   const body = editing
     ? `<label for="in-${src.id}">Folders to scan, one per line</label><textarea id="in-${src.id}" data-in="${src.id}" spellcheck="false">${esc(ui.draft ?? roots.join('\n'))}</textarea>${msg}
        <div class="row-btns"><button class="btn primary" data-save="${src.id}" ${ui.busy ? 'disabled' : ''}>Save &amp; scan <kbd>⌘↵</kbd></button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test</button>${status === 'ok' ? `<button class="btn" data-cancel="${src.id}">Cancel</button>` : ''}</div>`
     : `<div class="msg">Scanning <b>${esc(roots.join(', ') || 'nothing')}</b>${summary}</div>${msg}
        <div class="row-btns"><button class="btn" data-edit="${src.id}">Change folders</button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button></div>`;
-  return `<div class="card wide ${cls}"><div class="top"><div class="badge ${info.cls ?? ''}" style="--c:${info.c}">${info.short}</div><span class="name">${esc(src.name)}</span><span class="state">${label}</span></div>
-    <div class="msg">${esc(src.description)}</div>${body}</div>`;
+  return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>${body}</div>`;
 }
 
-/** GitHub items arrive in v0.2, but you can sign in now so they show up right away. */
-function githubCardHTML(c) {
-  const info = srcInfo('github');
+/** GitHub: the sign-in card. Signing in is all the setup there is. */
+function githubCardHTML(src) {
   const conn = st.setup.connections?.github ?? {};
   const ui = st.cards.github ?? {};
   const dev = conn.device;
-  const top = (state, cls = '') => `<div class="card ${cls}"><div class="top"><div class="badge ${info.cls}" style="--c:${info.c}">${info.short}</div><span class="name">${esc(c.name)}</span><span class="state">${state}</span></div>`;
   if (conn.connected) {
+    const { cls, label, msg, summary } = cardState(src, ui);
     const how = conn.method === 'gh-cli' ? 'using your <code>gh</code> login (Birddog stores no token)' : `token kept in ${esc(st.setup.secretStore)}`;
-    return `${top('✓ Signed in', 'ok')}<div class="msg">Signed in as <b>@${esc(conn.login)}</b>, ${how}. GitHub items arrive in the next release.</div>
-      <div class="row-btns"><button class="btn" data-gh="disconnect">Disconnect</button></div></div>`;
+    return `${cardTop('github', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <div class="msg">Signed in as <b>@${esc(conn.login)}</b>, ${how}${summary.replace(/^ · @[^ ]+/, '')}</div>${msg}
+      <div class="row-btns"><button class="btn" data-test="github" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-gh="disconnect" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
   }
   if (dev?.status === 'waiting') {
-    return `${top('Waiting for GitHub…')}<div class="msg">Enter this code on GitHub:</div><div class="code">${esc(dev.userCode)}</div>
+    return `${cardTop('github', src.name, 'Waiting for GitHub…')}<div class="msg">Enter this code on GitHub:</div><div class="code">${esc(dev.userCode)}</div>
       <div class="row-btns"><button class="btn primary" data-gh="open">Copy code &amp; open GitHub ↗</button><button class="btn" data-gh="disconnect">Cancel</button></div>
       <div class="msg">This card updates by itself once you approve.</div></div>`;
   }
   const err = ui.msg ?? (dev && dev.status !== 'done' ? dev.error : null);
   const device = conn.deviceFlowAvailable;
-  return `${top(ui.busy ? 'Working…' : 'Not signed in', err ? 'err' : 'soon')}<div class="msg">${esc(c.description)} Sign in now and they show up as soon as the source ships.</div>
+  return `${cardTop('github', src.name, ui.busy ? 'Working…' : 'Not signed in', err ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
     ${err ? `<div class="msg bad">${esc(err)}</div>` : ''}
     <div class="row-btns">${device ? `<button class="btn primary" data-gh="device" ${ui.busy ? 'disabled' : ''}>Sign in with GitHub</button>` : ''}<button class="btn ${device ? '' : 'primary'}" data-gh="cli" ${ui.busy ? 'disabled' : ''}>Use my gh CLI login</button></div>
     ${device ? '' : '<div class="msg">Prefer signing in through the browser? Add an OAuth App client ID as <code>sources.github.clientId</code> (see README).</div>'}</div>`;
 }
+
+const JIRA_TOKEN_URL = 'https://id.atlassian.com/manage-profile/security/api-tokens';
+
+/** Jira: site, email and an API token. The token goes to the keychain, never config.json. */
+function jiraCardHTML(src) {
+  const ui = st.cards.jira ?? {};
+  const s = src.settings ?? {};
+  const hasToken = !!src.secrets?.token;
+  const connected = src.enabled && s.site && hasToken;
+  const { status, cls, label, msg, summary } = cardState(src, ui);
+  if (connected && !ui.editing && status !== 'stale') {
+    return `${cardTop('jira', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <div class="msg">Signed in to <b>${esc(new URL(s.site).host)}</b> as <b>${esc(s.email)}</b>, token kept in ${esc(st.setup.secretStore)}${summary.replace(/^ · [^ ]+/, '')}</div>${msg}
+      <div class="row-btns"><button class="btn" data-edit="jira">Change</button><button class="btn" data-test="jira" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-disconnect="jira" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
+  }
+  const d = ui.draft ?? { site: s.site ? new URL(s.site).host : '', email: s.email ?? '', token: '' };
+  const state = connected ? label : ui.busy ? 'Working…' : 'Not connected';
+  const stateCls = connected ? cls : ui.msg && !ui.msgGood ? 'err' : '';
+  const off = ui.busy ? 'disabled' : '';
+  return `${cardTop('jira', src.name, state, stateCls)}<div class="msg">${esc(src.description)}</div>
+    <div class="fields">
+      <label><span>Site</span><input data-f="jira.site" value="${esc(d.site)}" placeholder="acme.atlassian.net" autocomplete="off" spellcheck="false"></label>
+      <label><span>Email</span><input data-f="jira.email" type="email" value="${esc(d.email)}" placeholder="you@acme.com" autocomplete="off" spellcheck="false"></label>
+      <label class="full"><span>API token · <a href="${JIRA_TOKEN_URL}" target="_blank" rel="noopener noreferrer">create one on Atlassian ↗</a></span><input data-f="jira.token" type="password" value="${esc(d.token)}" placeholder="${hasToken ? `Saved in ${esc(st.setup.secretStore)} · leave blank to keep it` : 'Paste your API token'}" autocomplete="off"></label>
+    </div>
+    <div class="msg">The token is stored in ${esc(st.setup.secretStore)}, never in config.json. Birddog only reads from Jira.</div>${msg}
+    <div class="row-btns"><button class="btn primary" data-connect="jira" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? '<button class="btn" data-cancel="jira">Cancel</button>' : ''}${hasToken ? `<button class="btn" data-disconnect="jira" ${off}>Disconnect</button>` : ''}</div></div>`;
+}
+
+const CARDS = { git: gitCardHTML, github: githubCardHTML, jira: jiraCardHTML };
 
 let ghTimer = null;
 function watchGithub() {
@@ -506,9 +547,24 @@ function watchGithub() {
       st.setup.connections.github = conn;
       renderCards();
       if (conn.device?.status === 'waiting') watchGithub();
-      else if (conn.connected) toast(`✓ Signed in to GitHub as @${esc(conn.login)}`);
+      else if (conn.connected) { toast(`✓ Signed in to GitHub as @${esc(conn.login)}`); rescan('github'); }
     } catch { watchGithub(); }
   }, 2000);
+}
+
+/** Re-run the sources, then redraw both the inbox and setup. */
+async function rescan(id) {
+  if (id) { st.cards[id] = { ...st.cards[id], busy: true, msg: 'Looking for items…', msgGood: true }; renderCards(); }
+  try {
+    applyData(await api.refresh());
+    render();
+    renderUpdated();
+    st.setup = await api.setup();
+  } catch (err) {
+    if (id) st.cards[id] = { msg: err.message, msgGood: false };
+  }
+  if (id && st.cards[id]?.busy) st.cards[id] = {};
+  renderCards();
 }
 
 async function githubAction(action) {
@@ -531,21 +587,19 @@ async function githubAction(action) {
     st.cards.github = {};
   } catch (err) {
     st.cards.github = { msg: err.message };
+    return renderCards();
   }
-  renderCards();
+  if (action === 'device') return renderCards();
+  return rescan('github');
 }
 
 function renderCards() {
   const s = st.setup;
   if (!s) { $('#cards').innerHTML = '<div class="card wide"><div class="msg">Loading…</div></div>'; return; }
-  const soon = s.comingSoon.map((c) => {
-    if (c.id === 'github') return githubCardHTML(c);
-    const info = srcInfo(c.id);
-    return `<div class="card soon"><div class="top"><div class="badge ${info.cls ?? ''}" style="--c:${info.c}">${info.short}</div><span class="name">${esc(c.name)}</span><span class="state">Coming soon</span></div><div class="msg">${esc(c.description)}</div></div>`;
-  });
-  $('#cards').innerHTML = s.sources.map(cardHTML).join('') + soon.join('');
+  const soon = s.comingSoon.map((c) => `${cardTop(c.id, c.name, 'Coming soon', 'soon', false)}<div class="msg">${esc(c.description)}</div></div>`);
+  $('#cards').innerHTML = s.sources.map((src) => (CARDS[src.id] ?? gitCardHTML)(src)).join('') + soon.join('');
   const ok = s.sources.filter((x) => x.status?.status === 'ok').length;
-  $('#setupProgress').textContent = `${ok} of ${s.sources.length} connected · ${s.comingSoon.length} more coming soon`;
+  $('#setupProgress').textContent = `${ok} of ${s.sources.length} connected${s.comingSoon.length ? ` · ${s.comingSoon.length} more coming soon` : ''}`;
 }
 
 async function openSetup() {
@@ -561,17 +615,24 @@ async function openSetup() {
   savePrefs({ seenSetup: true });
 }
 
-function draftOf(id) {
-  const ta = document.querySelector(`[data-in="${CSS.escape(id)}"]`);
-  return ta ? ta.value : (st.setup.sources.find((x) => x.id === id)?.settings?.roots ?? []).join('\n');
+/** What a card's form says right now (drafts survive re-renders). */
+function formOf(id) {
+  if (id === 'git') {
+    const ta = document.querySelector('[data-in="git"]');
+    return { roots: ta ? ta.value : (st.setup.sources.find((x) => x.id === id)?.settings?.roots ?? []).join('\n') };
+  }
+  const inputs = [...document.querySelectorAll(`[data-f^="${CSS.escape(id)}."]`)];
+  if (!inputs.length) return {};
+  return Object.fromEntries(inputs.map((el) => [el.dataset.f.slice(id.length + 1), el.value]));
 }
+const draftOf = (id, form) => (id === 'git' ? form.roots : Object.keys(form).length ? form : undefined);
 
 async function testCard(id) {
-  const draft = draftOf(id);
-  st.cards[id] = { ...st.cards[id], draft, busy: true, msg: null };
+  const form = formOf(id);
+  st.cards[id] = { ...st.cards[id], draft: draftOf(id, form), busy: true, msg: null };
   renderCards();
   try {
-    const r = await api.testSource(id, { roots: draft });
+    const r = await api.testSource(id, form);
     st.cards[id] = { ...st.cards[id], busy: false, msg: r.message, msgGood: r.ok };
   } catch (err) {
     st.cards[id] = { ...st.cards[id], busy: false, msg: err.message, msgGood: false };
@@ -579,22 +640,51 @@ async function testCard(id) {
   renderCards();
 }
 
-async function saveCard(id) {
-  const draft = draftOf(id);
-  st.cards[id] = { ...st.cards[id], draft, busy: true, msg: 'Scanning…', msgGood: true };
+async function saveCard(id, form = formOf(id)) {
+  const draft = draftOf(id, form);
+  const editing = st.cards[id]?.editing;
+  st.cards[id] = { ...st.cards[id], draft, busy: true, msg: 'Looking for items…', msgGood: true };
   renderCards();
   try {
-    st.setup = await api.saveSource(id, { roots: draft });
+    st.setup = await api.saveSource(id, form);
     const status = st.setup.sources.find((x) => x.id === id)?.status;
     st.cards[id] = status?.status === 'ok'
       ? { msg: `Saved. ${status.summary ?? ''}`, msgGood: true }
-      : { editing: true, draft, msg: status?.error ?? 'Saved, but the scan failed.', msgGood: false };
+      : { editing: true, draft: id === 'git' ? draft : { ...draft, token: '' }, msg: status?.error ?? 'Saved, but the scan failed.', msgGood: false };
     renderCards();
     await load();
   } catch (err) {
-    st.cards[id] = { editing: true, draft, busy: false, msg: err.message, msgGood: false };
+    st.cards[id] = { editing: editing ?? true, draft, busy: false, msg: err.message, msgGood: false };
     renderCards();
   }
+}
+
+/** "Test & connect": try the settings first, and only save them if they work. */
+async function connectCard(id) {
+  const form = formOf(id);
+  st.cards[id] = { ...st.cards[id], draft: draftOf(id, form), busy: true, msg: 'Testing…', msgGood: true };
+  renderCards();
+  let r;
+  try { r = await api.testSource(id, form); } catch (err) { r = { ok: false, message: err.message }; }
+  if (!r.ok) {
+    st.cards[id] = { ...st.cards[id], busy: false, msg: r.message, msgGood: false };
+    return renderCards();
+  }
+  await saveCard(id, form);
+  if (st.cards[id]?.msgGood) toast(`✓ ${esc(r.message)}`);
+}
+
+async function disconnectCard(id) {
+  st.cards[id] = { busy: true };
+  renderCards();
+  try {
+    st.setup = await api.disconnectSource(id);
+    st.cards[id] = { msg: 'Disconnected. The token was removed.', msgGood: true };
+    await load();
+  } catch (err) {
+    st.cards[id] = { msg: err.message, msgGood: false };
+  }
+  renderCards();
 }
 
 // ---------------------------------------------------------------------------
@@ -602,7 +692,7 @@ async function saveCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.view) return setView(d.view);
@@ -630,7 +720,9 @@ document.addEventListener('click', (e) => {
   if ('logout' in d) return signOut();
   if (d.test) return testCard(d.test);
   if (d.save) return saveCard(d.save);
-  if (d.edit) { st.cards[d.edit] = { editing: true }; renderCards(); return document.querySelector(`[data-in="${CSS.escape(d.edit)}"]`)?.focus(); }
+  if (d.connect) return connectCard(d.connect);
+  if (d.disconnect) return disconnectCard(d.disconnect);
+  if (d.edit) { st.cards[d.edit] = { editing: true }; renderCards(); return document.querySelector(`[data-in="${CSS.escape(d.edit)}"],[data-f^="${CSS.escape(d.edit)}."]`)?.focus(); }
   if (d.cancel) { st.cards[d.cancel] = {}; return renderCards(); }
   if ('close' in d) return closeAll();
   if ('setup' in d) { e.preventDefault(); closeDrawer(); return openSetup(); }
@@ -665,6 +757,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.target.matches?.('textarea[data-in]') && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveCard(e.target.dataset.in); return; }
+  if (e.target.matches?.('input[data-f]') && e.key === 'Enter') { e.preventDefault(); connectCard(e.target.dataset.f.split('.')[0]); return; }
   if (e.target.matches?.('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (overlay()) return;
   if (snoozeOpen()) {

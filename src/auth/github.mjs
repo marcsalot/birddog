@@ -25,7 +25,7 @@ export function ghCliToken(host) {
   });
 }
 
-export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, cliToken = ghCliToken, now = () => Date.now(), sleep }) {
+export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, cliToken = ghCliToken, now = () => Date.now(), sleep, onChange = () => {} }) {
   const file = path.join(dir, 'connections.json');
   const wait = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms).unref?.()));
   let device = null; // the device flow in progress, if any
@@ -82,6 +82,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
           await saveConnection({ method: 'device', login: me.login, name: me.name, connectedAt: new Date(now()).toISOString() });
           flow.status = 'done';
           flow.login = me.login;
+          onChange();
         } catch (e) { flow.status = 'error'; flow.error = e.message; }
         return;
       }
@@ -137,10 +138,11 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
       const me = await whoami(token);
       await secrets.delete(SECRET).catch(() => {});
       await saveConnection({ method: 'gh-cli', login: me.login, name: me.name, connectedAt: new Date(now()).toISOString() });
+      onChange();
       return this.status();
     },
 
-    /** A token for API calls (used by the GitHub source in v0.2). */
+    /** A token for API calls (used by the GitHub source). */
     async token() {
       const conn = (await readJson(file, {})).github;
       if (!conn) return null;
@@ -152,6 +154,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
       device = null;
       await secrets.delete(SECRET).catch(() => {});
       await saveConnection(null);
+      onChange();
       return this.status();
     },
   };

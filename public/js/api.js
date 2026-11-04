@@ -35,6 +35,7 @@ export const api = {
   setup: () => call('GET', '/api/setup'),
   testSource: (id, settings) => call('POST', `/api/sources/${encodeURIComponent(id)}/test`, settings),
   saveSource: (id, settings) => call('PUT', `/api/sources/${encodeURIComponent(id)}`, settings),
+  disconnectSource: (id) => call('DELETE', `/api/sources/${encodeURIComponent(id)}`, {}),
   me: () => call('GET', '/api/me'),
   logout: () => call('POST', '/auth/logout', {}),
   github: () => call('GET', '/api/connections/github'),

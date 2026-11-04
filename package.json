@@ -1,6 +1,6 @@
 {
   "name": "bird-dog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A local-first \"what needs me next?\" dashboard for developers. Birddog finds what matters and points at it.",
   "type": "module",
   "bin": {
@@ -26,7 +26,9 @@
     "dashboard",
     "developer-tools",
     "git",
+    "github",
     "inbox",
+    "jira",
     "local-first",
     "productivity"
   ],

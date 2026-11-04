@@ -10,9 +10,10 @@
 - **Explains itself.** Every item has a "why" line and names the rule that put it there. No mystery scores.
 - **Keyboard-first.** `j`/`k` to move, `x` done, `s` snooze, `z` undo, `⌘K` for everything else.
 - **Zero runtime dependencies.** Node 22+ and `git`. That's it.
+- **Read-only.** Birddog looks at git, GitHub and Jira. It never pushes, comments, transitions or marks anything as read.
 - **Optional SSO.** Put Birddog behind your Google, Okta or Entra login when you run it somewhere shared.
 
-> **Status: v0.1, milestone 1.** The local git source is live. GitHub, Jira Cloud and Calendar sources are on the way (they show as "coming soon" in setup).
+> **Status: v0.2, milestone 2.** Local git, GitHub and Jira Cloud sources are live. A Calendar source is on the way (it shows as "coming soon" in setup).
 
 ## Quick start
 
@@ -53,20 +54,88 @@ Birddog scans the folders you choose (3 levels deep, skipping `node_modules`, `v
 
 It is read-only: it never fetches, commits, pushes or deletes. It only runs `git status`, `for-each-ref`, `log`, `branch --merged`, `symbolic-ref` and `remote`, each with a timeout and with `GIT_OPTIONAL_LOCKS=0` so it never fights your editor for the index lock.
 
+## What it finds (GitHub)
+
+Sign in once in **Connect a source** (see [Sign in with GitHub](#sign-in-with-github)) and Birddog shows:
+
+| Item | Example "why" | Suggested next step |
+|---|---|---|
+| Review requests | **@ana** requested your review **2 days** ago · they are waiting on you | `gh pr checkout 12 -R acme/api` |
+| Your PRs with changes requested | **@ben** requested changes **1 day** ago · address the feedback | `gh pr view 20 -R acme/api --comments` |
+| Your PRs with failing checks | **2 checks failing**: test, lint · fix before reviewers look | `gh pr checks 20 -R acme/api` |
+| Your PRs with merge conflicts | **Merge conflicts** with **main** · merge or rebase to unblock it | |
+| Unread @mentions (last 14 days) | **@dee** mentioned you **5 hours** ago | `gh issue view 30 -R acme/api --comments` |
+| Issues assigned to you | Milestone **v2.1** is due **tomorrow** · assigned to you | `gh issue view 40 -R acme/api` |
+
+How it decides:
+
+- **Review requests** come from the search `is:open is:pr review-requested:@me`. The PR's events say who asked and when. Requests made of a team you are on, and drafts, rank lower than requests made of you.
+- **Your PRs** come from `is:open is:pr author:@me`. A PR shows up only when something needs you: a reviewer whose latest verdict is "changes requested", a failing check run or commit status, or merge conflicts. Clean PRs stay out of your way.
+- **Mentions** come from your unread GitHub notifications with reason `mention` or `team_mention`. If the latest comment on the thread is yours, you already answered, so it is skipped. Birddog never marks notifications as read.
+- **Assigned issues** rank higher when their milestone is due within 3 days (or overdue), or when they carry a label like `P0`, `P1`, `urgent`, `critical`, `blocker` or `priority: high`.
+- If one PR or issue shows up for two reasons (say, assigned *and* mentioned), you see it once, under the more urgent one.
+- Each search shows the 50 most recently updated results. A refresh costs 3 searches, one notifications call and a few calls per PR, well inside GitHub's rate limits.
+
+Not signed in? The GitHub source shows as stale with a "Sign in to GitHub in setup" link. GitHub Enterprise works too: set `webUrl` and `apiUrl` under `sources.github`.
+
+## What it finds (Jira Cloud)
+
+The open tickets assigned to you (`assignee = currentUser() AND statusCategory != Done`), ranked:
+
+| Example "why" | Urgency |
+|---|---|
+| **Overdue** · was due **2 days ago** and is still In Progress | Now |
+| Sprint **Sprint 42** ends **today** · still In Progress | Now |
+| **Blocked** by PAY-12 · chase it or pick up something else | Today |
+| Due **in 2 days** · In Review | Today |
+| **Highest** priority · To Do | Today |
+| **In Progress** · last updated **10 days** ago | Later |
+
+"Blocked" means an *is blocked by* link to a ticket that is not done, the **Flagged** field, or a status named like *Blocked* or *On hold*. Sprint deadlines come from the active sprint on the ticket. Want a different set of tickets? Put your own JQL in config.json as `sources.jira.jql`.
+
+### Connect Jira
+
+1. Create an API token at [id.atlassian.com → Security → API tokens](https://id.atlassian.com/manage-profile/security/api-tokens) (**Create API token**, the plain kind without scopes).
+2. In Birddog, open **Connect a source** → **Jira Cloud**, enter your site (`acme` or `acme.atlassian.net`), your Atlassian email and the token, then **Test & connect**.
+
+Birddog tests the settings before it saves anything. The token goes to your OS keychain (see [Secrets](#secrets)); config.json only gets the site and email. **Disconnect** deletes the token and switches the source off. Jira is off until you connect it, so people without Jira never see it complain.
+
+Why an API token and not Atlassian OAuth? OAuth would mean registering your own app in the Atlassian developer console and keeping a client secret, which is a lot more setup than one token for a tool that runs on your machine.
+
 ## How ranking works
 
-Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom and the first match wins:
+Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom and the first match wins. Order also breaks ties inside a group: people waiting on you come first, then deadlines, then local git hygiene.
 
-| Rule | Urgency |
-|---|---|
-| Unpushed commits older than 3 days | **Now** |
-| Unpushed commits older than 1 day | Today |
-| Fresh unpushed commits | Later |
-| Uncommitted edits older than 3 days | Today |
-| Recent uncommitted edits | Later |
-| Only untracked files | Later |
-| Local branches already merged | Later |
-| Unmerged branches with no commits for 30 days (or remote branch deleted) | Later |
+| Source | Rule | Urgency |
+|---|---|---|
+| GitHub | Review requested of you over a day ago | **Now** |
+| GitHub | Assigned issue in a milestone that is past due | **Now** |
+| Jira | Ticket past its due date | **Now** |
+| Jira | Sprint ends within a day and the ticket is not done | **Now** |
+| GitHub | Fresh review request for you | Today |
+| GitHub | Your PR has changes requested | Today |
+| GitHub | Your PR has failing checks | Today |
+| GitHub | Your PR has merge conflicts | Today |
+| GitHub | Assigned issue in a milestone due within 3 days | Today |
+| GitHub | Assigned issue labeled urgent, critical, P0 or P1 | Today |
+| GitHub | Unread @mention from the last 3 days | Today |
+| Jira | Ticket is blocked or flagged | Today |
+| Jira | Ticket due within 3 days | Today |
+| Jira | Sprint ends within 3 days and the ticket is not done | Today |
+| Jira | High, Highest, Critical or Blocker priority | Today |
+| GitHub | Review requested of your team, or on a draft | Later |
+| GitHub | Your draft PR has failing checks, conflicts or change requests | Later |
+| GitHub | Older unread @mention | Later |
+| GitHub | Other open issues assigned to you | Later |
+| Jira | Other open tickets assigned to you | Later |
+| git | Unpushed commits older than 3 days | **Now** |
+| git | Unpushed commits older than 1 day | Today |
+| git | Fresh unpushed commits | Later |
+| git | Uncommitted edits older than 3 days | Today |
+| git | Recent uncommitted edits | Later |
+| git | Only untracked files | Later |
+| git | Local branches already merged | Later |
+| git | Unmerged branches with no commits for 30 days (or remote branch deleted) | Later |
 
 Inside a group, items sort by rule order, then oldest first (the work that has waited longest is most at risk). A branch counts as either stale *or* unpushed, never both, and repos with no remote are never nagged about pushing.
 
@@ -97,7 +166,7 @@ Three palettes, each in light, dark or system mode: **Retriever gold** (default)
 
 ## Sign in with GitHub
 
-GitHub items arrive in the next release, but you can connect now from **Connect a source**. You never paste a token:
+Connect from **Connect a source** → **GitHub**. You never paste a token:
 
 - **Use my gh CLI login.** If you already ran `gh auth login`, Birddog asks `gh` for a token whenever it needs one and keeps no copy.
 - **Sign in with GitHub** (device flow). Birddog shows a short code; you approve it on github.com. This needs a GitHub OAuth App client ID, because each install should use its own app:
@@ -106,6 +175,8 @@ GitHub items arrive in the next release, but you can connect now from **Connect 
   3. Add it to config.json: `"sources": { "github": { "clientId": "Ov23li…" } }` and restart.
 
   The token goes into your OS keychain. For GitHub Enterprise, also set `webUrl` and `apiUrl` there.
+
+Mentions come from GitHub notifications, which fine-grained personal access tokens cannot read; with the gh CLI or device flow they just work. **Disconnect** forgets the token (or, for gh, just stops asking `gh`).
 
 ## Login for the dashboard (SSO)
 
@@ -164,12 +235,14 @@ Tokens and keys go to the **macOS Keychain**, or **Secret Service** on Linux (vi
   "port": 4747,
   "refreshMinutes": 5,
   "sources": {
-    "git": { "enabled": true, "roots": ["~/code"], "maxDepth": 3, "staleDays": 30 }
+    "git": { "enabled": true, "roots": ["~/code"], "maxDepth": 3, "staleDays": 30 },
+    "github": { "clientId": "Ov23li…" },
+    "jira": { "enabled": true, "site": "https://acme.atlassian.net", "email": "you@acme.com" }
   }
 }
 ```
 
-Next to it: `state.json` (done/snooze/preferences), `cache.json` (last good data from each source) and `connections.json` (who you are signed in as; never tokens). Changes to `auth` take effect on restart.
+Every source key is optional. Next to it: `state.json` (done/snooze/preferences), `cache.json` (last good data from each source) and `connections.json` (who you are signed in as; never tokens). Tokens live in the keychain. Changes to `auth` take effect on restart.
 
 ## Writing a source
 
@@ -180,14 +253,18 @@ export const id = 'weather';           // unique, used in item ids and config
 export const name = 'Weather';         // shown in the UI
 
 // Can this source work with this config? Shown in setup.
-export async function test(config) {
+export async function test(config, ctx) {
   return { ok: true, message: 'Connected as @you' };
 }
 
 // Return what needs attention right now.
 export async function collect(config, ctx) {
-  // ctx.now      timestamp of this run
-  // ctx.warn(s)  report a non-fatal problem
+  // ctx.now           timestamp of this run
+  // ctx.warn(s)       report a non-fatal problem
+  // ctx.summary(s)    one line for setup, e.g. "12 repos scanned"
+  // ctx.fetch         fetch() to use (tests swap in a fake)
+  // ctx.secret(name)  read a secret from the OS keychain
+  // ctx.github        the GitHub sign-in: await ctx.github.token()
   return [{
     id: 'weather:umbrella',
     source: 'weather',
@@ -206,7 +283,12 @@ export async function collect(config, ctx) {
 }
 ```
 
-Optionally export `description` (a sentence for setup) and `normalizeSettings(input)` (validates what the setup screen may change).
+Optionally export:
+
+- `description`: a sentence for setup.
+- `normalizeSettings(input)`: validates what the setup screen may change and returns the config patch (throw to reject).
+- `secretFields`: setup fields that are secrets, e.g. `{ token: 'weather-token' }`. Birddog stores them in the keychain under that name, strips them before `normalizeSettings` sees the form, and never writes them to config.json. `test()` gets the unsaved draft through `ctx.secret()`, so "Test" works before "Save". A blank field keeps the saved secret.
+- `enabledByDefault = false`: keep the source off until the user saves its settings (Jira does this).
 
 The rules of the road:
 
@@ -215,6 +297,7 @@ The rules of the road:
 - **Keep `why` short and specific.** It is the most important line in the app. `**bold**` is the only markup.
 - **Rank with rules** from `src/rules.mjs`, so the drawer can say which rule fired.
 - Each run has a 60 second timeout.
+- **Stay read-only.** Sources only send `GET` requests (see [`src/sources/http.mjs`](src/sources/http.mjs)).
 
 ## API
 
@@ -230,7 +313,8 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `GET`/`PUT` | `/api/prefs` | theme, mode, hidden sources |
 | `GET` | `/api/setup` | sources and their settings |
 | `POST` | `/api/sources/:id/test` | try settings without saving |
-| `PUT` | `/api/sources/:id` | save settings and rescan |
+| `PUT` | `/api/sources/:id` | save settings (secrets go to the keychain), switch on and rescan |
+| `DELETE` | `/api/sources/:id` | disconnect: delete its secrets and switch it off |
 | `GET` | `/api/me` | whether login is on, and who is signed in |
 | `GET` / `DELETE` | `/api/connections/github` | GitHub sign-in status / disconnect |
 | `POST` | `/api/connections/github/device` | start "Sign in with GitHub" |
@@ -241,7 +325,7 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 ## Development
 
 ```bash
-npm test          # node:test, no dependencies; builds throwaway git repos in your temp folder
+npm test          # node:test, no dependencies, no network; builds throwaway git repos and fakes GitHub and Jira
 npm run dev       # start and open the browser
 ```
 
@@ -259,6 +343,9 @@ src/auth/oidc.mjs      OpenID Connect sign-in (PKCE, ID token checks)
 src/auth/session.mjs   signed session cookies
 src/auth/github.mjs    GitHub device flow and gh CLI sign-in
 src/sources/git.mjs    local git source
+src/sources/github.mjs GitHub source (review requests, your PRs, mentions, issues)
+src/sources/jira.mjs   Jira Cloud source (assigned tickets, blocked work, deadlines)
+src/sources/http.mjs   GET-only JSON helper shared by the web sources
 public/                the UI: plain HTML, CSS and ES modules, no build step
 test/                  node:test suites
 ```
@@ -266,7 +353,7 @@ test/                  node:test suites
 ## Roadmap
 
 1. ✅ Skeleton, local git source, real UI, optional SSO, GitHub sign-in, OS keychain secrets
-2. GitHub and Jira Cloud sources
+2. ✅ GitHub and Jira Cloud sources
 3. Setup wizard for the remaining sources, calendar (iCal) source
 4. Read-only MCP server so your AI tools can ask "what needs me?", demo GIF, npm release
 

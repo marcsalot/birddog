@@ -16,7 +16,7 @@ import { createSessions } from './auth/session.mjs';
 import { Collector } from './collector.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
 import { createSecretStore } from './secrets.mjs';
-import { COMING_SOON, SOURCES, validateSource } from './sources/index.mjs';
+import { COMING_SOON, isEnabled, SOURCES, validateSource } from './sources/index.mjs';
 import { Triage } from './triage.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -130,11 +130,17 @@ export async function createBirddog({
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
   let config = loaded.config;
-  const collector = new Collector({ sources, dir, getConfig: () => config, now, log });
+  secrets ??= await createSecretStore({ dir });
+  let refresh; // defined below; GitHub sign-in changes trigger a rescan
+  const github = createGithubAuth({
+    dir, secrets, getConfig: () => config, fetchImpl, cliToken, now,
+    onChange: () => { refresh?.().catch(() => {}); },
+  });
+  // What every source gets in ctx, besides now/warn/summary.
+  const context = { fetch: fetchImpl, github, secret: (name) => secrets.get(name) };
+  const collector = new Collector({ sources, dir, getConfig: () => config, now, log, context });
   const triage = new Triage({ dir, now });
   await Promise.all([collector.load(), triage.load()]);
-  secrets ??= await createSecretStore({ dir });
-  const github = createGithubAuth({ dir, secrets, getConfig: () => config, fetchImpl, cliToken, now });
 
   // ---- Single sign-on (optional) ----
   const auth = config.auth ?? {};
@@ -166,10 +172,31 @@ export async function createBirddog({
     return { ...snap, items: triage.apply(snap.items), refreshing: collector.refreshing };
   }
 
-  async function refresh() {
+  refresh = async () => {
     const snap = await collector.refresh();
     await triage.prune(snap.items);
     return snap;
+  };
+
+  /** Split a setup form into plain settings and secrets (sources list their secret fields in `secretFields`). */
+  function splitSecrets(src, body) {
+    const fields = src.secretFields ?? {};
+    const plain = {};
+    const secretValues = {};
+    for (const [k, v] of Object.entries(body ?? {})) {
+      if (!(k in fields)) { plain[k] = v; continue; }
+      const value = typeof v === 'string' ? v.trim() : '';
+      if (value) secretValues[fields[k]] = value; // blank means "keep the saved one"
+    }
+    return { plain, secretValues };
+  }
+
+  async function savedSecrets(src) {
+    const out = {};
+    for (const [field, secretName] of Object.entries(src.secretFields ?? {})) {
+      out[field] = !!(await secrets.get(secretName).catch(() => null));
+    }
+    return out;
   }
 
   async function setupPayload() {
@@ -177,18 +204,19 @@ export async function createBirddog({
     return {
       configFile: loaded.file,
       secretStore: secrets.kind,
-      sources: sources.map((s) => {
+      sources: await Promise.all(sources.map(async (s) => {
         const status = snap.sources.find((x) => x.id === s.id);
         return {
           id: s.id,
           name: s.name,
           description: s.description ?? '',
           available: true,
-          enabled: config.sources?.[s.id]?.enabled !== false,
+          enabled: isEnabled(s, config),
           settings: config.sources?.[s.id] ?? {},
+          secrets: await savedSecrets(s), // which secrets are saved (true/false), never their values
           status: status ?? null,
         };
-      }),
+      })),
       comingSoon: COMING_SOON.filter((c) => !sources.some((s) => s.id === c.id)),
       connections: { github: await github.status() },
     };
@@ -229,16 +257,32 @@ export async function createBirddog({
     ['GET', /^\/api\/setup$/, () => setupPayload()],
     ['POST', /^\/api\/sources\/([^/]+)\/test$/, async (m, body) => {
       const src = findSource(m[1]);
+      const { plain, secretValues } = splitSecrets(src, body);
       let patch = {};
-      try { patch = Object.keys(body).length && src.normalizeSettings ? src.normalizeSettings(body) : {}; } catch (e) { return { ok: false, message: e.message }; }
-      return src.test({ ...(config.sources?.[src.id] ?? {}), ...patch });
+      try { patch = Object.keys(plain).length && src.normalizeSettings ? src.normalizeSettings(plain) : {}; } catch (e) { return { ok: false, message: e.message }; }
+      // Try the draft secrets without saving them.
+      const ctx = { ...context, now: Date.now(), secret: async (n) => secretValues[n] ?? secrets.get(n) };
+      return src.test({ ...(config.sources?.[src.id] ?? {}), ...patch }, ctx);
     }],
     ['PUT', /^\/api\/sources\/([^/]+)$/, async (m, body) => {
       const src = findSource(m[1]);
       if (!src.normalizeSettings) throw new HttpError(400, `${src.name} has no settings to change yet`);
+      const { plain, secretValues } = splitSecrets(src, body);
       let patch;
-      try { patch = src.normalizeSettings(body); } catch (e) { throw new HttpError(400, e.message); }
-      config = { ...config, sources: { ...config.sources, [src.id]: { ...(config.sources?.[src.id] ?? {}), ...patch } } };
+      try { patch = src.normalizeSettings(plain); } catch (e) { throw new HttpError(400, e.message); }
+      for (const [n, v] of Object.entries(secretValues)) {
+        try { await secrets.set(n, v); } catch (e) { throw new HttpError(400, `Could not save the secret to ${secrets.kind}: ${e.message}`); }
+      }
+      config = { ...config, sources: { ...config.sources, [src.id]: { ...(config.sources?.[src.id] ?? {}), ...patch, enabled: true } } };
+      await saveConfig(dir, config);
+      await refresh();
+      return setupPayload();
+    }],
+    ['DELETE', /^\/api\/sources\/([^/]+)$/, async (m) => {
+      // Disconnect: forget the source's secrets and switch it off. Its other settings stay for next time.
+      const src = findSource(m[1]);
+      for (const n of Object.values(src.secretFields ?? {})) await secrets.delete(n).catch(() => {});
+      config = { ...config, sources: { ...config.sources, [src.id]: { ...(config.sources?.[src.id] ?? {}), enabled: false } } };
       await saveConfig(dir, config);
       await refresh();
       return setupPayload();

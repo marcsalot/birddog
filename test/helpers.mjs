@@ -37,3 +37,21 @@ export function fakeItem(over = {}) {
     ...over,
   };
 }
+
+/**
+ * A fake fetch for API sources. `handler(url, init)` returns { status?, body?, headers? }
+ * or undefined for a 404. Every call is recorded in `calls`.
+ */
+export function fakeFetch(handler) {
+  const calls = [];
+  const fn = async (url, init = {}) => {
+    const u = new URL(url);
+    calls.push({ url: u, method: init.method ?? 'GET', headers: init.headers ?? {} });
+    const r = (await handler(u, init)) ?? { status: 404, body: { message: 'Not Found' } };
+    const status = r.status ?? 200;
+    const headers = new Headers(r.headers ?? {});
+    return { ok: status < 400, status, headers, text: async () => (r.body === undefined ? '' : JSON.stringify(r.body)), json: async () => r.body };
+  };
+  fn.calls = calls;
+  return fn;
+}
