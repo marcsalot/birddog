@@ -15,6 +15,7 @@ import { createItem } from './items.mjs';
 import { ago, rank } from './rules.mjs';
 import * as cal from './sources/cal.mjs';
 import * as github from './sources/github.mjs';
+import { SOURCES } from './sources/index.mjs';
 import * as jira from './sources/jira.mjs';
 import { writeJson } from './store.mjs';
 
@@ -296,7 +297,8 @@ export async function createDemo() {
   return {
     options: {
       dir,
-      sources: [demoGit, github, jira, cal],
+      // The other sources are listed (switched off) so setup shows every card.
+      sources: [demoGit, github, jira, cal, ...SOURCES.filter((x) => !['git', 'github', 'jira', 'cal'].includes(x.id))],
       secrets: demoSecrets(),
       fetchImpl: demoFetch(),
       cliToken: async () => 'demo-not-a-real-token',

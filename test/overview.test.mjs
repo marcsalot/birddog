@@ -54,7 +54,7 @@ describe('overview', () => {
   const items = [
     it_('r1', { updatedAt: new Date(NOW - 3 * 86_400_000).toISOString(), title: 'api#1 · Old review' }),
     it_('r2', { title: 'api#2 · New review' }),
-    it_('j1', { source: 'jira', kind: 'jira-issue', urgency: 'today' }),
+    it_('j1', { source: 'jira', kind: 'ticket', urgency: 'today' }),
     it_('m1', { source: 'cal', kind: 'meeting', urgency: 'today', title: '2:00 PM · Planning', meta: { startsAt: new Date(NOW + 4 * 3600_000).toISOString(), endsAt: new Date(NOW + 4.5 * 3600_000).toISOString() } }),
     it_('m2', { source: 'cal', kind: 'meeting', urgency: 'later', title: 'All day · Offsite', meta: { allDay: true, startsAt: new Date(NOW).toISOString(), endsAt: new Date(NOW + 86_400_000).toISOString() } }),
     it_('x', { status: 'done' }),

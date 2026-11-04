@@ -44,16 +44,16 @@ describe('rank', () => {
   it('people waiting on you sort before deadlines, and both before local git hygiene', () => {
     const order = (kind, s) => rank(kind, s).rule.order;
     const review = order('review-request', { requester: 'a', draft: false, team: null, ageDays: 3 });
-    const overdue = order('jira-issue', { dueDays: -1, sprintDays: null, status: 'To Do', blockedBy: [] });
+    const overdue = order('ticket', { dueDays: -1, sprintDays: null, status: 'To Do', blockedBy: [] });
     const unpushed = order('unpushed', { count: 1, ageDays: 9, hasUpstream: true });
     assert.ok(review < overdue && overdue < unpushed);
   });
 
   it('jira tickets: blocked beats due soon, and everything else is Later', () => {
     const base = { status: 'In Progress', priority: 'Medium', dueDays: null, sprint: null, sprintDays: null, blockedBy: [], flagged: false, blockedStatus: false, ageDays: 1 };
-    assert.equal(rank('jira-issue', { ...base, blockedBy: ['B-1'], dueDays: 2 }).rule.id, 'jira-blocked');
-    assert.equal(rank('jira-issue', { ...base, priority: 'High' }).why, '**High** priority · In Progress');
-    assert.equal(rank('jira-issue', base).urgency, 'later');
+    assert.equal(rank('ticket', { ...base, blockedBy: ['B-1'], dueDays: 2 }).rule.id, 'jira-blocked');
+    assert.equal(rank('ticket', { ...base, priority: 'High' }).why, '**High** priority · In Progress');
+    assert.equal(rank('ticket', base).urgency, 'later');
   });
 
   it('throws for unknown kinds', () => {

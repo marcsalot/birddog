@@ -44,6 +44,18 @@ export const PROVIDERS = {
     tokenBody: 'form',
     register: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
   },
+  gitlab: {
+    name: 'GitLab',
+    authorize: (c) => `${(c.url || 'https://gitlab.com').replace(/\/+$/, '')}/oauth/authorize`,
+    token: (c) => `${(c.url || 'https://gitlab.com').replace(/\/+$/, '')}/oauth/token`,
+    revokeFor: (c) => `${(c.url || 'https://gitlab.com').replace(/\/+$/, '')}/oauth/revoke`,
+    revoke: true,
+    scopes: ['read_api'],
+    extra: {},
+    secret: 'optional', // a non-confidential application needs none
+    tokenBody: 'form',
+    register: 'https://gitlab.com/-/user_settings/applications',
+  },
   atlassian: {
     name: 'Atlassian (Jira Cloud)',
     authorize: () => 'https://auth.atlassian.com/authorize',
@@ -222,7 +234,8 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       let revoked = false;
       if (t && d.revoke) {
         try {
-          const res = await fetchImpl(d.revoke, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: t.refresh_token || t.access_token }), signal: AbortSignal.timeout(10_000) });
+          const form = { token: p === 'gitlab' ? t.access_token : (t.refresh_token || t.access_token), ...(p === 'gitlab' ? { client_id: clientId(p) } : {}) };
+          const res = await fetchImpl(d.revokeFor ? d.revokeFor(settings(p)) : d.revoke, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form), signal: AbortSignal.timeout(10_000) });
           revoked = res.ok;
         } catch { /* offline: still forget locally */ }
       }

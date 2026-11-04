@@ -353,6 +353,65 @@ async function issueItems(gh, c) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Failing GitHub Actions on your branches, and Dependabot alerts (repos you pushed to lately)
+
+const RECENT_REPOS = 8;
+const CI_FAILED = new Set(['failure', 'timed_out', 'startup_failure']);
+
+async function recentRepos(gh, c) {
+  const repos = await gh.get('/user/repos?sort=pushed&per_page=20&affiliation=owner,collaborator,organization_member').catch((err) => { c.warn(`Recent repos: ${err.message}`); return []; });
+  return (repos ?? []).filter((r) => !r.archived && Date.parse(r.pushed_at) > c.now - 7 * DAY).slice(0, RECENT_REPOS);
+}
+
+/** The latest run per workflow and branch, by you; an item when it failed. Exported for tests. */
+export function failingRuns(runs, now) {
+  const latest = new Map();
+  for (const r of runs) {
+    const key = `${r.workflow_id ?? r.name}|${r.head_branch}`;
+    const prev = latest.get(key);
+    if (!prev || Date.parse(r.created_at) > Date.parse(prev.created_at)) latest.set(key, r);
+  }
+  return [...latest.values()].filter((r) => r.status === 'completed' && CI_FAILED.has(r.conclusion) && now - Date.parse(r.updated_at ?? r.created_at) < 7 * DAY);
+}
+
+async function ciItems(gh, me, repos, c) {
+  const out = await mapLimit(repos, CONCURRENCY, async (repo) => {
+    let runs = [];
+    try { runs = (await gh.get(`/repos/${repo.full_name}/actions/runs?actor=${encodeURIComponent(me)}&per_page=30`))?.workflow_runs ?? []; } catch { return []; }
+    return failingRuns(runs, c.now).map((r) => {
+      const signal = { workflow: r.name ?? 'Workflow', branch: r.head_branch ?? '?', ageDays: days(c.now, r.updated_at ?? r.created_at) };
+      const rk = rank('ci-failure', signal);
+      return createItem({
+        id: `github:ci:${key(repo.full_name, `${r.workflow_id}:${r.head_branch}`)}`, source: id, kind: 'ci-failure',
+        title: `${repo.full_name.split('/')[1]} · ${signal.workflow} failing on ${signal.branch}`, url: r.html_url,
+        why: rk.why, urgency: rk.urgency, updatedAt: r.updated_at ?? r.created_at,
+        meta: { rule: rk.rule, command: `gh run view ${r.id} ${c.repoFlag(repo.full_name)} --log-failed`, fingerprint: String(r.id), fields: { Repo: repo.full_name, Workflow: signal.workflow, Branch: signal.branch, Conclusion: r.conclusion, Event: r.event ?? '' } },
+      });
+    });
+  });
+  return out.flat();
+}
+
+async function securityItems(gh, repos, c) {
+  const out = await mapLimit(repos, CONCURRENCY, async (repo) => {
+    let alerts;
+    try { alerts = await gh.get(`/repos/${repo.full_name}/dependabot/alerts?state=open&per_page=30`); } catch { return []; } // not enabled, or not your repo to see
+    return (alerts ?? []).map((a) => {
+      const severity = String(a.security_advisory?.severity ?? a.security_vulnerability?.severity ?? 'low').toLowerCase();
+      const signal = { severity, package: a.security_vulnerability?.package?.name ?? a.dependency?.package?.name ?? 'a dependency', fixAvailable: !!a.security_vulnerability?.first_patched_version };
+      const rk = rank('security-alert', signal);
+      return createItem({
+        id: `github:sec:${key(repo.full_name, a.number)}`, source: id, kind: 'security-alert',
+        title: `${repo.full_name.split('/')[1]} · ${a.security_advisory?.summary ?? `${signal.package} vulnerability`}`, url: a.html_url,
+        why: rk.why, urgency: rk.urgency, updatedAt: a.updated_at ?? a.created_at,
+        meta: { rule: rk.rule, fingerprint: `${a.number}|${a.state}`, fields: { Repo: repo.full_name, Package: signal.package, Severity: severity, Advisory: a.security_advisory?.ghsa_id ?? '', 'Fixed in': a.security_vulnerability?.first_patched_version?.identifier ?? 'no fix yet' } },
+      });
+    });
+  });
+  return out.flat();
+}
+
 /** One item per PR or issue: if it shows up twice (say, assigned and mentioned), keep the more urgent one. */
 export function dedupe(items) {
   const best = new Map();
@@ -391,7 +450,12 @@ export async function collect(config = {}, ctx = {}) {
     mentionItems(gh, me, c),
     issueItems(gh, c),
   ]);
-  const items = dedupe([...reviews, ...prs, ...mentions, ...issues]);
+  const repos = config.actions === false && config.security === false ? [] : await recentRepos(gh, c);
+  const [ci, sec] = await Promise.all([
+    config.actions === false ? [] : ciItems(gh, me, repos, c),
+    config.security === false ? [] : securityItems(gh, repos, c),
+  ]);
+  const items = [...dedupe([...reviews, ...prs, ...mentions, ...issues]), ...ci, ...sec];
   const count = (kind) => items.filter((i) => i.kind === kind).length;
   ctx.summary?.([
     `@${me}`,
@@ -399,6 +463,8 @@ export async function collect(config = {}, ctx = {}) {
     plural(count('my-pr'), 'PR needing work', 'PRs needing work'),
     plural(count('mention'), 'mention'),
     plural(count('issue'), 'assigned issue'),
+    ...(count('ci-failure') ? [plural(count('ci-failure'), 'failing workflow')] : []),
+    ...(count('security-alert') ? [plural(count('security-alert'), 'security alert')] : []),
   ].join(' · '));
   return items;
 }

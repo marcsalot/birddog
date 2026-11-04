@@ -19,6 +19,12 @@ const SRC = {
   github: { short: 'GH', c: 'var(--gh)', cls: 'gh' },
   jira: { short: 'J', c: 'var(--jira)' },
   cal: { short: '◷', c: 'var(--cal)' },
+  gitlab: { short: 'GL', c: '#e2492f' },
+  linear: { short: 'LN', c: '#5e6ad2' },
+  azure: { short: 'AZ', c: '#0078d4' },
+  sentry: { short: 'SE', c: '#6c5fc7' },
+  pagerduty: { short: 'PD', c: '#06ac38' },
+  slack: { short: 'SL', c: '#611f69' },
 };
 const srcInfo = (id) => SRC[id] ?? { short: id.slice(0, 2).toUpperCase(), c: 'var(--later)' };
 const URG = {
@@ -800,8 +806,39 @@ function offCardHTML(src) {
     <div class="row-btns"><button class="btn primary" data-enable="${esc(src.id)}">Turn on</button></div></div>`;
 }
 
+/** Any token-based source (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack), from its `setup` metadata. */
+function tokenCardHTML(src) {
+  const ui = st.cards[src.id] ?? {};
+  const s = src.settings ?? {};
+  const setup = src.setup;
+  const tokenName = src.secretNames?.token;
+  const hasToken = !!src.secrets?.token;
+  const viaOauth = setup.oauth && s.auth === 'oauth' && oauthState(setup.oauth)?.connected;
+  const complete = setup.fields.filter((f) => !f.optional).every((f) => s[f.key]);
+  const connected = src.enabled && (viaOauth || (hasToken && complete));
+  const { status, cls, label, msg, summary } = cardState(src, ui);
+  if (connected && !ui.editing && status !== 'stale') {
+    const how = viaOauth ? `signed in with ${esc(oauthState(setup.oauth).name)}` : envSecret(tokenName)?.from ? `token from <code>${esc(envSecret(tokenName).from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`;
+    return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <div class="msg">Connected, ${how}${summary}</div>${msg}
+      <div class="row-btns"><button class="btn" data-edit="${src.id}">Change</button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button>${viaOauth ? `<button class="btn" data-oauth-off="${esc(setup.oauth)}">Disconnect</button>` : `<button class="btn" data-disconnect="${src.id}" ${ui.busy ? 'disabled' : ''}>Disconnect</button>`}</div></div>`;
+  }
+  const d = ui.draft ?? Object.fromEntries(setup.fields.map((f) => [f.key, s[f.key] ?? '']));
+  const off = ui.busy ? 'disabled' : '';
+  const env = envSecret(tokenName);
+  return `${cardTop(src.id, src.name, ui.busy ? 'Working…' : src.enabled && status === 'stale' ? 'Needs attention' : 'Not connected', ui.msg && !ui.msgGood ? 'err' : status === 'stale' && src.enabled ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
+    ${setup.oauth ? `<div class="oauth-row">${oauthButton(setup.oauth, `Sign in with ${src.name}`)}<span class="msg">or use a token:</span></div>` : ''}
+    <div class="fields">
+      ${setup.fields.map((f) => `<label><span>${esc(f.label)}${f.optional ? ' <i>(optional)</i>' : ''}</span><input data-f="${src.id}.${esc(f.key)}" value="${esc(d[f.key] ?? '')}" placeholder="${esc(f.placeholder ?? '')}" autocomplete="off" spellcheck="false"></label>`).join('')}
+      ${env ? '' : `<label class="full"><span>${esc(setup.token.label)} · <a href="${esc(setup.token.help)}" target="_blank" rel="noopener noreferrer">how to get one ↗</a></span><input data-f="${src.id}.token" type="password" value="" placeholder="${hasToken ? `Saved in ${esc(st.setup.secretStore)} · leave blank to keep it` : esc(setup.token.placeholder ?? 'Paste your token')}" autocomplete="off"></label>`}
+    </div>
+    ${setup.notes ? `<div class="msg">${esc(setup.notes)}</div>` : ''}
+    ${env ? envSecretHTML(tokenName, 'The token') : `<div class="msg">The token is stored in ${esc(st.setup.secretStore)}, never in config.json. Birddog only reads.</div>`}${msg}
+    <div class="row-btns"><button class="btn primary" data-connect="${src.id}" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? `<button class="btn" data-cancel="${src.id}">Cancel</button>` : ''}${hasToken ? `<button class="btn" data-disconnect="${src.id}" ${off}>Disconnect</button>` : ''}</div></div>`;
+}
+
 const CARDS = { git: gitCardHTML, github: githubCardHTML, jira: jiraCardHTML, cal: calCardHTML };
-const cardFor = (src) => (src.enabled === false && (src.id === 'git' || src.id === 'github') ? offCardHTML(src) : (CARDS[src.id] ?? gitCardHTML)(src));
+const cardFor = (src) => (src.enabled === false && (src.id === 'git' || src.id === 'github') ? offCardHTML(src) : (CARDS[src.id] ?? (src.setup ? tokenCardHTML : gitCardHTML))(src));
 
 // ---------------------------------------------------------------------------
 // First-run wizard: one source per step, each tested live as you reach it.
@@ -1018,7 +1055,7 @@ async function disconnectCard(id) {
   renderCards();
   try {
     st.setup = await api.disconnectSource(id);
-    const e = envSecret(id === 'jira' ? 'jira-token' : 'cal-url');
+    const e = envSecret(st.setup.sources.find((x) => x.id === id)?.secretNames?.token ?? (id === 'cal' ? 'cal-url' : `${id}-token`));
     st.cards[id] = { msg: e?.from ? `Switched off. The secret still comes from ${e.from}; remove it there.` : 'Disconnected. The token was removed.', msgGood: true };
     await load();
   } catch (err) {

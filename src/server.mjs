@@ -70,14 +70,13 @@ function redirect(res, location, headers = {}) {
 
 /** Item kinds that can become "now" (and so can notify), for the settings screen. */
 const KIND_LABELS = {
-  'review-request': 'Review requests', issue: 'Assigned issues due or overdue', 'jira-issue': 'Jira deadlines', meeting: 'Meetings about to start',
-  unpushed: 'Old unpushed commits', 'my-pr': 'Your PRs', mention: 'Mentions', uncommitted: 'Uncommitted work',
+  incident: 'Incidents paged to you', meeting: 'Meetings about to start', 'review-request': 'Review requests waiting a day',
+  issue: 'Assigned issues past their milestone', ticket: 'Tickets overdue or at sprint end', unpushed: 'Old unpushed commits',
 };
-const KIND_SOURCE = { 'review-request': 'github', 'my-pr': 'github', mention: 'github', issue: 'github', 'jira-issue': 'jira', meeting: 'cal' };
-function notifyKinds(sources) {
-  const ids = new Set(sources.map((s) => s.id));
+/** Item kinds that can become "now" (and so can notify), for the settings screen. Kinds are shared across sources. */
+function notifyKinds() {
   const kinds = [...new Set(RULES.filter((r) => r.urgency === 'now').map((r) => r.kind))];
-  return kinds.map((kind) => ({ kind, label: KIND_LABELS[kind] ?? kind, source: KIND_SOURCE[kind] ?? 'git' })).filter((k) => ids.has(k.source));
+  return kinds.map((kind) => ({ kind, label: KIND_LABELS[kind] ?? kind }));
 }
 
 const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -327,6 +326,8 @@ export async function createBirddog({
           enabled: isEnabled(s, config),
           settings: publicSettings(s),
           secrets: await savedSecrets(s), // which secrets are saved (true/false), never their values
+          setup: s.setup ?? null, // fields for the generic token card
+          secretNames: s.secretFields ?? {}, // names only, e.g. { token: 'gitlab-token' }
           status: status ?? null,
         };
       })),
@@ -382,17 +383,28 @@ export async function createBirddog({
 
   // ---- "Sign in with …" for sources (OAuth 2.0 + PKCE, loopback redirect) ----
   const redirectFor = (req, p) => `${baseUrl(req)}/auth/oauth/${p}/callback`;
+  const gitlabBase = () => String(config.oauth?.gitlab?.url || config.sources?.gitlab?.url || 'https://gitlab.com').replace(/\/+$/, '');
   const IDENTIFY = {
     google: (p, token) => googleAccount({ fetchImpl, token }),
     microsoft: (p, token) => graphAccount({ fetchImpl, token }),
     atlassian: (p, token) => atlassianSite({ fetchImpl, token }),
+    gitlab: async (p, token) => {
+      const r = await fetchImpl(`${gitlabBase()}/api/v4/user`, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } });
+      const u = await r.json().catch(() => ({}));
+      return { account: u.username ? `@${u.username}` : null };
+    },
+  };
+  /** Which source each sign-in feeds, how to switch it to that sign-in, and back. */
+  const USES = {
+    atlassian: { source: 'jira', on: (info) => ({ auth: 'oauth', ...(info.site ? { site: info.site } : {}) }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
+    google: { source: 'cal', on: () => ({ provider: 'google' }), uses: (c) => c.provider === 'google', off: { provider: 'ics' } },
+    microsoft: { source: 'cal', on: () => ({ provider: 'microsoft' }), uses: (c) => c.provider === 'microsoft', off: { provider: 'ics' } },
+    gitlab: { source: 'gitlab', on: () => ({ auth: 'oauth', url: gitlabBase() }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
   };
   /** After a sign-in, point the matching source at it and switch it on. */
   function useProvider(p, info) {
-    const patch = p === 'atlassian'
-      ? { jira: { ...(config.sources?.jira ?? {}), enabled: true, auth: 'oauth', ...(info.site ? { site: info.site } : {}) } }
-      : { cal: { ...(config.sources?.cal ?? {}), enabled: true, provider: p } };
-    config = { ...config, sources: { ...config.sources, ...patch } };
+    const u = USES[p];
+    config = { ...config, sources: { ...config.sources, [u.source]: { ...(config.sources?.[u.source] ?? {}), enabled: true, ...u.on(info) } } };
     return saveConfig(dir, config);
   }
   async function oauthCallback(req, res, p, params) {
@@ -400,7 +412,7 @@ export async function createBirddog({
     try {
       const info = await oauth.callback(p, params, IDENTIFY[p]);
       await useProvider(p, info);
-      refresh?.({ only: p === 'atlassian' ? 'jira' : 'cal' }).catch(() => {});
+      refresh?.({ only: USES[p].source }).catch(() => {});
       return redirect(res, `/?connected=${encodeURIComponent(p)}`);
     } catch (err) {
       if (err instanceof OAuthError) return authPage(res, err.status, 'Sign-in did not work', err.message, { action: 'Back to Birddog', href: '/?setup=1' });
@@ -479,10 +491,10 @@ export async function createBirddog({
       if (!OAUTH_PROVIDERS[p]) throw new HttpError(404, 'Not found');
       const r = await oauth.disconnect(p);
       // A source that was using this sign-in is switched off (its other settings stay).
-      const src = p === 'atlassian' ? 'jira' : 'cal';
+      const { source: src, uses, off } = USES[p];
       const cfg = config.sources?.[src] ?? {};
-      if ((src === 'jira' && cfg.auth === 'oauth') || (src === 'cal' && cfg.provider === p)) {
-        config = { ...config, sources: { ...config.sources, [src]: { ...cfg, enabled: false, ...(src === 'jira' ? { auth: 'token' } : { provider: 'ics' }) } } };
+      if (uses(cfg)) {
+        config = { ...config, sources: { ...config.sources, [src]: { ...cfg, enabled: false, ...off } } };
         await saveConfig(dir, config);
         await refresh({ only: src }).catch(() => {});
       }
@@ -497,7 +509,7 @@ export async function createBirddog({
     ['POST', /^\/api\/chat\/reset$/, (_m, body) => { chat.reset(body.sessionId); return { ok: true }; }],
     ['POST', /^\/api\/notifications\/claim$/, (_m, body) => ({ events: notifier.claim({ canShow: body.canShow !== false }) })],
     ['POST', /^\/api\/notifications\/test$/, asBadRequest(async (_m, body) => notifier.test(body.channel === 'system' ? 'system' : undefined))],
-    ['GET', /^\/api\/notifications\/kinds$/, () => ({ kinds: notifyKinds(sources) })],
+    ['GET', /^\/api\/notifications\/kinds$/, () => ({ kinds: notifyKinds() })],
     ['POST', /^\/api\/sources\/([^/]+)\/test$/, async (m, body) => {
       const src = findSource(m[1]);
       let { plain, secretValues } = splitSecrets(src, body);

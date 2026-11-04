@@ -2,6 +2,22 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-11-04
+
+### Added
+- **GitLab** (gitlab.com or self-managed): MRs to review, your MRs with failed pipelines or conflicts, assigned issues. Sign in with GitLab (OAuth + PKCE, `read_api`) or a token.
+- **Linear**: assigned issues, ranked like tickets (overdue, cycle end, blocked, priority). Read-only GraphQL.
+- **Azure DevOps**: PRs you haven't voted on, and work items assigned to you (WIQL). Built from Microsoft's public REST docs.
+- **Sentry**: new and regressed errors assigned to you.
+- **PagerDuty**: incidents paged to you (triggered → Now), and your on-call shifts.
+- **Slack**: mentions, and DMs waiting for your reply (user token, read-only scopes).
+- **GitHub Actions** failures on branches you pushed this week, and **Dependabot** alerts on those repos.
+- One setup card for every token source, built from each source's own metadata. Docker env vars for every new token. A guide section.
+
+### Changed
+- Jira's `jira-issue` kind is now `ticket`, shared by Jira, Linear and Azure Boards; rule texts no longer say "Jira".
+- Notification settings list kinds once, not per source.
+
 ## [1.7.0] - 2026-11-04
 
 ### Added
@@ -120,7 +136,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.7.0]: https://github.com/marcsalot/birddog/compare/45bcfde...main
+[1.8.0]: https://github.com/marcsalot/birddog/compare/ac18fb3...main
+[1.7.0]: https://github.com/marcsalot/birddog/compare/45bcfde...ac18fb3
 [1.6.0]: https://github.com/marcsalot/birddog/compare/0b78f3b...45bcfde
 [1.5.0]: https://github.com/marcsalot/birddog/compare/35cffb9...0b78f3b
 [1.4.0]: https://github.com/marcsalot/birddog/compare/f1288c5...35cffb9

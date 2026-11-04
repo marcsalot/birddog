@@ -33,7 +33,16 @@ const list = (names, max = 3) => names.slice(0, max).join(', ') + (names.length 
 export const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const mins = (ms) => plural(Math.max(1, Math.round(ms / 60_000)), 'minute');
 
+const n = (x, w) => plural(x, w);
+
 export const RULES = [
+  // ---- Incidents: nothing beats a page ------------------------------------------
+  {
+    id: 'incident-triggered', kind: 'incident', urgency: 'now',
+    text: 'Incident triggered and assigned to you → Now',
+    when: (s) => s.status === 'triggered',
+    why: (s) => `**Triggered** ${s.ageDays < 1 / 24 ? mins(s.ageDays * 86_400_000) : ago(s.ageDays)} ago${s.urgencyLevel === 'high' ? ' · **high urgency**' : ''}${s.service ? ` · ${s.service}` : ''} · acknowledge it`,
+  },
   // ---- Calendar: right now ------------------------------------------------------
   {
     id: 'meeting-now', kind: 'meeting', urgency: 'now',
@@ -58,14 +67,14 @@ export const RULES = [
   },
   // ---- Jira: deadlines that have passed or end today ---------------------------
   {
-    id: 'jira-overdue', kind: 'jira-issue', urgency: 'now',
-    text: 'Jira ticket past its due date → Now',
+    id: 'jira-overdue', kind: 'ticket', urgency: 'now',
+    text: 'Ticket past its due date → Now',
     when: (s) => s.dueDays !== null && s.dueDays < 0,
     why: (s) => `**Overdue** · was due **${until(s.dueDays)}**${s.status ? ` and is still ${s.status}` : ''}`,
   },
   {
-    id: 'jira-sprint-ending', kind: 'jira-issue', urgency: 'now',
-    text: 'Sprint ends within a day and the ticket is not done → Now',
+    id: 'jira-sprint-ending', kind: 'ticket', urgency: 'now',
+    text: 'Sprint or cycle ends within a day and the ticket is not done → Now',
     when: (s) => s.sprintDays !== null && s.sprintDays < 1,
     why: (s) => `Sprint **${s.sprint}** ends **${until(s.sprintDays)}** · still ${s.status}`,
   },
@@ -75,6 +84,43 @@ export const RULES = [
     text: 'Meeting later today → Today',
     when: (s) => !s.allDay && s.today,
     why: (s) => `Starts at **${clock(s.start)}** (in ${s.startsIn < 3_600_000 ? mins(s.startsIn) : ago(s.startsIn / 86_400_000)})${s.where ? ` · ${s.where}` : ''}`,
+  },
+  // ---- On call, incidents, CI, errors, security, chat: today --------------------
+  {
+    id: 'incident-acknowledged', kind: 'incident', urgency: 'today',
+    text: 'Incident you acknowledged that is still open → Today',
+    when: () => true,
+    why: (s) => `**Acknowledged**, still open for ${ago(s.ageDays)}${s.service ? ` · ${s.service}` : ''}`,
+  },
+  {
+    id: 'on-call-now', kind: 'on-call', urgency: 'today',
+    text: 'You are on call right now → Today',
+    when: (s) => s.startsIn <= 0,
+    why: (s) => `You're **on call**${s.policy ? ` for ${s.policy}` : ''} until **${s.endLabel}**`,
+  },
+  {
+    id: 'ci-failing', kind: 'ci-failure', urgency: 'today',
+    text: 'CI failing on a branch you pushed in the last 2 days → Today',
+    when: (s) => s.ageDays < 2,
+    why: (s) => `**${s.workflow}** failed on **${s.branch}** ${ago(s.ageDays)} ago · it's your latest run there`,
+  },
+  {
+    id: 'security-critical', kind: 'security-alert', urgency: 'today',
+    text: 'Critical or high security alert on your repo → Today',
+    when: (s) => s.severity === 'critical' || s.severity === 'high',
+    why: (s) => `**${s.severity[0].toUpperCase()}${s.severity.slice(1)}** vulnerability in **${s.package}**${s.fixAvailable ? ' · a fix is available' : ''}`,
+  },
+  {
+    id: 'error-regressed', kind: 'error-issue', urgency: 'today',
+    text: 'Error assigned to you that regressed or is new → Today',
+    when: (s) => s.regressed || s.newDays < 2,
+    why: (s) => `${s.regressed ? '**Regressed**' : '**New**'} · ${n(s.count, 'event')}${s.users ? `, ${n(s.users, 'user')}` : ''} · last seen ${ago(s.lastSeenDays)} ago`,
+  },
+  {
+    id: 'dm-waiting', kind: 'dm', urgency: 'today',
+    text: 'Direct message waiting for your reply, under 2 days old → Today',
+    when: (s) => s.ageDays < 2,
+    why: (s) => `${who(s.by)} messaged you **${ago(s.ageDays)}** ago · waiting for your reply`,
   },
   // ---- GitHub: today ---------------------------------------------------------
   {
@@ -121,8 +167,8 @@ export const RULES = [
   },
   // ---- Jira: today -------------------------------------------------------------
   {
-    id: 'jira-blocked', kind: 'jira-issue', urgency: 'today',
-    text: 'Your Jira ticket is blocked or flagged → Today',
+    id: 'jira-blocked', kind: 'ticket', urgency: 'today',
+    text: 'Your ticket is blocked or flagged → Today',
     when: (s) => s.blockedBy.length > 0 || s.flagged || s.blockedStatus,
     why: (s) => (s.blockedBy.length
       ? `**Blocked** by ${list(s.blockedBy)} · chase it or pick up something else`
@@ -130,24 +176,54 @@ export const RULES = [
         : `Status is **${s.status}** · find out what it is waiting for`),
   },
   {
-    id: 'jira-due-soon', kind: 'jira-issue', urgency: 'today',
-    text: 'Jira ticket due within 3 days → Today',
+    id: 'jira-due-soon', kind: 'ticket', urgency: 'today',
+    text: 'Ticket due within 3 days → Today',
     when: (s) => s.dueDays !== null && s.dueDays < 3,
     why: (s) => `Due **${until(s.dueDays)}** · ${s.status}`,
   },
   {
-    id: 'jira-sprint-ending-soon', kind: 'jira-issue', urgency: 'today',
-    text: 'Sprint ends within 3 days and the ticket is not done → Today',
+    id: 'jira-sprint-ending-soon', kind: 'ticket', urgency: 'today',
+    text: 'Sprint or cycle ends within 3 days and the ticket is not done → Today',
     when: (s) => s.sprintDays !== null && s.sprintDays < 3,
     why: (s) => `Sprint **${s.sprint}** ends **${until(s.sprintDays)}** · still ${s.status}`,
   },
   {
-    id: 'jira-high-priority', kind: 'jira-issue', urgency: 'today',
-    text: 'High, Highest, Critical or Blocker priority → Today',
+    id: 'jira-high-priority', kind: 'ticket', urgency: 'today',
+    text: 'High, Highest, Urgent, Critical or Blocker priority → Today',
     when: (s) => /^(highest|high|critical|blocker|urgent|p0|p1)$/i.test(s.priority ?? ''),
     why: (s) => `**${s.priority}** priority · ${s.status}`,
   },
   // ---- GitHub, Jira & Calendar: later -----------------------------------------
+  {
+    id: 'on-call-soon', kind: 'on-call', urgency: 'later',
+    text: 'Your on-call shift starts within a day → Later',
+    when: () => true,
+    why: (s) => `Your **on-call** shift${s.policy ? ` for ${s.policy}` : ''} starts **${s.startLabel}**`,
+  },
+  {
+    id: 'ci-failing-old', kind: 'ci-failure', urgency: 'later',
+    text: 'Older CI failure that is still your latest run → Later',
+    when: () => true,
+    why: (s) => `**${s.workflow}** still failing on **${s.branch}** (since ${ago(s.ageDays)} ago)`,
+  },
+  {
+    id: 'security-other', kind: 'security-alert', urgency: 'later',
+    text: 'Medium or low security alert → Later',
+    when: () => true,
+    why: (s) => `${s.severity[0].toUpperCase()}${s.severity.slice(1)} vulnerability in **${s.package}**${s.fixAvailable ? ' · a fix is available' : ''}`,
+  },
+  {
+    id: 'error-assigned', kind: 'error-issue', urgency: 'later',
+    text: 'Other unresolved errors assigned to you → Later',
+    when: () => true,
+    why: (s) => `Unresolved · ${n(s.count, 'event')} · last seen ${ago(s.lastSeenDays)} ago`,
+  },
+  {
+    id: 'dm-old', kind: 'dm', urgency: 'later',
+    text: 'Older direct message you have not answered → Later',
+    when: () => true,
+    why: (s) => `${who(s.by)} messaged you ${ago(s.ageDays)} ago · still unanswered`,
+  },
   {
     id: 'meeting-all-day', kind: 'meeting', urgency: 'later',
     text: 'All-day event today → Later',
@@ -191,8 +267,8 @@ export const RULES = [
     why: (s) => `Assigned to you · last activity **${ago(s.ageDays)}** ago`,
   },
   {
-    id: 'jira-assigned', kind: 'jira-issue', urgency: 'later',
-    text: 'Other open Jira tickets assigned to you → Later',
+    id: 'jira-assigned', kind: 'ticket', urgency: 'later',
+    text: 'Other open tickets assigned to you → Later',
     when: () => true,
     why: (s) => `**${s.status}** · last updated **${ago(s.ageDays)}** ago`,
   },

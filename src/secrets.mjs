@@ -112,6 +112,13 @@ export const ENV_SECRETS = Object.freeze({
   'google-client-secret': ['BIRDDOG_GOOGLE_CLIENT_SECRET'],
   'atlassian-client-secret': ['BIRDDOG_ATLASSIAN_CLIENT_SECRET'],
   'apple-private-key': ['BIRDDOG_APPLE_PRIVATE_KEY'],
+  'gitlab-token': ['GITLAB_TOKEN', 'BIRDDOG_GITLAB_TOKEN'],
+  'linear-token': ['LINEAR_API_KEY', 'BIRDDOG_LINEAR_TOKEN'],
+  'azure-devops-token': ['AZURE_DEVOPS_EXT_PAT', 'BIRDDOG_AZURE_DEVOPS_TOKEN'],
+  'sentry-token': ['SENTRY_AUTH_TOKEN', 'BIRDDOG_SENTRY_TOKEN'],
+  'pagerduty-token': ['BIRDDOG_PAGERDUTY_TOKEN'],
+  'slack-token': ['BIRDDOG_SLACK_TOKEN'],
+  'gitlab-client-secret': ['BIRDDOG_GITLAB_CLIENT_SECRET'],
 });
 
 export class ReadOnlySecretsError extends Error {}

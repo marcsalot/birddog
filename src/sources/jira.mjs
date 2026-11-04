@@ -160,11 +160,11 @@ export function signalOf(issue, fieldIds, now) {
 export function issueItem(issue, { site, host, fieldIds, now }) {
   const f = issue.fields ?? {};
   const s = signalOf(issue, fieldIds, now);
-  const r = rank('jira-issue', s);
+  const r = rank('ticket', s);
   return createItem({
     id: `jira:${host}:${issue.key}`,
     source: id,
-    kind: 'jira-issue',
+    kind: 'ticket',
     title: `${issue.key} · ${f.summary ?? '(no summary)'}`,
     url: `${site}/browse/${encodeURIComponent(issue.key)}`,
     why: r.why,

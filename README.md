@@ -179,7 +179,15 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **Local git** | Unpushed commits, uncommitted work, merged and stale branches | Scans folders you pick; runs read-only `git` commands |
 | **GitHub** | Review requests, your PRs with failing checks, change requests or conflicts, unread @mentions, assigned issues | Your existing `gh` login, or "Sign in with GitHub" (device flow) |
 | **Jira Cloud** | Your tickets: overdue, sprint ending, blocked, high priority | Site + email + API token |
-| **Calendar** | Meetings starting soon or later today, all-day events | Any iCal link (Google, Outlook, iCloud) or `.ics` file |
+| **Calendar** | Meetings starting soon or later today, all-day events | Sign in with Google or Microsoft, iCloud (app-specific password), or any iCal link or `.ics` file |
+| **GitLab** | MRs to review, your MRs with failed pipelines or conflicts, assigned issues | Sign in with GitLab, or a `read_api` token |
+| **Linear** | Your issues: overdue, cycle ending, blocked, urgent | Personal API key |
+| **Azure DevOps** | PRs you haven't voted on, work items assigned to you | PAT with Work Items: Read, Code: Read |
+| **Sentry** | New and regressed errors assigned to you | Auth token with `event:read`, `org:read` |
+| **PagerDuty** | Incidents paged to you (**Now**), your on-call shifts | User API token |
+| **Slack** | Mentions, and DMs waiting for your reply | User token with `search:read`, `im:read`, `im:history`, `users:read` |
+
+GitHub also reports **failing Actions runs** on branches you pushed this week, and **Dependabot alerts** on those repos (`"actions": false` / `"security": false` under `sources.github` turn them off).
 
 When a source fails, its last good items stay in the list, marked stale, with a **Retry** button. One broken token never empties your inbox. Details for each source are [further down](#what-it-finds-local-git).
 
@@ -332,6 +340,24 @@ Paste the private iCal address of your calendar into **Connect a source** → **
 That link works like a password (anyone who has it can read your calendar), so Birddog keeps it in your OS keychain as `cal-url`, never in config.json, and never shows it in the UI, the API or error messages (only its host name). You can also point at a local `.ics` file instead, or as well.
 
 The reader is built in (no dependencies) and handles what real feeds contain: folded lines and escapes, UTC, `TZID` and floating times, Windows zone names from Outlook, all-day and multi-day events, `DURATION`, recurring events (`RRULE` with `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, `INTERVAL`, `COUNT`, `UNTIL`, `BYDAY` such as `2TU` or `-1FR`, `BYMONTHDAY`, `BYMONTH`), `EXDATE`, `RDATE`, and single instances that were moved or cancelled (`RECURRENCE-ID`). Recurring events keep their wall-clock time across daylight saving changes. A zone it doesn't know falls back to the zone's standard offset, with a warning in setup. Not supported: `BYSETPOS`, `HOURLY`/`MINUTELY` rules and `BYWEEKNO` (such events show their first occurrence only).
+
+## More sources
+
+GitLab, Linear, Azure DevOps, Sentry, PagerDuty and Slack are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token` and `slack-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN` and `BIRDDOG_SLACK_TOKEN`. None of them write anything. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL.
+
+| Source | Ranks it as | Rules that fire |
+|---|---|---|
+| GitLab | review requests, your PRs, issues | the same rules as GitHub |
+| Linear, Azure Boards | tickets | the same rules as Jira (overdue, cycle/sprint end, blocked, priority) |
+| Azure Repos | review requests | the same rules as GitHub (unvoted only) |
+| Sentry | errors | regressed or new → Today; others → Later |
+| PagerDuty | incidents, on call | triggered → **Now**; acknowledged and on call now → Today; shift soon → Later |
+| Slack | mentions, DMs | fresh → Today; older → Later |
+| GitHub Actions / Dependabot | CI failures, security alerts | failing < 2 days and critical/high → Today; others → Later |
+
+GitLab also has **Sign in with GitLab**: register an application under *User settings → Applications* (scope `read_api`, *not* confidential, redirect `http://127.0.0.1:4747/auth/oauth/gitlab/callback`), then set `"oauth": { "gitlab": { "clientId": "…", "url": "https://gitlab.com" } }`.
+
+Not built yet: Bitbucket Cloud. Its "PRs waiting for my review" needs a query per repository, and I'd rather not guess at its newer API-token scheme without a way to test it.
 
 ## Sign in instead of pasting tokens
 
@@ -738,6 +764,7 @@ src/auth/session.mjs   signed session cookies
 src/auth/github.mjs    GitHub device flow and gh CLI sign-in
 src/auth/oauth.mjs     sign-in for sources: Google, Microsoft, Atlassian (PKCE, refresh, revoke); Apple client secret
 src/sources/calendar-apis.mjs  Google Calendar API, Microsoft Graph, CalDAV (iCloud)
+src/sources/{gitlab,linear,azure,sentry,pagerduty,slack}.mjs  more sources, on the shared web.mjs client
 src/sources/git.mjs    local git source
 src/sources/github.mjs GitHub source (review requests, your PRs, mentions, issues)
 src/sources/jira.mjs   Jira Cloud source (assigned tickets, blocked work, deadlines)

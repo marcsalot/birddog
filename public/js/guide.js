@@ -28,6 +28,20 @@ export const SECTIONS = [
       <p>Tokens and private links go to your OS keychain, never to config.json. If a source fails, its last good items stay, marked <b>stale</b>, with a <b>Retry</b> button.</p>`,
   },
   {
+    id: 'more', title: 'More sources (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack)', words: 'gitlab linear azure devops boards repos sentry pagerduty on call incident slack dm mention actions ci dependabot security token',
+    html: `<p>Switch these on in <b>Sources &amp; settings</b> when you use them. Each one asks for the smallest read-only access that works, and keeps its token in your keychain.</p>
+      <ul>
+        <li><b>GitLab</b>: merge requests waiting for your review, your MRs with a failed pipeline or conflicts, and issues assigned to you. Use <i>Sign in with GitLab</i> (needs an application with the <code>read_api</code> scope) or a personal access token with <code>read_api</code>. Self-managed GitLab works too.</li>
+        <li><b>Linear</b>: your open issues, ranked by due date, cycle end, blockers and priority. Needs a personal API key.</li>
+        <li><b>Azure DevOps</b>: pull requests you haven't voted on yet, and work items assigned to you. Needs a personal access token with <i>Work Items: Read</i> and <i>Code: Read</i>.</li>
+        <li><b>Sentry</b>: unresolved errors assigned to you, with regressed and new ones first. Needs an auth token with <code>event:read</code> and <code>org:read</code>.</li>
+        <li><b>PagerDuty</b>: incidents paged to you (triggered ones are <b>Now</b>), and when you're on call. Needs a user API token.</li>
+        <li><b>Slack</b>: messages that mention you, and DMs waiting for your reply. Needs a user token (<code>xoxp-…</code>) from your own Slack app, with <code>search:read</code>, <code>im:read</code>, <code>im:history</code> and <code>users:read</code>.</li>
+        <li><b>GitHub</b> also shows <b>failing Actions runs</b> on branches you pushed this week, and <b>Dependabot alerts</b> on those repos. Turn them off with <code>"actions": false</code> or <code>"security": false</code> under <code>sources.github</code>.</li>
+      </ul>
+      <p>In Docker, pass the tokens as <code>GITLAB_TOKEN</code>, <code>LINEAR_API_KEY</code>, <code>AZURE_DEVOPS_EXT_PAT</code>, <code>SENTRY_AUTH_TOKEN</code>, <code>BIRDDOG_PAGERDUTY_TOKEN</code> or <code>BIRDDOG_SLACK_TOKEN</code>.</p>`,
+  },
+  {
     id: 'logins', title: 'Sign-ins (Google, Microsoft, Atlassian, iCloud)', words: 'oauth login sign in google microsoft outlook office 365 atlassian jira icloud apple caldav app-specific password client id register',
     html: `<p>Instead of pasting tokens, you can sign in. Each provider needs <b>your own app registration</b> (free, about five minutes). Birddog never creates apps or accounts for you, and never sees your password. Put the client ID in config.json under <code>oauth.&lt;provider&gt;.clientId</code> (or <code>BIRDDOG_&lt;PROVIDER&gt;_CLIENT_ID</code>) and restart.</p>
       <ul>

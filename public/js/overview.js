@@ -11,7 +11,7 @@ import { esc, relTime, whenLabel } from './format.js';
 
 const KIND_LABELS = {
   'review-request': 'Review requests', 'my-pr': 'Your PRs needing work', mention: 'Mentions', issue: 'Assigned issues',
-  'jira-issue': 'Jira tickets', meeting: 'Meetings', unpushed: 'Unpushed commits', uncommitted: 'Uncommitted work',
+  ticket: 'Tickets', meeting: 'Meetings', unpushed: 'Unpushed commits', uncommitted: 'Uncommitted work',
   'merged-branches': 'Merged branches', 'stale-branches': 'Stale branches',
 };
 const URG = [['now', 'Now'], ['today', 'Today'], ['later', 'Later']];

@@ -1,12 +1,19 @@
 // Source registry. To add a source, write a module with the plugin interface
 // (see README "Writing a source") and add it to SOURCES.
 
+import * as azure from './azure.mjs';
 import * as cal from './cal.mjs';
 import * as git from './git.mjs';
 import * as github from './github.mjs';
+import * as gitlab from './gitlab.mjs';
 import * as jira from './jira.mjs';
+import * as linear from './linear.mjs';
+import * as pagerduty from './pagerduty.mjs';
+import * as sentry from './sentry.mjs';
+import * as slack from './slack.mjs';
 
-export const SOURCES = [git, github, jira, cal];
+// Order is the order in setup: the essentials first, then the rest of a developer's day.
+export const SOURCES = [git, github, jira, cal, gitlab, linear, azure, sentry, pagerduty, slack];
 
 /** Sources that appear in setup but are not built yet. */
 export const COMING_SOON = [];

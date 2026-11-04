@@ -55,10 +55,10 @@ describe('notifications', () => {
   it('respects per-source and per-kind switches, snooze-all and quiet hours (and never replays them)', async () => {
     const { n, set, tick } = await notifier({ sources: { jira: false }, kinds: { meeting: false } });
     await n.observe({ items: [], sources: [] });
-    const got = await n.observe({ items: [item('j', { source: 'jira', kind: 'jira-issue' }), item('m', { source: 'cal', kind: 'meeting' }), item('g')], sources: [] });
+    const got = await n.observe({ items: [item('j', { source: 'jira', kind: 'ticket' }), item('m', { source: 'cal', kind: 'meeting' }), item('g')], sources: [] });
     assert.deepEqual(got.map((e) => e.itemId), ['g']);
     set({ sources: {}, kinds: {} });
-    assert.equal((await n.observe({ items: [item('j', { source: 'jira', kind: 'jira-issue' })], sources: [] })).length, 0, 'filtered items do not pop up later');
+    assert.equal((await n.observe({ items: [item('j', { source: 'jira', kind: 'ticket' })], sources: [] })).length, 0, 'filtered items do not pop up later');
 
     set({ snoozeUntil: new Date(Date.now() + 3_600_000 * 24 * 365 * 5).toISOString() });
     assert.equal((await n.observe({ items: [item('s1')], sources: [] })).length, 0);

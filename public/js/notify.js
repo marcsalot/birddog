@@ -67,7 +67,7 @@ function render() {
   const sources = ctx.sources();
   const check = (attr, on, label, extra = '') => `<label class="chk"><input type="checkbox" ${attr} ${on ? 'checked' : ''} ${extra}><span>${label}</span></label>`;
   const radio = (v, label) => `<label class="chk"><input type="radio" name="nchan" data-nchan="${v}" ${s.channel === v ? 'checked' : ''}><span>${label}</span></label>`;
-  const kindsBySource = sources.map((src) => ({ src, ks: kinds.filter((k) => k.source === src.id) })).filter((g) => g.ks.length);
+
   el.innerHTML = `<h3>Notifications</h3>
     <div class="np-row">${check('data-n="enabled"', s.enabled, '<b>Tell me when something needs me now</b>')}</div>
     <div class="np-help">A review someone is waiting on, a meeting about to start, an overdue ticket, a source that stops working. Each thing at most once.</div>
@@ -84,8 +84,8 @@ function render() {
     <div class="np-quiet">${check('data-n="quiet"', s.quietHours.enabled, 'Quiet hours')}
       <input type="time" data-nq="start" value="${esc(s.quietHours.start)}" aria-label="Quiet from"> – <input type="time" data-nq="end" value="${esc(s.quietHours.end)}" aria-label="Quiet until"></div>
     <div class="np-sec">What</div>
-    ${kindsBySource.map(({ src, ks }) => `<div class="np-group">${check(`data-nsrc="${esc(src.id)}"`, s.sources[src.id] !== false, `<b>${esc(src.name)}</b>`)}
-      <div class="np-kinds">${ks.map((k) => check(`data-nkind="${esc(k.kind)}"`, s.kinds[k.kind] !== false, esc(k.label), s.sources[src.id] === false ? 'disabled' : '')).join('')}</div></div>`).join('')}
+    <div class="np-group"><div class="np-help">From these sources</div>${sources.map((src) => check(`data-nsrc="${esc(src.id)}"`, s.sources[src.id] !== false, esc(src.name))).join('')}</div>
+    <div class="np-group"><div class="np-help">About these things</div>${kinds.map((k) => check(`data-nkind="${esc(k.kind)}"`, s.kinds[k.kind] !== false, esc(k.label))).join('')}</div>
     ${check('data-n="staleSources"', s.staleSources, 'A source stops refreshing')}
     <div class="row-btns" style="margin-top:10px"><button class="btn small" data-ntest>Send a test notification</button></div>
     <div class="np-help">With no Birddog running at all, <code>birddog notify</code> keeps the system notifications coming.</div>` : ''}`;
