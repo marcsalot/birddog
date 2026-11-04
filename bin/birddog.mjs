@@ -22,6 +22,7 @@ const HELP = `
     -o, --open              open the dashboard in your browser
     -p, --port <number>     port to listen on (default ${DEFAULT_PORT}, or "port" in config.json)
         --host <address>    address to listen on (default 127.0.0.1; anything else needs login turned on)
+        --dev               reload open pages when the UI changes (used by npm run dev:watch)
     -v, --version           print the version
     -h, --help              show this help
 
@@ -83,6 +84,7 @@ async function main() {
         open: { type: 'boolean', short: 'o' },
         port: { type: 'string', short: 'p' },
         host: { type: 'string' },
+        dev: { type: 'boolean' },
         version: { type: 'boolean', short: 'v' },
         help: { type: 'boolean', short: 'h' },
       },
@@ -112,7 +114,7 @@ async function main() {
   const dir = configDir();
   let app;
   try {
-    app = await createBirddog({ dir, cwd: process.cwd() });
+    app = await createBirddog({ dir, cwd: process.cwd(), ...(args.dev ? { liveReload: true } : {}) });
   } catch (err) {
     console.error(`birddog: ${err.message}`);
     process.exit(1);

@@ -6,6 +6,7 @@
 // from your OpenID Connect provider, and Birddog may listen on other addresses.
 
 import crypto from 'node:crypto';
+import { watch } from 'node:fs';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -123,9 +124,11 @@ async function serveStatic(req, res, pathname) {
  * @param {object} [opts.secrets]   secret store (defaults to the OS keychain)
  * @param {Function} [opts.fetchImpl]  fetch used for OIDC and GitHub (tests swap it)
  * @param {Function} [opts.cliToken]   how to ask the gh CLI for a token (tests swap it)
+ * @param {boolean} [opts.liveReload]  development: tell open pages to reload when public/ changes
  */
 export async function createBirddog({
   dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console, secrets, fetchImpl = fetch, cliToken,
+  liveReload = false,
 }) {
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
@@ -232,8 +235,28 @@ export async function createBirddog({
     try { return await fn(...args); } catch (e) { throw e instanceof HttpError ? e : new HttpError(400, e.message); }
   };
 
+  // ---- Live reload (development only) ----
+  // Open pages listen on /api/dev/events. A change in public/ sends "reload";
+  // a server restart (node --watch) drops the stream, and the page reloads when it reconnects.
+  const listeners = new Set();
+  let watcher = null;
+  if (liveReload) {
+    let pending = null;
+    watcher = watch(PUBLIC, { recursive: true }, () => {
+      clearTimeout(pending);
+      pending = setTimeout(() => { for (const res of listeners) res.write('event: reload\ndata: {}\n\n'); }, 80);
+    });
+    watcher.unref?.();
+  }
+  function devEvents(req, res) {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-content-type-options': 'nosniff' });
+    res.write('retry: 500\n\n');
+    listeners.add(res);
+    req.on('close', () => listeners.delete(res));
+  }
+
   const routes = [
-    ['GET', /^\/api\/health$/, () => ({ app: 'birddog', version: VERSION })],
+    ['GET', /^\/api\/health$/, () => ({ app: 'birddog', version: VERSION, ...(liveReload ? { liveReload: true } : {}) })],
     ['GET', /^\/api\/me$/, (_m, _b, ctx) => ({ authEnabled: !!oidc, user: ctx.user })],
     ['GET', /^\/api\/items$/, () => itemsPayload()],
     ['POST', /^\/api\/refresh$/, async () => itemsPayload(await refresh())],
@@ -347,6 +370,7 @@ export async function createBirddog({
       }
     }
 
+    if (liveReload && url.pathname === '/api/dev/events' && req.method === 'GET') return devEvents(req, res);
     if (!url.pathname.startsWith('/api/')) {
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
       return serveStatic(req, res, url.pathname);
@@ -408,6 +432,8 @@ export async function createBirddog({
     },
     async close() {
       clearInterval(timer);
+      watcher?.close();
+      for (const res of listeners) res.end();
       const closed = new Promise((r) => server.close(() => r()));
       server.closeAllConnections?.();
       await closed;

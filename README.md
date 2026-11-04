@@ -327,7 +327,10 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 ```bash
 npm test          # node:test, no dependencies, no network; builds throwaway git repos and fakes GitHub and Jira
 npm run dev       # start and open the browser
+npm run dev:watch # live reload: restarts on src/ changes, reloads open pages on src/ or public/ changes
 ```
+
+`dev:watch` uses Node's built-in `--watch`, so it needs nothing extra. It doesn't open a browser, because it would open a new tab on every restart; open `http://127.0.0.1:4747` yourself once.
 
 Layout:
 

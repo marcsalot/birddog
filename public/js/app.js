@@ -812,6 +812,17 @@ async function signOut() {
 // ---------------------------------------------------------------------------
 // Boot
 
+/** Development only (npm run dev:watch): reload the page when the UI files or the server change. */
+async function liveReload() {
+  try {
+    if (!(await (await fetch('/api/health')).json()).liveReload) return;
+  } catch { return; }
+  let opened = false;
+  const es = new EventSource('/api/dev/events');
+  es.addEventListener('reload', () => location.reload());
+  es.onopen = () => { if (opened) location.reload(); opened = true; }; // reconnected = the server restarted
+}
+
 async function boot() {
   let prefs = {};
   try { prefs = await api.prefs(); } catch { /* use defaults */ }
@@ -823,6 +834,7 @@ async function boot() {
   setInterval(() => { if (!st.refreshing) load({ quiet: true }); }, 60_000);
   setInterval(renderUpdated, 30_000);
   if (!prefs.seenSetup) setTimeout(openSetup, 400);
+  liveReload();
 }
 
 boot();
