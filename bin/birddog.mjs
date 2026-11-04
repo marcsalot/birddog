@@ -40,7 +40,7 @@ const HELP = `
   Files live in ${tildify(configDir())} (set BIRDDOG_HOME to change it).
 `;
 
-const SECRET_NAMES = new Set(['oidc-client-secret', 'jira-token', 'cal-url', 'anthropic-api-key']);
+const SECRET_NAMES = new Set(['oidc-client-secret', 'jira-token', 'cal-url', 'anthropic-api-key', 'caldav-password', 'google-client-secret', 'atlassian-client-secret', 'apple-private-key']);
 
 function openBrowser(url) {
   const [cmd, args] = process.platform === 'darwin' ? ['open', [url]]
