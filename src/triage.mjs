@@ -9,6 +9,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fingerprint } from './items.mjs';
+import { DEFAULT_NOTIFY, normalizeNotify } from './notify.mjs';
 import { readJson, writeJson } from './store.mjs';
 
 const PRUNE_AFTER_MS = 30 * 86_400_000;
@@ -18,6 +19,8 @@ export const DEFAULT_PREFS = Object.freeze({
   mode: 'system',
   seenSetup: false,
   hiddenSources: [],
+  notifications: DEFAULT_NOTIFY,
+  railOpen: true,
 });
 
 const PREF_CHECKS = {
@@ -25,6 +28,7 @@ const PREF_CHECKS = {
   mode: (v) => ['light', 'dark', 'system'].includes(v),
   seenSetup: (v) => typeof v === 'boolean',
   hiddenSources: (v) => Array.isArray(v) && v.length < 50 && v.every((s) => typeof s === 'string' && s.length < 50),
+  railOpen: (v) => typeof v === 'boolean',
 };
 
 export class Triage {
@@ -36,7 +40,11 @@ export class Triage {
 
   async load() {
     const d = await readJson(this.file, null);
-    if (d) this.data = { version: 1, items: d.items ?? {}, prefs: { ...DEFAULT_PREFS, ...d.prefs } };
+    if (d) {
+      const prefs = { ...DEFAULT_PREFS, ...d.prefs };
+      try { prefs.notifications = normalizeNotify(d.prefs?.notifications ?? {}); } catch { prefs.notifications = { ...DEFAULT_NOTIFY }; }
+      this.data = { version: 1, items: d.items ?? {}, prefs };
+    }
     this.mtime = await this.#mtime();
   }
 
@@ -115,6 +123,11 @@ export class Triage {
     await this.sync();
     const rejected = [];
     for (const [k, v] of Object.entries(patch ?? {})) {
+      if (k === 'notifications') {
+        // Partial updates merge into the current settings; bad values are rejected with a reason.
+        try { this.data.prefs.notifications = normalizeNotify(v, this.data.prefs.notifications); } catch (e) { rejected.push(`notifications (${e.message})`); }
+        continue;
+      }
       if (PREF_CHECKS[k]?.(v)) this.data.prefs[k] = v;
       else rejected.push(k);
     }

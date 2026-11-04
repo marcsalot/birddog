@@ -2,6 +2,14 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-04
+
+### Added
+- **Notifications**: when an item becomes Now, or a source stops refreshing, Birddog tells you, in the browser (Notification API) while a tab is open and from the system otherwise (macOS `osascript`, Linux `notify-send`, Windows toast). Each item is announced at most once, even across restarts.
+- Per-source and per-kind switches, quiet hours (overnight ranges work), snooze all, and a test notification, all under 🔔.
+- `birddog notify`: notifications without the dashboard (`--on`, `--test`).
+- `/api/notifications/claim`, `/api/notifications/test` and `/api/notifications/kinds`.
+
 ## [1.1.0] - 2026-11-04
 
 ### Added
@@ -53,7 +61,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.1.0]: https://github.com/marcsalot/birddog/compare/8453eb7...main
+[1.2.0]: https://github.com/marcsalot/birddog/compare/74c3238...main
+[1.1.0]: https://github.com/marcsalot/birddog/compare/8453eb7...74c3238
 [1.0.0]: https://github.com/marcsalot/birddog/compare/f19aa7a...8453eb7
 [0.3.0]: https://github.com/marcsalot/birddog/compare/87709b1...f19aa7a
 [0.2.0]: https://github.com/marcsalot/birddog/compare/1137fab...87709b1

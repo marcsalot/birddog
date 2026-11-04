@@ -64,6 +64,7 @@ birddog                 start on http://127.0.0.1:4747
 birddog --open          start and open your browser
 birddog --demo          made-up data in a temporary folder on :4848; your real setup is never touched
 birddog mcp             MCP server on stdio (add --demo for made-up data)
+birddog notify          desktop notifications without the dashboard (--on, --test)
 birddog --port 5000     use another port
 birddog --host 0.0.0.0  listen beyond localhost (only with login turned on; also BIRDDOG_HOST)
 birddog secret set jira-token   store a secret in your keychain (reads stdin; also cal-url, oidc-client-secret)
@@ -382,6 +383,24 @@ Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom a
 
 Inside a group, items sort by rule order, then oldest first (the work that has waited longest is most at risk). A branch counts as either stale *or* unpushed, never both, and repos with no remote are never nagged about pushing.
 
+## Notifications
+
+Press 🔔 in the top bar and switch on **Tell me when something needs me now**. Birddog then announces each item that becomes **Now** (a review someone is waiting on, a meeting about to start, an overdue ticket) and each source that stops refreshing.
+
+- **Where:** in the browser while a Birddog tab is open, otherwise from the system: macOS notifications (via `osascript`), `notify-send` on Linux, a toast on Windows. You can also choose browser-only or system-only.
+- **Each thing at most once.** Birddog remembers what it announced in `notified.json`, across restarts. Whatever is already Now when you switch notifications on is taken as known, so you don't get a burst. A burst of more than three becomes one summary.
+- **What:** switch whole sources or single kinds on and off (meetings, review requests, Jira deadlines, …), plus "a source stops refreshing".
+- **Pause:** *Snooze all* for an hour or until tomorrow 9:00, and **quiet hours** (overnight ranges work, e.g. 22:00–08:00). Anything that comes up while paused or filtered out is skipped, not saved for later.
+
+No dashboard running? `birddog notify` refreshes on the usual schedule and shows system notifications without the web UI. Run it in a terminal, or keep it running with launchd or systemd.
+
+```bash
+birddog notify --test   # one test notification, to check your OS lets it through
+birddog notify --on     # switch notifications on and keep watching
+```
+
+On macOS, the first notification may need permission for your terminal (or Script Editor) in System Settings → Notifications. If a dashboard is already running, `birddog notify` says so and exits, because the dashboard already sends system notifications when no tab is open.
+
 ## Triage
 
 - **Done** (`x`) hides an item until it changes. New commits on that branch, or new files in that repo, bring it back.
@@ -562,7 +581,10 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `POST` | `/api/items/:id/done` | mark done |
 | `POST` | `/api/items/:id/snooze` | `{ "until": "<ISO date>" \| "change" }` |
 | `POST` | `/api/items/:id/restore` | undo done/snooze |
-| `GET`/`PUT` | `/api/prefs` | theme, mode, hidden sources |
+| `GET`/`PUT` | `/api/prefs` | theme, mode, hidden sources, `notifications` settings |
+| `POST` | `/api/notifications/claim` | `{ "canShow": true }`: new notifications for this tab (each is handed out once) |
+| `POST` | `/api/notifications/test` | queue a test notification, or `{ "channel": "system" }` to show one now |
+| `GET` | `/api/notifications/kinds` | which kinds of item can notify |
 | `GET` | `/api/setup` | sources and their settings |
 | `POST` | `/api/sources/:id/test` | try settings without saving |
 | `PUT` | `/api/sources/:id` | save settings (secrets go to the keychain), switch on and rescan |
@@ -609,6 +631,7 @@ Dockerfile             multi-stage image: test → package (npm pack) → runtim
 docker-compose.yml     the dashboard on a volume, plus a demo profile
 .github/workflows/     CI: tests on Node 22 and 24, and inside the image
 src/mcp.mjs            MCP server (JSON-RPC over stdio)
+src/notify.mjs         notifications: what's news, filters, quiet hours, system notifications
 src/demo.mjs           demo mode: canned git items and fake GitHub / Jira / calendar APIs
 docs/                  demo GIF, screenshot, launch post
 test/fixtures/         sample Google- and Outlook-style .ics files

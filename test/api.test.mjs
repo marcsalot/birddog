@@ -111,7 +111,9 @@ describe('HTTP API', () => {
     port = await app.start(0);
     const items = (await api('/api/items')).json.items;
     assert.equal(items.find((i) => i.id === 'fake:a').status, 'done');
-    assert.deepEqual((await api('/api/prefs')).json, { palette: 'violet', mode: 'dark', seenSetup: false, hiddenSources: [] });
+    const { palette, mode, seenSetup, hiddenSources, notifications } = (await api('/api/prefs')).json;
+    assert.deepEqual({ palette, mode, seenSetup, hiddenSources }, { palette: 'violet', mode: 'dark', seenSetup: false, hiddenSources: [] });
+    assert.equal(notifications.enabled, false, 'notifications are off until you turn them on');
   });
 
   it('rejects bad prefs', async () => {

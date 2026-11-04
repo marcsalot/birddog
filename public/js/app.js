@@ -5,6 +5,7 @@ import { api } from './api.js';
 import {
   PALETTE_NAMES, appearanceHTML, cyclePalette, initAppearance, setMode, setPalette, toggleTheme,
 } from './appearance.js';
+import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
 
 // ---------------------------------------------------------------------------
@@ -249,6 +250,7 @@ async function refresh() {
     const fresh = data.items.filter((i) => !before.has(i.id) && i.status === 'open');
     render();
     for (const i of fresh) document.querySelector(`.row[data-id="${CSS.escape(i.id)}"]`)?.classList.add('new');
+    pollNotifications();
     const stale = data.sources.filter((s) => s.status === 'stale');
     if (stale.length) toast(`⚠ ${esc(stale[0].name)} could not refresh: ${esc(stale[0].error)}`);
     else if (fresh.length) toast(`${fresh.length} new item${fresh.length === 1 ? '' : 's'}: ${esc(fresh[0].title)}${fresh.length > 1 ? ' and more' : ''}`);
@@ -419,6 +421,7 @@ function closeAll() {
   document.querySelectorAll('.scrim.open').forEach((s) => s.classList.remove('open'));
   closeSnooze();
   closeAppear();
+  closeNotifyPanel();
 }
 const overlay = () => document.querySelector('.scrim.open');
 
@@ -442,6 +445,7 @@ function commands() {
     ...(sel?.meta?.command ? [{ label: `Copy next step: ${sel.meta.command}`, k: 'c', run: () => copy(sel.meta.command, 'command') }] : []),
     { label: 'Toggle dark / light', k: 't', run: () => toggleTheme() },
     { label: 'Appearance…', run: openAppear },
+    { label: 'Notifications…', run: () => toggleNotifyPanel() },
     ...Object.entries(PALETTE_NAMES).map(([p, n]) => ({ label: `Theme: ${n}`, run: () => setPalette(p) })),
     { label: 'Mode: follow system', run: () => setMode('system') },
     { label: 'Connect a source…', run: () => openSetup() },
@@ -946,6 +950,9 @@ $('#openPalette').onclick = () => openPalette();
 $('#openSetup').onclick = () => openSetup();
 $('#refresh').onclick = refresh;
 $('#appearBtn').onclick = (e) => { e.stopPropagation(); appearOpen() ? closeAppear() : openAppear(); };
+$('#notifyBtn').onclick = (e) => { e.stopPropagation(); closeAppear(); toggleNotifyPanel(); };
+$('#notifyPanel').addEventListener('change', (e) => { onNotifyPanelEvent(e); });
+$('#notifyPanel').addEventListener('click', (e) => { e.stopPropagation(); onNotifyPanelEvent(e); });
 $('#undoBtn').onclick = runUndo;
 $('#pInput').addEventListener('input', () => { pSel = 0; renderPalette(); });
 $('#appear').onclick = (e) => {
@@ -954,12 +961,16 @@ $('#appear').onclick = (e) => {
   if (!b) return;
   if (b.dataset.pal) setPalette(b.dataset.pal); else setMode(b.dataset.mode);
 };
-document.addEventListener('mousedown', (e) => { if (appearOpen() && !e.target.closest('#appear,#appearBtn')) closeAppear(); });
+document.addEventListener('mousedown', (e) => {
+  if (appearOpen() && !e.target.closest('#appear,#appearBtn')) closeAppear();
+  if (notifyPanelOpen() && !e.target.closest('#notifyPanel,#notifyBtn')) closeNotifyPanel();
+});
 
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return overlay() ? closeAll() : openPalette(); }
   if (e.key === 'Escape') {
     if (appearOpen()) return closeAppear();
+    if (notifyPanelOpen()) return closeNotifyPanel();
     if (overlay() || snoozeOpen()) return closeAll();
     if (drawerOpen()) return closeDrawer();
     if (st.query) { st.query = ''; render(); }
@@ -1044,6 +1055,11 @@ async function boot() {
   st.hidden = new Set(prefs.hiddenSources ?? []);
   render();
   await load();
+  initNotify({
+    api, toast, prefs,
+    sources: () => st.sources,
+    openItem: (id) => { const i = byId(id); if (i) { st.selId = id; render(); openDrawer(i); } },
+  });
   setInterval(() => { if (!st.refreshing) load({ quiet: true }); }, 60_000);
   setInterval(renderUpdated, 30_000);
   if (!prefs.seenSetup) setTimeout(openWizard, 400);

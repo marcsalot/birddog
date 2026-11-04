@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import { configDir, DEFAULT_PORT, tildify } from '../src/config.mjs';
 import { createDemo } from '../src/demo.mjs';
 import { createMcpHandler, serveStdio } from '../src/mcp.mjs';
+import { showSystemNotification } from '../src/notify.mjs';
 import { createSecretStore } from '../src/secrets.mjs';
 import { createBirddog, VERSION } from '../src/server.mjs';
 
@@ -19,6 +20,9 @@ const HELP = `
 
     birddog --demo          try it with made-up data (never touches your repos, tokens or calendar)
     birddog mcp             run as an MCP server on stdio, for Claude Code, Claude Desktop and friends
+    birddog notify          no dashboard, just desktop notifications (runs until you stop it)
+    birddog notify --on     …and switch notifications on first
+    birddog notify --test   show one test notification and exit
 
     birddog secret set <name>      store a secret in your OS keychain (value read from stdin)
     birddog secret delete <name>   remove it
@@ -98,6 +102,52 @@ async function mcpCommand(args) {
   await demo?.cleanup();
 }
 
+/** `birddog notify`: refresh on a timer and show system notifications, without the web UI. */
+async function notifyCommand(args) {
+  if (args.test) {
+    try {
+      await showSystemNotification('Birddog test notification', 'If you can read this, desktop notifications work.');
+      console.log('  Sent a test notification. Nothing showed up? Allow notifications for your terminal (or Script Editor) in System Settings → Notifications.');
+    } catch (err) { console.error(`birddog notify: ${err.message}`); process.exit(1); }
+    return;
+  }
+  const demo = args.demo ? await createDemo() : null;
+  const dir = demo?.options.dir ?? configDir();
+  let app;
+  try {
+    app = await createBirddog({ dir, cwd: process.cwd(), autoRefresh: false, notifyChannel: 'system', ...(demo?.options ?? {}) });
+  } catch (err) {
+    console.error(`birddog notify: ${err.message}`);
+    process.exit(1);
+  }
+  const port = Number(app.config.port ?? DEFAULT_PORT);
+  if (!demo && await isBirddog(port)) {
+    console.log(`\n  Birddog is already running at http://127.0.0.1:${port} and sends notifications itself:\n  in the browser while a tab is open, from the system when none is. Nothing to do here.\n`);
+    await app.close();
+    return;
+  }
+  if (args.on) await app.triage.setPrefs({ notifications: { enabled: true } });
+  const every = Math.max(1, Number(app.config.refreshMinutes) || 5) * 60_000;
+  const tick = async () => {
+    await app.refresh({ scheduled: true }).catch((e) => console.error(`birddog notify: ${e.message}`));
+    await app.notifier.flush().catch(() => {});
+  };
+  await tick();
+  const on = app.triage.prefs.notifications.enabled;
+  console.log(`\n  🐾 Birddog ${VERSION} is watching for things that need you now${demo ? ' (demo data)' : ''}.\n  ${on ? `Checking every ${every / 60_000} min.` : 'Notifications are switched off: run "birddog notify --on", or turn them on under 🔔 in the dashboard.'} Press Ctrl+C to stop.\n`);
+  const refreshTimer = setInterval(tick, every);
+  const flushTimer = setInterval(() => app.notifier.flush().catch(() => {}), 5_000);
+  const stop = async () => {
+    clearInterval(refreshTimer);
+    clearInterval(flushTimer);
+    await app.close();
+    await demo?.cleanup();
+    process.exit(0);
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+}
+
 async function main() {
   let args;
   let positionals;
@@ -110,6 +160,8 @@ async function main() {
         host: { type: 'string' },
         dev: { type: 'boolean' },
         demo: { type: 'boolean' },
+        on: { type: 'boolean' },
+        test: { type: 'boolean' },
         version: { type: 'boolean', short: 'v' },
         help: { type: 'boolean', short: 'h' },
       },
@@ -122,6 +174,7 @@ async function main() {
   if (args.version) { console.log(VERSION); return; }
   if (positionals[0] === 'secret') return secretCommand(positionals.slice(1));
   if (positionals[0] === 'mcp') return mcpCommand(args);
+  if (positionals[0] === 'notify') return notifyCommand(args);
   if (positionals.length) {
     console.error(`birddog: unknown command "${positionals[0]}"\n${HELP}`);
     process.exit(2);

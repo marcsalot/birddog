@@ -15,7 +15,9 @@ import { createGithubAuth } from './auth/github.mjs';
 import { AuthError, checkAuthConfig, createOidc, isAllowed } from './auth/oidc.mjs';
 import { createSessions } from './auth/session.mjs';
 import { Collector } from './collector.mjs';
+import { createNotifier } from './notify.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
+import { RULES } from './rules.mjs';
 import { createSecretStore } from './secrets.mjs';
 import { COMING_SOON, isEnabled, SOURCES, validateSource } from './sources/index.mjs';
 import { Triage } from './triage.mjs';
@@ -60,6 +62,18 @@ function send(res, status, body, headers = {}) {
 function redirect(res, location, headers = {}) {
   res.writeHead(302, { location, 'cache-control': 'no-store', ...headers });
   res.end();
+}
+
+/** Item kinds that can become "now" (and so can notify), for the settings screen. */
+const KIND_LABELS = {
+  'review-request': 'Review requests', issue: 'Assigned issues due or overdue', 'jira-issue': 'Jira deadlines', meeting: 'Meetings about to start',
+  unpushed: 'Old unpushed commits', 'my-pr': 'Your PRs', mention: 'Mentions', uncommitted: 'Uncommitted work',
+};
+const KIND_SOURCE = { 'review-request': 'github', 'my-pr': 'github', mention: 'github', issue: 'github', 'jira-issue': 'jira', meeting: 'cal' };
+function notifyKinds(sources) {
+  const ids = new Set(sources.map((s) => s.id));
+  const kinds = [...new Set(RULES.filter((r) => r.urgency === 'now').map((r) => r.kind))];
+  return kinds.map((kind) => ({ kind, label: KIND_LABELS[kind] ?? kind, source: KIND_SOURCE[kind] ?? 'git' })).filter((k) => ids.has(k.source));
 }
 
 const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -125,12 +139,14 @@ async function serveStatic(req, res, pathname) {
  * @param {Function} [opts.fetchImpl]  fetch used for OIDC and GitHub (tests swap it)
  * @param {Function} [opts.cliToken]   how to ask the gh CLI for a token (tests swap it)
  * @param {boolean} [opts.liveReload]  development: tell open pages to reload when public/ changes
+ * @param {Function} [opts.notifySystem] shows a system notification (tests swap it)
+ * @param {string} [opts.notifyChannel] force a channel ("system" for `birddog notify`)
  * @param {boolean} [opts.allowRemote] container mode: may listen on 0.0.0.0 without login, because
  *                                     Docker publishes the port to the host's loopback only
  */
 export async function createBirddog({
   dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console, secrets, fetchImpl = fetch, cliToken,
-  liveReload = false, allowRemote = false,
+  liveReload = false, allowRemote = false, notifySystem, notifyChannel,
 }) {
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
@@ -180,6 +196,12 @@ export async function createBirddog({
   const collector = new Collector({ sources, dir, getConfig: () => config, now, log, context });
   const triage = new Triage({ dir, now });
   await Promise.all([collector.load(), triage.load()]);
+  const notifier = createNotifier({
+    dir, now, log,
+    getSettings: () => ({ ...triage.prefs.notifications, ...(notifyChannel ? { channel: notifyChannel } : {}) }),
+    ...(notifySystem ? { system: notifySystem } : {}),
+  });
+  await notifier.load();
 
   // ---- Single sign-on (optional) ----
   const auth = config.auth ?? {};
@@ -215,6 +237,8 @@ export async function createBirddog({
   refresh = async (opts) => {
     const snap = await collector.refresh(opts);
     await triage.prune(snap.items);
+    await triage.sync();
+    await notifier.observe({ items: triage.apply(snap.items), sources: snap.sources }).catch((e) => log.warn?.(`birddog: notifications: ${e.message}`));
     return snap;
   };
 
@@ -346,6 +370,9 @@ export async function createBirddog({
       return triage.prefs;
     }],
     ['GET', /^\/api\/setup$/, () => setupPayload()],
+    ['POST', /^\/api\/notifications\/claim$/, (_m, body) => ({ events: notifier.claim({ canShow: body.canShow !== false }) })],
+    ['POST', /^\/api\/notifications\/test$/, asBadRequest(async (_m, body) => notifier.test(body.channel === 'system' ? 'system' : undefined))],
+    ['GET', /^\/api\/notifications\/kinds$/, () => ({ kinds: notifyKinds(sources) })],
     ['POST', /^\/api\/sources\/([^/]+)\/test$/, async (m, body) => {
       const src = findSource(m[1]);
       let { plain, secretValues } = splitSecrets(src, body);
@@ -469,11 +496,13 @@ export async function createBirddog({
   });
 
   let timer = null;
+  let flushTimer = null;
 
   return {
     server,
     collector,
     triage,
+    notifier,
     github,
     secrets,
     get config() { return config; },
@@ -497,6 +526,8 @@ export async function createBirddog({
             timer = setInterval(() => refresh({ scheduled: true }).catch(() => {}), every);
             timer.unref();
           }
+          flushTimer = setInterval(() => notifier.flush().catch(() => {}), 5_000);
+          flushTimer.unref();
           resolve(server.address().port);
         };
         server.once('error', onError);
@@ -506,6 +537,7 @@ export async function createBirddog({
     },
     async close() {
       clearInterval(timer);
+      clearInterval(flushTimer);
       watcher?.close();
       for (const res of listeners) res.end();
       const closed = new Promise((r) => server.close(() => r()));
