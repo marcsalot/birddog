@@ -31,14 +31,15 @@ describe('main menu rail', () => {
     assert.deepEqual([again.prefs.railOpen, again.prefs.guideOpen], [false, true]);
   });
 
-  it('remembers whether the guide is widened', async () => {
+  it('remembers how wide the guide is', async () => {
     const t = new Triage({ dir: await tmpDir() });
     await t.load();
-    assert.equal(t.prefs.guideWide, false);
-    assert.deepEqual(await t.setPrefs({ guideWide: true }), []);
-    assert.deepEqual(await t.setPrefs({ guideWide: 'wide' }), ['guideWide']);
+    assert.equal(t.prefs.guideWidth, null, 'default width until you drag it');
+    assert.deepEqual(await t.setPrefs({ guideWidth: 640 }), []);
+    for (const bad of ['wide', 12, 99999, 400.5]) assert.deepEqual(await t.setPrefs({ guideWidth: bad }), ['guideWidth'], String(bad));
     const again = new Triage({ dir: t.file.replace(/\/state\.json$/, '') });
     await again.load();
-    assert.equal(again.prefs.guideWide, true);
+    assert.equal(again.prefs.guideWidth, 640);
+    assert.deepEqual(await again.setPrefs({ guideWidth: null }), [], 'reset to the default');
   });
 });

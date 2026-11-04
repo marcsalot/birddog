@@ -23,7 +23,7 @@ export const DEFAULT_PREFS = Object.freeze({
   railOpen: true,
   chatConsent: false,
   guideOpen: false,
-  guideWide: false,
+  guideWidth: null,
   hideNextStep: false,
 });
 
@@ -35,7 +35,7 @@ const PREF_CHECKS = {
   railOpen: (v) => typeof v === 'boolean',
   chatConsent: (v) => typeof v === 'boolean',
   guideOpen: (v) => typeof v === 'boolean',
-  guideWide: (v) => typeof v === 'boolean',
+  guideWidth: (v) => v === null || (Number.isInteger(v) && v >= 280 && v <= 2400),
   hideNextStep: (v) => typeof v === 'boolean',
 };
 

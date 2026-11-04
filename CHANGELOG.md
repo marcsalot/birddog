@@ -5,7 +5,7 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 ## [Unreleased]
 
 ### Added
-- The guide can be **widened** (⇤ in its header, or `Shift+G`) for comfortable reading, and remembers it. **Expand all / Collapse all** opens or closes every section at once.
+- The guide is **resizable**: drag its left edge to any width (or focus the edge and use ←/→, Shift for bigger steps; double-click resets). ⇤ in its header, or `Shift+G`, jumps between the normal rail and a wide reading view. The width is remembered (`guideWidth` pref). **Expand all / Collapse all** opens or closes every section at once.
 
 ### Changed
 - Bigger icons in the main menu, especially when it's collapsed to icons (the collapsed menu is a little wider to fit them).

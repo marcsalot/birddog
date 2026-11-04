@@ -1220,7 +1220,7 @@ $('#railToggle').onclick = () => toggleRail();
 $('#menuBtn').onclick = () => openMobileRail();
 $('#railScrim').onclick = () => closeMobileRail();
 $('#guideBtn').onclick = () => { closeMobileRail(); toggleGuide(); };
-for (const type of ['click', 'input', 'keydown']) $('#guideRail').addEventListener(type, (e) => { if (onGuideEvent(e)) e.stopPropagation(); });
+for (const type of ['click', 'input', 'keydown', 'pointerdown', 'dblclick']) $('#guideRail').addEventListener(type, (e) => { if (onGuideEvent(e)) e.stopPropagation(); });
 for (const type of ['click', 'change', 'submit', 'keydown']) $('#chatPanel').addEventListener(type, (e) => { e.stopPropagation(); onChatEvent(e); });
 $('#notifyBtn').onclick = (e) => { e.stopPropagation(); closeAppear(); toggleNotifyPanel(); };
 $('#notifyPanel').addEventListener('change', (e) => { onNotifyPanelEvent(e); });
@@ -1333,7 +1333,7 @@ async function boot() {
   try { prefs = await api.prefs(); } catch { /* use defaults */ }
   api.me().then(renderMe).catch(() => {});
   initAppearance({ prefs, save: savePrefs, changed: () => { if (appearOpen()) renderAppear(); loadShots(); } });
-  initGuide({ open: !!prefs.guideOpen, wide: !!prefs.guideWide, save: (open) => savePrefs({ guideOpen: open }), saveWide: (wide) => savePrefs({ guideWide: wide }), theme: () => document.documentElement.dataset.theme });
+  initGuide({ open: !!prefs.guideOpen, width: prefs.guideWidth ?? null, save: (open) => savePrefs({ guideOpen: open }), saveWidth: (w) => savePrefs({ guideWidth: w }), theme: () => document.documentElement.dataset.theme });
   st.hidden = new Set(prefs.hiddenSources ?? []);
   setRail(prefs.railOpen !== false, { save: false });
   render();

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { searchGuide, SECTIONS } from '../public/js/guide.js';
+import { clampGuideWidth, GUIDE_MIN, maxGuideWidth, searchGuide, SECTIONS, wideGuideWidth } from '../public/js/guide.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -31,5 +31,25 @@ describe('user guide', () => {
   it('documents every key the app binds', () => {
     const keys = SECTIONS.find((s) => s.id === 'shortcuts').html;
     for (const k of ['j', 'k', 'x', 's', 'z', 'u', 'c', 'o', '0', 'a', 'g', 'r', 't', 'p', '?']) assert.match(keys, new RegExp(`<kbd>${k.replace('?', '\\?')}</kbd>`));
+  });
+});
+
+describe('guide width', () => {
+  it('never squeezes the page below 420px when docked, and floats up to 96% on narrow windows', () => {
+    assert.equal(maxGuideWidth(1440, 232), 788);
+    assert.equal(maxGuideWidth(1440, 72), 948);
+    assert.equal(maxGuideWidth(1000, 232), 960);
+    assert.equal(maxGuideWidth(600, 0), 576);
+  });
+  it('clamps drags between the minimum and the maximum', () => {
+    assert.equal(clampGuideWidth(100, 800), GUIDE_MIN);
+    assert.equal(clampGuideWidth(5000, 800), 800);
+    assert.equal(clampGuideWidth(512.6, 800), 513);
+  });
+  it('the wide view is half the window, up to 760px, and still fits', () => {
+    // wideGuideWidth reads the rail from the page; pass a viewport whose max isn't the limit.
+    assert.equal(clampGuideWidth(Math.min(760, 1440 * 0.5), maxGuideWidth(1440, 232)), 720);
+    assert.equal(clampGuideWidth(Math.min(760, 1900 * 0.5), maxGuideWidth(1900, 232)), 760);
+    assert.equal(typeof wideGuideWidth, 'function');
   });
 });

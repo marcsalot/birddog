@@ -77,7 +77,7 @@ export const SECTIONS = [
       <tr><td>${keys('1')}–${keys('6')}</td><td>All, Now, Today, Later, Snoozed, Done</td></tr>
       <tr><td>${keys('a')}</td><td>Ask Birddog</td></tr>
       <tr><td>${keys('g')}</td><td>This guide</td></tr>
-      <tr><td>${keys('⇧G')}</td><td>Widen or narrow this guide</td></tr>
+      <tr><td>${keys('⇧G')}</td><td>Widen or narrow this guide (or drag its left edge)</td></tr>
       <tr><td>${keys('m')}</td><td>Show or hide the menu</td></tr>
       <tr><td>${keys('r')}</td><td>Refresh everything</td></tr>
       <tr><td>${keys('/')} ${keys('⌘K')}</td><td>Search and commands</td></tr>
@@ -120,17 +120,17 @@ docker compose --profile demo up     # made-up data, port 4848</code></pre>
   },
 ];
 
-let ctx = null; // { save(open), saveWide(wide), theme() }
+let ctx = null; // { save(open), saveWidth(px|null), theme() }
 let query = '';
 
 const $ = (s) => document.querySelector(s);
 export const guideOpen = () => document.body.classList.contains('guide-open');
-export const guideWide = () => document.body.classList.contains('guide-wide');
 
 export function initGuide(options) {
   ctx = options;
   render();
-  setWide(!!options.wide, { save: false });
+  setWidth(options.width ?? null, { save: false });
+  window.addEventListener('resize', () => { if (width) applyWidth(); });
   if (options.open) setGuide(true, { save: false });
 }
 
@@ -152,20 +152,66 @@ export const openGuide = (section) => setGuide(true, { section });
 export const closeGuide = () => setGuide(false);
 export const toggleGuide = () => setGuide(!guideOpen());
 
-/** Widen the guide to read it comfortably, or narrow it back to a rail. */
-function setWide(wide, { save = true } = {}) {
-  document.body.classList.toggle('guide-wide', wide);
+// Width: drag the left edge (or use the arrow keys on it) to any size, or ⇤ / Shift+G
+// to jump between the normal rail and a wide reading view. null = the default.
+export const GUIDE_DEFAULT = 360;
+export const GUIDE_MIN = 300;
+const WIDE_AT = 520; // at or above this, the guide counts as "wide"
+let width = null;
+
+/** The widest the guide may get: leave the page at least 420px when docked. */
+export function maxGuideWidth(viewport = window.innerWidth, rail = railWidth()) {
+  return Math.max(GUIDE_MIN, viewport > 1199 ? viewport - rail - 420 : Math.round(viewport * 0.96));
+}
+const railWidth = () => document.querySelector('#rail')?.getBoundingClientRect().width || 0;
+export const clampGuideWidth = (px, max = maxGuideWidth()) => Math.round(Math.min(Math.max(px, GUIDE_MIN), max));
+export const wideGuideWidth = (viewport = window.innerWidth) => clampGuideWidth(Math.min(760, viewport * 0.5), maxGuideWidth(viewport));
+
+function applyWidth() {
+  const px = width == null ? GUIDE_DEFAULT : clampGuideWidth(width);
+  document.body.style.setProperty('--guide-base', `${px}px`);
+  document.body.classList.toggle('guide-wide', px >= WIDE_AT);
   const b = $('#guideRail [data-guide="wide"]');
   if (b) {
+    const wide = px >= WIDE_AT;
     b.setAttribute('aria-pressed', String(wide));
     b.setAttribute('aria-label', wide ? 'Narrow the guide (Shift+G)' : 'Widen the guide (Shift+G)');
-    b.title = b.getAttribute('aria-label');
+    b.title = `${b.getAttribute('aria-label')}. Or drag its left edge.`;
     b.textContent = wide ? '⇥' : '⇤';
   }
-  if (save) ctx?.saveWide?.(wide);
+  const h = $('#guideRail .g-resize');
+  if (h) { h.setAttribute('aria-valuenow', String(px)); h.setAttribute('aria-valuemax', String(maxGuideWidth())); }
+  return px;
+}
+
+function setWidth(px, { save = true } = {}) {
+  width = px == null ? null : clampGuideWidth(px);
+  applyWidth();
+  if (save) ctx?.saveWidth?.(width);
   if (guideOpen()) window.dispatchEvent(new Event('resize')); // charts re-measure
 }
-export const toggleGuideWide = () => setWide(!guideWide());
+export const guideWide = () => document.body.classList.contains('guide-wide');
+export const toggleGuideWide = () => setWidth(guideWide() ? null : wideGuideWidth());
+
+function startDrag(e) {
+  const h = e.target.closest('.g-resize');
+  if (!h || e.button !== 0) return;
+  e.preventDefault();
+  h.setPointerCapture(e.pointerId);
+  document.body.classList.add('guide-resizing');
+  const right = document.querySelector('#guideRail').getBoundingClientRect().right;
+  const move = (ev) => { width = clampGuideWidth(right - ev.clientX); applyWidth(); };
+  const end = () => {
+    h.removeEventListener('pointermove', move);
+    document.body.classList.remove('guide-resizing');
+    ctx?.saveWidth?.(width);
+    window.dispatchEvent(new Event('resize'));
+  };
+  h.addEventListener('pointermove', move);
+  h.addEventListener('pointerup', end, { once: true });
+  h.addEventListener('pointercancel', end, { once: true });
+}
+
 
 /** Open or close every section at once. */
 function setAllSections(open) {
@@ -205,7 +251,7 @@ export function searchGuide(q, sections = SECTIONS) {
 function render() {
   const el = $('#guideRail');
   if (!el) return;
-  el.innerHTML = `<header><b>Guide</b><span class="g-tools"><button class="g-all" data-guide="all" aria-pressed="false">Expand all</button><button class="icon-btn" data-guide="wide" aria-pressed="false" aria-label="Widen the guide (Shift+G)" title="Widen the guide (Shift+G)">⇤</button><button class="icon-btn" data-guide="close" aria-label="Close the guide (g)" title="Close the guide (g)">✕</button></span></header>
+  el.innerHTML = `<div class="g-resize" role="separator" aria-orientation="vertical" aria-label="Resize the guide: drag, or use the arrow keys. Double-click to reset." title="Drag to resize · double-click to reset" tabindex="0" aria-valuemin="${GUIDE_MIN}" aria-valuenow="${GUIDE_DEFAULT}"></div><header><b>Guide</b><span class="g-tools"><button class="g-all" data-guide="all" aria-pressed="false">Expand all</button><button class="icon-btn" data-guide="wide" aria-pressed="false" aria-label="Widen the guide (Shift+G)" title="Widen the guide (Shift+G)">⇤</button><button class="icon-btn" data-guide="close" aria-label="Close the guide (g)" title="Close the guide (g)">✕</button></span></header>
     <div class="g-search"><input id="guideSearch" type="search" placeholder="Search the guide…" aria-label="Search the guide" autocomplete="off" spellcheck="false"><span id="guideCount" aria-live="polite"></span></div>
     <div class="g-body">${SECTIONS.map((s, i) => `<details data-g="${s.id}" ${i === 0 ? 'open' : ''}><summary>${esc(s.title)}</summary><div class="g-sec">${s.html}</div></details>`).join('')}
       <p class="g-none" hidden>Nothing in the guide matches that. Try fewer words, or the README on GitHub.</p></div>`;
@@ -231,6 +277,14 @@ export function onGuideEvent(e) {
   if (e.type === 'keydown' && e.key === 'Escape') { if (query) { e.target.value = ''; query = ''; applySearch(); } else closeGuide(); return true; }
   if (e.type === 'click' && e.target.closest('[data-guide="close"]')) { closeGuide(); return true; }
   if (e.type === 'click' && e.target.closest('[data-guide="wide"]')) { toggleGuideWide(); return true; }
+  if (e.type === 'pointerdown' && e.target.closest('.g-resize')) { startDrag(e); return true; }
+  if (e.type === 'dblclick' && e.target.closest('.g-resize')) { setWidth(null); return true; }
+  if (e.type === 'keydown' && e.target.closest('.g-resize') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+    e.preventDefault();
+    const now = width ?? GUIDE_DEFAULT, step = e.shiftKey ? 80 : 24;
+    setWidth({ ArrowLeft: now + step, ArrowRight: now - step, Home: GUIDE_MIN, End: maxGuideWidth() }[e.key]);
+    return true;
+  }
   if (e.type === 'click' && e.target.closest('[data-guide="all"]')) { setAllSections(e.target.closest('[data-guide="all"]').getAttribute('aria-pressed') !== 'true'); return true; }
   if (e.type === 'click' && e.target.closest('summary')) { setTimeout(syncAllButton); return false; }
   return false;

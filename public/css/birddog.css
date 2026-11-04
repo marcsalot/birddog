@@ -505,12 +505,18 @@ body.rail-collapsed .rail .me{justify-content:center;padding:6px 0}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline}
 @media (max-width:760px){.next-step{flex-wrap:wrap}.next-step .ns-txt{flex-basis:calc(100% - 40px)}}
 
-/* ---- Guide: widen and expand all ---------------------------------------- */
-body.guide-open{--guide-base:360px}
-body.guide-open.guide-wide{--guide-base:min(720px,46vw)}
+/* ---- Guide: resizable width and expand all --------------------------------
+   --guide-base is set inline on <body> by guide.js (drag, arrow keys, ⇤ / Shift+G). */
 body.guide-open .app,
-body.rail-collapsed.guide-open .app{grid-template-columns:var(--rail-w) minmax(0,1fr) var(--guide-base)}
-body.guide-open.guide-wide{--guide-w:var(--guide-base)}
+body.rail-collapsed.guide-open .app{grid-template-columns:var(--rail-w) minmax(0,1fr) var(--guide-base,360px)}
+@media (min-width:1200px){body.guide-open{--guide-w:var(--guide-base,360px)}}
+body.guide-resizing,body.guide-resizing *{cursor:col-resize!important;user-select:none}
+body.guide-resizing .app{transition:none}
+.guide{position:relative}
+.g-resize{position:absolute;top:0;bottom:0;left:-4px;width:9px;z-index:5;cursor:col-resize;touch-action:none}
+.g-resize::after{content:'';position:absolute;top:50%;left:3px;width:3px;height:44px;margin-top:-22px;border-radius:2px;background:var(--line);transition:background .15s,height .15s}
+.g-resize:hover::after,.g-resize:focus-visible::after,body.guide-resizing .g-resize::after{background:var(--accent);height:72px;margin-top:-36px}
+.g-resize:focus-visible{outline:none}
 .guide header{gap:8px}
 .guide .g-tools{display:flex;align-items:center;gap:6px}
 .guide .g-tools .icon-btn{width:30px;height:30px;font-size:15px}
@@ -518,17 +524,17 @@ body.guide-open.guide-wide{--guide-w:var(--guide-base)}
 .guide .g-all:hover{border-color:var(--accent);color:var(--text)}
 .guide [data-guide="wide"][aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 body.guide-wide .guide .g-body{font-size:14px;padding:10px 28px 80px}
-body.guide-wide .guide .g-shot img{max-width:640px}
+body.guide-wide .guide .g-shot img{max-width:720px}
 @media (max-width:1199px){
   body.guide-open .app{grid-template-columns:var(--rail-w) minmax(0,1fr)}
-  body.guide-open.guide-wide{--guide-w:0px}
-  body.guide-wide .guide{width:min(96vw,720px)}
+  .guide{position:fixed;width:min(96vw,var(--guide-base,380px))}
 }
 @media (min-width:1060px) and (max-width:1199px){
-  body.rail-collapsed.guide-open .app{grid-template-columns:var(--rail-w) minmax(0,1fr) var(--guide-base)}
-  body.rail-collapsed.guide-open.guide-wide{--guide-w:var(--guide-base)}
+  body.rail-collapsed.guide-open .app{grid-template-columns:var(--rail-w) minmax(0,1fr) var(--guide-base,360px)}
+  body.rail-collapsed.guide-open{--guide-w:var(--guide-base,360px)}
+  body.rail-collapsed.guide-open .guide{position:static;width:auto}
 }
-@media (max-width:760px){body.guide-open .app{grid-template-columns:1fr}}
+@media (max-width:760px){body.guide-open .app{grid-template-columns:1fr}.g-resize{display:none}}
 
 /* ---- Bigger menu icons --------------------------------------------------- */
 .nav button{gap:12px;padding:8px 10px}
