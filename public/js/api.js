@@ -13,6 +13,11 @@ async function call(method, url, body) {
     throw new Error('Birddog server is not reachable. Is it still running?');
   }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    // Login is on and the session ended: go sign in, then come back here.
+    location.assign(`/auth/login?returnTo=${encodeURIComponent(location.pathname)}`);
+    throw new Error('Signing you in again…');
+  }
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
@@ -30,4 +35,10 @@ export const api = {
   setup: () => call('GET', '/api/setup'),
   testSource: (id, settings) => call('POST', `/api/sources/${encodeURIComponent(id)}/test`, settings),
   saveSource: (id, settings) => call('PUT', `/api/sources/${encodeURIComponent(id)}`, settings),
+  me: () => call('GET', '/api/me'),
+  logout: () => call('POST', '/auth/logout', {}),
+  github: () => call('GET', '/api/connections/github'),
+  githubDevice: () => call('POST', '/api/connections/github/device', {}),
+  githubCli: () => call('POST', '/api/connections/github/gh-cli', {}),
+  githubDisconnect: () => call('DELETE', '/api/connections/github', {}),
 };

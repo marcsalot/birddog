@@ -44,6 +44,19 @@ export function defaultConfig() {
     sources: {
       git: { enabled: true, roots: ['~/code'], maxDepth: 3, staleDays: 30 },
     },
+    // Optional single sign-on in front of the dashboard (OpenID Connect).
+    // Off by default: on 127.0.0.1 only you can reach Birddog anyway.
+    auth: {
+      enabled: false,
+      issuer: '',
+      clientId: '',
+      clientSecret: '',
+      scopes: 'openid email profile',
+      allowedEmails: [],
+      allowedDomains: [],
+      publicUrl: '',
+      sessionDays: 7,
+    },
   };
 }
 

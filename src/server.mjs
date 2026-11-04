@@ -1,19 +1,28 @@
-// The local HTTP server: serves the UI from /public and a small JSON API.
-// It binds to 127.0.0.1 only and rejects requests whose Host or Origin is not
-// local, so other websites in your browser cannot read or change your data.
+// The HTTP server: serves the UI from /public and a small JSON API.
+//
+// By default it binds to 127.0.0.1 and rejects requests whose Host or Origin is
+// not local, so other websites in your browser cannot read or change your data.
+// With `auth.enabled`, every page and API call also needs a signed-in session
+// from your OpenID Connect provider, and Birddog may listen on other addresses.
 
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createGithubAuth } from './auth/github.mjs';
+import { AuthError, checkAuthConfig, createOidc, isAllowed } from './auth/oidc.mjs';
+import { createSessions } from './auth/session.mjs';
 import { Collector } from './collector.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
+import { createSecretStore } from './secrets.mjs';
 import { COMING_SOON, SOURCES, validateSource } from './sources/index.mjs';
 import { Triage } from './triage.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const MAX_BODY = 64 * 1024;
+const DAY = 86_400_000;
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -26,6 +35,8 @@ const TYPES = {
 };
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
+const PUBLIC_PATHS = new Set(['/api/health', '/favicon.svg']); // reachable without signing in
 
 export const VERSION = JSON.parse(await fs.readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
 
@@ -43,6 +54,31 @@ function send(res, status, body, headers = {}) {
     ...headers,
   });
   res.end(payload);
+}
+
+function redirect(res, location, headers = {}) {
+  res.writeHead(302, { location, 'cache-control': 'no-store', ...headers });
+  res.end();
+}
+
+const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/** A tiny standalone page for sign-in problems (the app's JS is not loaded here). */
+function authPage(res, status, title, message, { action = 'Try again' } = {}) {
+  res.writeHead(status, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-security-policy': CSP,
+    'x-content-type-options': 'nosniff',
+  });
+  res.end(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Birddog · ${escHtml(title)}</title><link rel="icon" href="/favicon.svg"></head>
+<body style="font:15px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;padding:16px">
+<main style="max-width:440px;text-align:center"><img src="/favicon.svg" alt="" width="48" height="48"><h1 style="font-size:22px;margin:12px 0 6px">${escHtml(title)}</h1><p style="opacity:.75">${escHtml(message)}</p>
+<p><a href="/auth/login" style="display:inline-block;margin-top:8px;padding:8px 16px;border-radius:9px;background:#f5b700;color:#17171a;font-weight:600;text-decoration:none">${escHtml(action)}</a></p></main></body></html>`);
+}
+
+function safeReturnTo(v) {
+  return typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !v.startsWith('/\\') && !v.startsWith('/auth/') ? v : '/';
 }
 
 async function readBody(req) {
@@ -84,14 +120,41 @@ async function serveStatic(req, res, pathname) {
  * @param {Array}  [opts.sources]   source modules (defaults to the built-in ones)
  * @param {string} [opts.cwd]       used to guess scan folders on first run
  * @param {boolean} [opts.autoRefresh=true]
+ * @param {object} [opts.secrets]   secret store (defaults to the OS keychain)
+ * @param {Function} [opts.fetchImpl]  fetch used for OIDC and GitHub (tests swap it)
+ * @param {Function} [opts.cliToken]   how to ask the gh CLI for a token (tests swap it)
  */
-export async function createBirddog({ dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console }) {
+export async function createBirddog({
+  dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console, secrets, fetchImpl = fetch, cliToken,
+}) {
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
   let config = loaded.config;
   const collector = new Collector({ sources, dir, getConfig: () => config, now, log });
   const triage = new Triage({ dir, now });
   await Promise.all([collector.load(), triage.load()]);
+  secrets ??= await createSecretStore({ dir });
+  const github = createGithubAuth({ dir, secrets, getConfig: () => config, fetchImpl, cliToken, now });
+
+  // ---- Single sign-on (optional) ----
+  const auth = config.auth ?? {};
+  const problems = checkAuthConfig(auth);
+  if (problems.length) throw new Error(`Login is enabled in config.json but not set up yet:\n  - ${problems.join('\n  - ')}`);
+  let oidc = null;
+  let sessions = null;
+  const publicHost = auth.enabled && auth.publicUrl ? new URL(auth.publicUrl).host.toLowerCase() : null;
+  if (auth.enabled) {
+    let key = await secrets.get('session-key');
+    if (!key) {
+      key = crypto.randomBytes(48).toString('base64url');
+      await secrets.set('session-key', key);
+    }
+    const clientSecret = process.env.BIRDDOG_OIDC_CLIENT_SECRET || auth.clientSecret || (await secrets.get('oidc-client-secret')) || undefined;
+    sessions = createSessions({ key, ttlMs: (Number(auth.sessionDays) || 7) * DAY, secure: auth.publicUrl?.startsWith('https:'), now });
+    oidc = createOidc({ issuer: auth.issuer, clientId: auth.clientId, clientSecret, scopes: auth.scopes, fetchImpl, now });
+  }
+  const hostAllowed = (host) => LOCAL_HOST.test(host) || (!!publicHost && host.toLowerCase() === publicHost);
+  const baseUrl = (req) => (auth.publicUrl ? auth.publicUrl.replace(/\/+$/, '') : `http://${req.headers.host}`);
 
   const findSource = (id) => {
     const s = sources.find((x) => x.id === id);
@@ -109,10 +172,11 @@ export async function createBirddog({ dir, sources = SOURCES, cwd, now, autoRefr
     return snap;
   }
 
-  function setupPayload() {
+  async function setupPayload() {
     const snap = collector.snapshot();
     return {
       configFile: loaded.file,
+      secretStore: secrets.kind,
       sources: sources.map((s) => {
         const status = snap.sources.find((x) => x.id === s.id);
         return {
@@ -126,6 +190,7 @@ export async function createBirddog({ dir, sources = SOURCES, cwd, now, autoRefr
         };
       }),
       comingSoon: COMING_SOON.filter((c) => !sources.some((s) => s.id === c.id)),
+      connections: { github: await github.status() },
     };
   }
 
@@ -135,8 +200,13 @@ export async function createBirddog({ dir, sources = SOURCES, cwd, now, autoRefr
     return it;
   }
 
+  const asBadRequest = (fn) => async (...args) => {
+    try { return await fn(...args); } catch (e) { throw e instanceof HttpError ? e : new HttpError(400, e.message); }
+  };
+
   const routes = [
     ['GET', /^\/api\/health$/, () => ({ app: 'birddog', version: VERSION })],
+    ['GET', /^\/api\/me$/, (_m, _b, ctx) => ({ authEnabled: !!oidc, user: ctx.user })],
     ['GET', /^\/api\/items$/, () => itemsPayload()],
     ['POST', /^\/api\/refresh$/, async () => itemsPayload(await refresh())],
     ['POST', /^\/api\/items\/([^/]+)\/done$/, async (m) => {
@@ -173,29 +243,76 @@ export async function createBirddog({ dir, sources = SOURCES, cwd, now, autoRefr
       await refresh();
       return setupPayload();
     }],
+    ['GET', /^\/api\/connections\/github$/, () => github.status()],
+    ['POST', /^\/api\/connections\/github\/device$/, asBadRequest(() => github.startDevice())],
+    ['POST', /^\/api\/connections\/github\/gh-cli$/, asBadRequest(() => github.useGhCli())],
+    ['DELETE', /^\/api\/connections\/github$/, () => github.disconnect()],
   ];
+
+  async function handleAuth(req, res, url) {
+    if (url.pathname === '/auth/logout' && req.method === 'POST') {
+      await readBody(req);
+      return send(res, 200, { ok: true }, sessions ? { 'set-cookie': sessions.clear() } : {});
+    }
+    if (req.method !== 'GET') throw new HttpError(405, 'Method not allowed');
+    if (url.pathname === '/auth/signed-out') {
+      return authPage(res, 200, 'Signed out', 'You are signed out of Birddog on this browser.', { action: 'Sign in again' });
+    }
+    if (!oidc) return redirect(res, '/');
+    try {
+      if (url.pathname === '/auth/login') {
+        const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
+        return redirect(res, await oidc.loginUrl({ redirectUri: `${baseUrl(req)}/auth/callback`, returnTo }));
+      }
+      if (url.pathname === '/auth/callback') {
+        const { user, returnTo } = await oidc.callback(Object.fromEntries(url.searchParams));
+        if (!isAllowed(auth, user)) {
+          log.warn?.(`birddog: refused sign-in for ${user.email ?? user.sub} (not in allowedEmails/allowedDomains)`);
+          return authPage(res, 403, 'Not on the list', `You signed in as ${user.email ?? 'an account with no email'}, but that account is not allowed to use this Birddog. Ask its owner to add you to auth.allowedEmails.`);
+        }
+        return redirect(res, safeReturnTo(returnTo), { 'set-cookie': sessions.issue(user) });
+      }
+    } catch (err) {
+      if (err instanceof AuthError) return authPage(res, err.status, 'Sign-in did not work', err.message);
+      throw err;
+    }
+    throw new HttpError(404, 'Not found');
+  }
 
   async function handle(req, res) {
     const host = req.headers.host ?? '';
-    if (!LOCAL_HOST.test(host)) throw new HttpError(403, 'Birddog only answers on localhost');
+    if (!hostAllowed(host)) throw new HttpError(403, 'Birddog only answers on localhost (or auth.publicUrl)');
     const origin = req.headers.origin;
     if (origin && origin !== 'null') {
       let ok = false;
-      try { ok = LOCAL_HOST.test(new URL(origin).host) && new URL(origin).host === host; } catch { /* bad origin */ }
+      try { const o = new URL(origin).host; ok = o.toLowerCase() === host.toLowerCase() && hostAllowed(o); } catch { /* bad origin */ }
       if (!ok) throw new HttpError(403, 'Cross-origin requests are not allowed');
     }
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/auth/')) return handleAuth(req, res, url);
+
+    let user = null;
+    if (oidc) {
+      user = sessions.read(req.headers.cookie);
+      if (user && !isAllowed(auth, user)) user = null; // removed from the allow list since signing in
+      if (!user && !PUBLIC_PATHS.has(url.pathname)) {
+        if (!url.pathname.startsWith('/api/') && (req.method === 'GET' || req.method === 'HEAD')) {
+          return redirect(res, `/auth/login?returnTo=${encodeURIComponent(url.pathname + url.search)}`);
+        }
+        throw new HttpError(401, 'Sign in required');
+      }
+    }
+
     if (!url.pathname.startsWith('/api/')) {
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
       return serveStatic(req, res, url.pathname);
     }
     for (const [method, re, fn] of routes) {
       const m = re.exec(url.pathname);
-      if (!m) continue;
-      if (req.method !== method) continue;
+      if (!m || req.method !== method) continue;
       const params = m.map((x, i) => (i ? decodeURIComponent(x) : x));
       const body = method === 'GET' ? {} : await readBody(req);
-      return send(res, 200, await fn(params, body));
+      return send(res, 200, await fn(params, body, { user }));
     }
     throw new HttpError(404, 'Unknown API route');
   }
@@ -204,7 +321,7 @@ export async function createBirddog({ dir, sources = SOURCES, cwd, now, autoRefr
     handle(req, res).catch((err) => {
       const status = err.status ?? 500;
       if (status === 500) log.error?.('birddog:', err);
-      if (!res.headersSent) send(res, status, { error: err.message });
+      if (!res.headersSent) send(res, status, { error: status === 500 ? 'Something went wrong. Check the terminal for details.' : err.message });
       else res.end();
     });
   });
@@ -215,12 +332,18 @@ export async function createBirddog({ dir, sources = SOURCES, cwd, now, autoRefr
     server,
     collector,
     triage,
+    github,
+    secrets,
     get config() { return config; },
     configFile: loaded.file,
     firstRun: loaded.created,
+    authEnabled: !!oidc,
     refresh,
-    /** Listen on 127.0.0.1. Resolves with the bound port. */
-    start(port = 0) {
+    /** Listen (127.0.0.1 by default). Resolves with the bound port. */
+    start(port = 0, host = '127.0.0.1') {
+      if (!LOOPBACK.has(host) && !oidc) {
+        return Promise.reject(new Error(`Refusing to listen on ${host} without login. Turn on "auth" in config.json first (see README), or drop --host.`));
+      }
       return new Promise((resolve, reject) => {
         const onError = (err) => { server.off('listening', onListen); reject(err); };
         const onListen = () => {
@@ -235,7 +358,7 @@ export async function createBirddog({ dir, sources = SOURCES, cwd, now, autoRefr
         };
         server.once('error', onError);
         server.once('listening', onListen);
-        server.listen(port, '127.0.0.1');
+        server.listen(port, host);
       });
     },
     async close() {

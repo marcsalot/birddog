@@ -405,6 +405,7 @@ function commands() {
     { label: 'Mode: follow system', run: () => setMode('system') },
     { label: 'Connect a source…', run: openSetup },
     { label: 'Keyboard shortcuts', k: '?', run: () => openOverlay('#helpScrim') },
+    ...(st.me?.authEnabled ? [{ label: `Sign out (${st.me.user?.email ?? ''})`, run: signOut }] : []),
     { sec: 'Filter by source' },
     ...st.sources.map((s) => ({ label: `Only show ${s.name}`, run: () => setHidden(st.sources.filter((x) => x.id !== s.id).map((x) => x.id)) })),
     { label: 'Show all sources', run: () => setHidden([]) },
@@ -470,10 +471,75 @@ function cardHTML(src) {
     <div class="msg">${esc(src.description)}</div>${body}</div>`;
 }
 
+/** GitHub items arrive in v0.2, but you can sign in now so they show up right away. */
+function githubCardHTML(c) {
+  const info = srcInfo('github');
+  const conn = st.setup.connections?.github ?? {};
+  const ui = st.cards.github ?? {};
+  const dev = conn.device;
+  const top = (state, cls = '') => `<div class="card ${cls}"><div class="top"><div class="badge ${info.cls}" style="--c:${info.c}">${info.short}</div><span class="name">${esc(c.name)}</span><span class="state">${state}</span></div>`;
+  if (conn.connected) {
+    const how = conn.method === 'gh-cli' ? 'using your <code>gh</code> login (Birddog stores no token)' : `token kept in ${esc(st.setup.secretStore)}`;
+    return `${top('✓ Signed in', 'ok')}<div class="msg">Signed in as <b>@${esc(conn.login)}</b>, ${how}. GitHub items arrive in the next release.</div>
+      <div class="row-btns"><button class="btn" data-gh="disconnect">Disconnect</button></div></div>`;
+  }
+  if (dev?.status === 'waiting') {
+    return `${top('Waiting for GitHub…')}<div class="msg">Enter this code on GitHub:</div><div class="code">${esc(dev.userCode)}</div>
+      <div class="row-btns"><button class="btn primary" data-gh="open">Copy code &amp; open GitHub ↗</button><button class="btn" data-gh="disconnect">Cancel</button></div>
+      <div class="msg">This card updates by itself once you approve.</div></div>`;
+  }
+  const err = ui.msg ?? (dev && dev.status !== 'done' ? dev.error : null);
+  const device = conn.deviceFlowAvailable;
+  return `${top(ui.busy ? 'Working…' : 'Not signed in', err ? 'err' : 'soon')}<div class="msg">${esc(c.description)} Sign in now and they show up as soon as the source ships.</div>
+    ${err ? `<div class="msg bad">${esc(err)}</div>` : ''}
+    <div class="row-btns">${device ? `<button class="btn primary" data-gh="device" ${ui.busy ? 'disabled' : ''}>Sign in with GitHub</button>` : ''}<button class="btn ${device ? '' : 'primary'}" data-gh="cli" ${ui.busy ? 'disabled' : ''}>Use my gh CLI login</button></div>
+    ${device ? '' : '<div class="msg">Prefer signing in through the browser? Add an OAuth App client ID as <code>sources.github.clientId</code> (see README).</div>'}</div>`;
+}
+
+let ghTimer = null;
+function watchGithub() {
+  clearTimeout(ghTimer);
+  ghTimer = setTimeout(async () => {
+    if (!$('#setupScrim').classList.contains('open')) return;
+    try {
+      const conn = await api.github();
+      st.setup.connections.github = conn;
+      renderCards();
+      if (conn.device?.status === 'waiting') watchGithub();
+      else if (conn.connected) toast(`✓ Signed in to GitHub as @${esc(conn.login)}`);
+    } catch { watchGithub(); }
+  }, 2000);
+}
+
+async function githubAction(action) {
+  const conn = st.setup.connections.github;
+  if (action === 'open') {
+    const uri = conn.device?.verificationUri;
+    copy(conn.device?.userCode, 'code');
+    if (/^https:\/\//.test(uri ?? '')) window.open(uri, '_blank', 'noopener');
+    return;
+  }
+  st.cards.github = { busy: true };
+  renderCards();
+  try {
+    if (action === 'device') { await api.githubDevice(); st.setup.connections.github = await api.github(); watchGithub(); }
+    if (action === 'cli') {
+      st.setup.connections.github = await api.githubCli();
+      toast(`✓ Signed in to GitHub as @${esc(st.setup.connections.github.login)}`);
+    }
+    if (action === 'disconnect') st.setup.connections.github = await api.githubDisconnect();
+    st.cards.github = {};
+  } catch (err) {
+    st.cards.github = { msg: err.message };
+  }
+  renderCards();
+}
+
 function renderCards() {
   const s = st.setup;
   if (!s) { $('#cards').innerHTML = '<div class="card wide"><div class="msg">Loading…</div></div>'; return; }
   const soon = s.comingSoon.map((c) => {
+    if (c.id === 'github') return githubCardHTML(c);
     const info = srcInfo(c.id);
     return `<div class="card soon"><div class="top"><div class="badge ${info.cls ?? ''}" style="--c:${info.c}">${info.short}</div><span class="name">${esc(c.name)}</span><span class="state">Coming soon</span></div><div class="msg">${esc(c.description)}</div></div>`;
   });
@@ -536,7 +602,7 @@ async function saveCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-close],[data-setup],[data-copy],#clearQ');
+  const t = e.target.closest('[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.view) return setView(d.view);
@@ -560,6 +626,8 @@ document.addEventListener('click', (e) => {
   }
   if (d.sn) return snooze(byId($('#snooze').dataset.id), choices[+d.sn]);
   if (d.p) return runP(+d.p);
+  if (d.gh) return githubAction(d.gh);
+  if ('logout' in d) return signOut();
   if (d.test) return testCard(d.test);
   if (d.save) return saveCard(d.save);
   if (d.edit) { st.cards[d.edit] = { editing: true }; renderCards(); return document.querySelector(`[data-in="${CSS.escape(d.edit)}"]`)?.focus(); }
@@ -632,11 +700,29 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ---------------------------------------------------------------------------
+// Signed-in user (only when login is turned on)
+
+function renderMe(me) {
+  st.me = me;
+  const el = $('#me');
+  if (!me?.authEnabled || !me.user) { el.hidden = true; return; }
+  const label = me.user.email ?? me.user.name ?? 'signed in';
+  el.innerHTML = `<span class="avatar" aria-hidden="true">${esc(label[0].toUpperCase())}</span><span class="who" title="${esc(label)}">${esc(label)}</span><button data-logout title="Sign out">Sign out</button>`;
+  el.hidden = false;
+}
+
+async function signOut() {
+  try { await api.logout(); } catch { /* signing out anyway */ }
+  location.assign('/auth/signed-out');
+}
+
+// ---------------------------------------------------------------------------
 // Boot
 
 async function boot() {
   let prefs = {};
   try { prefs = await api.prefs(); } catch { /* use defaults */ }
+  api.me().then(renderMe).catch(() => {});
   initAppearance({ prefs, save: savePrefs, changed: () => { if (appearOpen()) renderAppear(); } });
   st.hidden = new Set(prefs.hiddenSources ?? []);
   render();

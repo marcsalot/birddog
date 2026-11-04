@@ -4,6 +4,7 @@
 import { execFile } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { configDir, DEFAULT_PORT, tildify } from '../src/config.mjs';
+import { createSecretStore } from '../src/secrets.mjs';
 import { createBirddog, VERSION } from '../src/server.mjs';
 
 const HELP = `
@@ -14,14 +15,20 @@ const HELP = `
     birddog --open          start it and open your browser
     birddog --port 5000     use another port
 
+    birddog secret set <name>      store a secret in your OS keychain (value read from stdin)
+    birddog secret delete <name>   remove it
+
   Options
     -o, --open              open the dashboard in your browser
     -p, --port <number>     port to listen on (default ${DEFAULT_PORT}, or "port" in config.json)
+        --host <address>    address to listen on (default 127.0.0.1; anything else needs login turned on)
     -v, --version           print the version
     -h, --help              show this help
 
   Files live in ${tildify(configDir())} (set BIRDDOG_HOME to change it).
 `;
+
+const SECRET_NAMES = new Set(['oidc-client-secret']);
 
 function openBrowser(url) {
   const [cmd, args] = process.platform === 'darwin' ? ['open', [url]]
@@ -39,13 +46,43 @@ async function isBirddog(port) {
   } catch { return false; }
 }
 
+async function readStdin() {
+  const chunks = [];
+  for await (const c of process.stdin) chunks.push(c);
+  return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+async function secretCommand([action, name]) {
+  if (!['set', 'delete'].includes(action) || !SECRET_NAMES.has(name)) {
+    console.error(`birddog: usage: birddog secret set|delete ${[...SECRET_NAMES].join('|')}`);
+    process.exit(2);
+  }
+  const store = await createSecretStore({ dir: configDir() });
+  if (action === 'delete') {
+    await store.delete(name);
+    console.log(`  Removed ${name} from ${store.kind}.`);
+    return;
+  }
+  if (process.stdin.isTTY) {
+    console.error(`  Pipe the value in so it never lands in your shell history, e.g.\n\n    pbpaste | birddog secret set ${name}\n`);
+    process.exit(2);
+  }
+  const value = await readStdin();
+  if (!value) { console.error('birddog: no value on stdin'); process.exit(2); }
+  await store.set(name, value);
+  console.log(`  Saved ${name} to ${store.kind}.`);
+}
+
 async function main() {
   let args;
+  let positionals;
   try {
-    ({ values: args } = parseArgs({
+    ({ values: args, positionals } = parseArgs({
+      allowPositionals: true,
       options: {
         open: { type: 'boolean', short: 'o' },
         port: { type: 'string', short: 'p' },
+        host: { type: 'string' },
         version: { type: 'boolean', short: 'v' },
         help: { type: 'boolean', short: 'h' },
       },
@@ -56,6 +93,11 @@ async function main() {
   }
   if (args.help) { console.log(HELP); return; }
   if (args.version) { console.log(VERSION); return; }
+  if (positionals[0] === 'secret') return secretCommand(positionals.slice(1));
+  if (positionals.length) {
+    console.error(`birddog: unknown command "${positionals[0]}"\n${HELP}`);
+    process.exit(2);
+  }
 
   let explicitPort = null;
   if (args.port !== undefined) {
@@ -65,19 +107,26 @@ async function main() {
       process.exit(2);
     }
   }
+  const host = args.host ?? '127.0.0.1';
 
   const dir = configDir();
-  const app = await createBirddog({ dir, cwd: process.cwd() });
+  let app;
+  try {
+    app = await createBirddog({ dir, cwd: process.cwd() });
+  } catch (err) {
+    console.error(`birddog: ${err.message}`);
+    process.exit(1);
+  }
   const wanted = explicitPort ?? Number(app.config.port ?? DEFAULT_PORT);
 
   let port;
   for (let attempt = 0; attempt < 10; attempt++) {
     const tryPort = wanted === 0 ? 0 : wanted + attempt;
     try {
-      port = await app.start(tryPort);
+      port = await app.start(tryPort, host);
       break;
     } catch (err) {
-      if (err.code !== 'EADDRINUSE') throw err;
+      if (err.code !== 'EADDRINUSE') { console.error(`birddog: ${err.message}`); process.exit(1); }
       if (await isBirddog(tryPort)) {
         const url = `http://127.0.0.1:${tryPort}`;
         console.log(`\n  Birddog is already running at ${url}\n`);
@@ -95,13 +144,17 @@ async function main() {
     process.exit(1);
   }
 
-  const url = `http://127.0.0.1:${port}`;
+  const auth = app.config.auth ?? {};
+  const url = auth.enabled && auth.publicUrl ? auth.publicUrl.replace(/\/+$/, '') : `http://127.0.0.1:${port}`;
   const roots = app.config.sources?.git?.roots ?? [];
+  const who = [...(auth.allowedEmails ?? []), ...(auth.allowedDomains ?? []).map((d) => `@${d.replace(/^@/, '')}`)].join(', ');
   console.log(`
-  🐾 Birddog ${VERSION} is pointing at ${url}
+  🐾 Birddog ${VERSION} is pointing at ${url}${host !== '127.0.0.1' ? `  (listening on ${host}:${port})` : ''}
 
      config   ${tildify(app.configFile)}${app.firstRun ? '  (created just now)' : ''}
      scanning ${roots.join(', ') || 'nothing yet'}
+     login    ${app.authEnabled ? `on · ${new URL(auth.issuer).host} · allowed: ${who}` : 'off (only this machine can reach Birddog)'}
+     secrets  ${app.secrets.kind}
 
   Press Ctrl+C to stop.
 `);

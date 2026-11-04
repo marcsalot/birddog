@@ -58,6 +58,11 @@ aside{border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-dir
 .sidebar-foot{margin-top:auto;display:flex;flex-direction:column;gap:6px;padding:0 6px;font-size:12px;color:var(--faint)}
 .sidebar-foot button{border:1px dashed var(--line);background:none;border-radius:8px;padding:7px;color:var(--muted)}
 .sidebar-foot button:hover{border-color:var(--accent);color:var(--accent)}
+.me{display:flex;align-items:center;gap:8px;padding:6px 2px;color:var(--muted);min-width:0}
+.me .who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me .avatar{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--brand-bg);color:var(--on-brand);font-weight:700;font-size:11px;flex:none}
+.sidebar-foot .me button{border:0;padding:2px 4px;font-size:12px}
+.code{font:700 22px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;padding:10px 12px;border-radius:8px;background:var(--panel-2);text-align:center;color:var(--text)}
 
 /* Main */
 main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
@@ -227,5 +232,7 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
   .appear-btn span{display:none}
   .cards{grid-template-columns:1fr}
   .updated{display:none}
+  .row .actions{display:none!important}
+  .row .age{display:inline!important}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

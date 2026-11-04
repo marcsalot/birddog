@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { createSecretStore } from '../src/secrets.mjs';
 import { createBirddog } from '../src/server.mjs';
 import { fakeItem, tmpDir } from './helpers.mjs';
 
@@ -55,7 +56,7 @@ describe('HTTP API', () => {
   before(async () => {
     dir = await tmpDir();
     src = fakeSource();
-    app = await createBirddog({ dir, sources: [src], autoRefresh: false, log: quiet });
+    app = await createBirddog({ dir, sources: [src], autoRefresh: false, log: quiet, secrets: await createSecretStore({ dir, backend: 'file' }) });
     port = await app.start(0);
     await app.refresh();
   });
@@ -106,7 +107,7 @@ describe('HTTP API', () => {
   it('persists done/snooze and prefs across a restart', async () => {
     await api('/api/prefs', { method: 'PUT', ...json({ palette: 'violet', mode: 'dark' }) });
     await app.close();
-    app = await createBirddog({ dir, sources: [src], autoRefresh: false, log: quiet });
+    app = await createBirddog({ dir, sources: [src], autoRefresh: false, log: quiet, secrets: await createSecretStore({ dir, backend: 'file' }) });
     port = await app.start(0);
     const items = (await api('/api/items')).json.items;
     assert.equal(items.find((i) => i.id === 'fake:a').status, 'done');
