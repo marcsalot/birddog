@@ -10,10 +10,10 @@
 - **Explains itself.** Every item has a "why" line and names the rule that put it there. No mystery scores.
 - **Keyboard-first.** `j`/`k` to move, `x` done, `s` snooze, `z` undo, `⌘K` for everything else.
 - **Zero runtime dependencies.** Node 22+ and `git`. That's it.
-- **Read-only.** Birddog looks at git, GitHub and Jira. It never pushes, comments, transitions or marks anything as read.
+- **Read-only.** Birddog looks at git, GitHub, Jira and your calendar. It never pushes, comments, transitions, RSVPs or marks anything as read.
 - **Optional SSO.** Put Birddog behind your Google, Okta or Entra login when you run it somewhere shared.
 
-> **Status: v0.2, milestone 2.** Local git, GitHub and Jira Cloud sources are live. A Calendar source is on the way (it shows as "coming soon" in setup).
+> **Status: v0.3, milestone 3.** Local git, GitHub, Jira Cloud and Calendar sources are live, with a first-run setup wizard. Next up: a read-only MCP server and the npm release.
 
 ## Quick start
 
@@ -28,14 +28,14 @@ git clone <this repo> birddog && cd birddog
 node bin/birddog.mjs --open
 ```
 
-On first run Birddog looks for your code in the usual places (`~/code`, `~/src`, `~/projects`, `~/Developer`, …) and falls back to the folder you ran it from. Change the folders any time in **Connect a source** (or press `⌘K` → "Connect a source").
+On first run a **setup wizard** walks you through each source: your code folders (Birddog guesses `~/code`, `~/src`, `~/projects`, `~/Developer`, … or the folder you ran it from), GitHub, Jira and your calendar. Each step runs that source's test as soon as you reach it, so you see straight away whether it works. Skip whatever you don't use; skipping GitHub switches it off so it doesn't sit there as "stale". Change anything later in **Connect a source**, or run the wizard again with `⌘K` → "Run the setup wizard".
 
 ```
 birddog                 start on http://127.0.0.1:4747
 birddog --open          start and open your browser
 birddog --port 5000     use another port
 birddog --host 0.0.0.0  listen beyond localhost (only with login turned on)
-birddog secret set oidc-client-secret   store a secret in your keychain (reads stdin)
+birddog secret set jira-token   store a secret in your keychain (reads stdin; also cal-url, oidc-client-secret)
 birddog --help
 ```
 
@@ -102,16 +102,54 @@ Birddog tests the settings before it saves anything. The token goes to your OS k
 
 Why an API token and not Atlassian OAuth? OAuth would mean registering your own app in the Atlassian developer console and keeping a client secret, which is a lot more setup than one token for a tool that runs on your machine.
 
+## What it finds (Calendar)
+
+Your meetings from any iCalendar feed or `.ics` file:
+
+| Example "why" | Urgency |
+|---|---|
+| Starts **in 10 minutes** · Google Meet | Now |
+| **Happening now** · started 5 minutes ago, ends at 10:30 | Now |
+| Starts at **14:00** (in 3 hours) · Room 4 | Today |
+| **All day** today | Later |
+| Tomorrow at **09:30** · Zoom | Later |
+
+Open the item (`o`) to join: Birddog picks the Zoom, Meet, Teams or Webex link out of the event. Finished meetings disappear; cancelled ones never show up. Add your email in setup and meetings you declined are hidden too.
+
+### Connect a calendar
+
+Paste the private iCal address of your calendar into **Connect a source** → **Calendar**, then **Test & connect**:
+
+- **Google Calendar:** Settings → your calendar → Integrate calendar → *Secret address in iCal format*.
+- **Outlook / Microsoft 365:** Settings → Calendar → Shared calendars → Publish a calendar → the *ICS* link.
+- **iCloud:** share a calendar as a *Public Calendar* and copy the link (`webcal://` links are fine).
+
+That link works like a password (anyone who has it can read your calendar), so Birddog keeps it in your OS keychain as `cal-url`, never in config.json, and never shows it in the UI, the API or error messages (only its host name). You can also point at a local `.ics` file instead, or as well.
+
+The reader is built in (no dependencies) and handles what real feeds contain: folded lines and escapes, UTC, `TZID` and floating times, Windows zone names from Outlook, all-day and multi-day events, `DURATION`, recurring events (`RRULE` with `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, `INTERVAL`, `COUNT`, `UNTIL`, `BYDAY` such as `2TU` or `-1FR`, `BYMONTHDAY`, `BYMONTH`), `EXDATE`, `RDATE`, and single instances that were moved or cancelled (`RECURRENCE-ID`). Recurring events keep their wall-clock time across daylight saving changes. A zone it doesn't know falls back to the zone's standard offset, with a warning in setup. Not supported: `BYSETPOS`, `HOURLY`/`MINUTELY` rules and `BYWEEKNO` (such events show their first occurrence only).
+
+## When a source breaks
+
+Birddog never empties your inbox because one source failed. If GitHub is down, your token expired or a calendar link moved:
+
+- The source's last good items stay in the list, each marked **⚠ stale since 10:48**.
+- A bar above the list names the source, says how old its data is, shows the error, and has **Retry** (try now) and **Fix** (open setup).
+- The sidebar marks the source **! stale**; hover it for the next automatic try.
+- Automatic refreshes back off for a source that keeps failing: 2, 4, 8, 16, 32 minutes, then hourly. Refreshing by hand (`r`) or pressing **Retry** always tries right away. The other sources keep refreshing on schedule.
+- The last good data is kept in `cache.json`, so it survives a restart.
+
 ## How ranking works
 
 Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom and the first match wins. Order also breaks ties inside a group: people waiting on you come first, then deadlines, then local git hygiene.
 
 | Source | Rule | Urgency |
 |---|---|---|
+| Calendar | Meeting in progress or starting within 15 minutes | **Now** |
 | GitHub | Review requested of you over a day ago | **Now** |
 | GitHub | Assigned issue in a milestone that is past due | **Now** |
 | Jira | Ticket past its due date | **Now** |
 | Jira | Sprint ends within a day and the ticket is not done | **Now** |
+| Calendar | Meeting later today | Today |
 | GitHub | Fresh review request for you | Today |
 | GitHub | Your PR has changes requested | Today |
 | GitHub | Your PR has failing checks | Today |
@@ -123,6 +161,8 @@ Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom a
 | Jira | Ticket due within 3 days | Today |
 | Jira | Sprint ends within 3 days and the ticket is not done | Today |
 | Jira | High, Highest, Critical or Blocker priority | Today |
+| Calendar | All-day event today | Later |
+| Calendar | Meeting tomorrow | Later |
 | GitHub | Review requested of your team, or on a draft | Later |
 | GitHub | Your draft PR has failing checks, conflicts or change requests | Later |
 | GitHub | Older unread @mention | Later |
@@ -224,7 +264,14 @@ How it behaves:
 
 ## Secrets
 
-Tokens and keys go to the **macOS Keychain**, or **Secret Service** on Linux (via `secret-tool`), under the service name `birddog`. Elsewhere they fall back to `secrets.json` in the config folder with mode 600. The startup banner says which one is in use. Force one with `BIRDDOG_SECRETS=keychain|secret-service|file`.
+Every secret Birddog holds (the GitHub token from device sign-in, the Jira API token, your calendar's iCal link, the login session key and the OIDC client secret) goes to the **macOS Keychain**, or **Secret Service** on Linux (via `secret-tool`), under the service name `birddog`:
+
+- **Never in config files.** Setup sends secrets straight to the keychain. If you type one into config.json by hand (say `sources.jira.token`), Birddog moves it into the keychain on the next start and removes it from the file.
+- **Never in API responses.** `/api/setup` only says *whether* a secret is saved. Settings whose names look like credentials (`token`, `secret`, `password`, `apiKey`, …) are never sent to the browser.
+- **Any value works.** Values go to the `security` tool over stdin, hex-encoded, so they never appear in `ps` and no character can break the command.
+- **No keychain?** On other systems, or Linux without `secret-tool` (install `libsecret-tools` and a keyring such as GNOME Keyring), Birddog falls back to `secrets.json` in the config folder, readable only by you (mode 600) but **not encrypted**. The startup banner and the setup screen say so in plain words.
+
+Force a backend with `BIRDDOG_SECRETS=keychain|secret-service|file`. Store or remove one by hand with `birddog secret set|delete <name>` (`jira-token`, `cal-url`, `oidc-client-secret`), piping the value in.
 
 ## Configuration
 
@@ -237,7 +284,8 @@ Tokens and keys go to the **macOS Keychain**, or **Secret Service** on Linux (vi
   "sources": {
     "git": { "enabled": true, "roots": ["~/code"], "maxDepth": 3, "staleDays": 30 },
     "github": { "clientId": "Ov23li…" },
-    "jira": { "enabled": true, "site": "https://acme.atlassian.net", "email": "you@acme.com" }
+    "jira": { "enabled": true, "site": "https://acme.atlassian.net", "email": "you@acme.com" },
+    "cal": { "enabled": true, "file": "", "email": "you@acme.com" }
   }
 }
 ```
@@ -288,11 +336,12 @@ Optionally export:
 - `description`: a sentence for setup.
 - `normalizeSettings(input)`: validates what the setup screen may change and returns the config patch (throw to reject).
 - `secretFields`: setup fields that are secrets, e.g. `{ token: 'weather-token' }`. Birddog stores them in the keychain under that name, strips them before `normalizeSettings` sees the form, and never writes them to config.json. `test()` gets the unsaved draft through `ctx.secret()`, so "Test" works before "Save". A blank field keeps the saved secret.
-- `enabledByDefault = false`: keep the source off until the user saves its settings (Jira does this).
+- `validateSecrets(values)`: check or clean secret values (keyed by secret name) before they are tested or stored; throw to reject. Calendar uses it to turn `webcal://` into `https://`.
+- `enabledByDefault = false`: keep the source off until the user saves its settings (Jira and Calendar do this).
 
 The rules of the road:
 
-- **Throw when you can't collect.** Birddog keeps your last good items, marks them stale with a timestamp, and shows the error with a "Fix in setup" link. One broken source never empties the inbox.
+- **Throw when you can't collect.** Birddog keeps your last good items, marks them stale with a timestamp, shows the error with **Retry** and **Fix** buttons, and backs off (see [When a source breaks](#when-a-source-breaks)). One broken source never empties the inbox.
 - **Items are validated.** A bad urgency or a non-http URL fails the run instead of rendering junk.
 - **Keep `why` short and specific.** It is the most important line in the app. `**bold**` is the only markup.
 - **Rank with rules** from `src/rules.mjs`, so the drawer can say which rule fired.
@@ -315,6 +364,8 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `POST` | `/api/sources/:id/test` | try settings without saving |
 | `PUT` | `/api/sources/:id` | save settings (secrets go to the keychain), switch on and rescan |
 | `DELETE` | `/api/sources/:id` | disconnect: delete its secrets and switch it off |
+| `POST` | `/api/sources/:id/retry` | refresh just this source, now |
+| `PUT` | `/api/sources/:id/enabled` | `{ "enabled": true \| false }`: switch a source on or off, keeping its settings |
 | `GET` | `/api/me` | whether login is on, and who is signed in |
 | `GET` / `DELETE` | `/api/connections/github` | GitHub sign-in status / disconnect |
 | `POST` | `/api/connections/github/device` | start "Sign in with GitHub" |
@@ -348,7 +399,10 @@ src/auth/github.mjs    GitHub device flow and gh CLI sign-in
 src/sources/git.mjs    local git source
 src/sources/github.mjs GitHub source (review requests, your PRs, mentions, issues)
 src/sources/jira.mjs   Jira Cloud source (assigned tickets, blocked work, deadlines)
-src/sources/http.mjs   GET-only JSON helper shared by the web sources
+src/sources/cal.mjs    Calendar source (meetings from an iCal link or .ics file)
+src/sources/ical.mjs   iCalendar reader: parsing, time zones, recurring events
+src/sources/http.mjs   GET-only helpers shared by the web sources
+test/fixtures/         sample Google- and Outlook-style .ics files
 public/                the UI: plain HTML, CSS and ES modules, no build step
 test/                  node:test suites
 ```
@@ -357,7 +411,7 @@ test/                  node:test suites
 
 1. ✅ Skeleton, local git source, real UI, optional SSO, GitHub sign-in, OS keychain secrets
 2. ✅ GitHub and Jira Cloud sources
-3. Setup wizard for the remaining sources, calendar (iCal) source
+3. ✅ Setup wizard, calendar (iCal) source, hardened keychain secrets, stale-source retry and backoff
 4. Read-only MCP server so your AI tools can ask "what needs me?", demo GIF, npm release
 
 ## License

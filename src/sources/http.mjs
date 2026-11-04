@@ -30,6 +30,21 @@ export async function getJson(fetchImpl, url, { headers = {}, label = new URL(ur
   return { body, headers: res.headers };
 }
 
+/** GET a text document (e.g. an .ics feed), up to `maxBytes`. */
+export async function getText(fetchImpl, url, { headers = {}, label = new URL(url).host, maxBytes = 10 * 1024 * 1024 } = {}) {
+  let res;
+  try {
+    res = await fetchImpl(url, { method: 'GET', headers, redirect: 'follow', signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (err) {
+    const why = err.name === 'TimeoutError' ? `did not answer within ${TIMEOUT_MS / 1000}s` : 'is not reachable (are you offline?)';
+    throw new HttpError(`${label} ${why}`, { status: 0 });
+  }
+  if (!res.ok) throw new HttpError(`${label} returned HTTP ${res.status}`, { status: res.status, headers: res.headers });
+  const text = await res.text();
+  if (text.length > maxBytes) throw new HttpError(`${label} sent more than ${Math.round(maxBytes / 1048576)} MB`, { status: res.status });
+  return text;
+}
+
 /** The URL of rel="last" (or another rel) in a Link header, if any. */
 export function linkRel(link, rel = 'last') {
   if (!link) return null;

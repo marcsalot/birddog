@@ -1,16 +1,15 @@
 // Source registry. To add a source, write a module with the plugin interface
 // (see README "Writing a source") and add it to SOURCES.
 
+import * as cal from './cal.mjs';
 import * as git from './git.mjs';
 import * as github from './github.mjs';
 import * as jira from './jira.mjs';
 
-export const SOURCES = [git, github, jira];
+export const SOURCES = [git, github, jira, cal];
 
 /** Sources that appear in setup but are not built yet. */
-export const COMING_SOON = [
-  { id: 'cal', name: 'Calendar', description: 'Upcoming meetings from any iCal link, so nothing sneaks up on you.' },
-];
+export const COMING_SOON = [];
 
 /** Is this source switched on? Sources are on unless config says otherwise or they opt in (enabledByDefault: false). */
 export function isEnabled(src, config) {

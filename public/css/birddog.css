@@ -112,6 +112,11 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .stale{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--warn);font-weight:600}
 .woke{color:var(--accent);font-weight:600}
 
+.stale-bar{display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--warn) 9%,var(--panel));font-size:13px}
+.stale-bar .icon{color:var(--warn);font-size:16px}
+.stale-bar .txt{flex:1;min-width:0}
+.stale-bar small{color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stale-badge{display:inline-block;padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn);font-weight:600;font-size:12px}
 .empty{text-align:center;padding:70px 20px;color:var(--muted)}
 .empty .big{font-size:44px;margin-bottom:8px}
 .empty h2{margin:0 0 6px;color:var(--text);letter-spacing:-.01em}
@@ -196,6 +201,21 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .card .msg.bad{color:var(--now)}
 .card .row-btns{display:flex;gap:8px;flex-wrap:wrap}
 .card .btn{padding:6px 12px;font-size:13px}
+.wiz-dots{display:flex;gap:6px;margin-bottom:12px}
+.wiz-dots .dot{width:22px;height:4px;border-radius:2px;background:var(--line)}
+.wiz-dots .dot.past{background:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.wiz-dots .dot.on{background:var(--accent)}
+.wiz-list{gap:12px}
+.wiz-row{display:flex;align-items:center;gap:12px}
+.wiz-state{margin-left:auto;font-weight:700;color:var(--muted)}
+.wiz-state.ok{color:var(--ok)}
+.wiz-state.warn{color:var(--warn)}
+.card.warnbox{border-color:color-mix(in srgb,var(--warn) 50%,var(--line));background:color-mix(in srgb,var(--warn) 8%,var(--panel))}
+.card.warnbox .msg{color:var(--text)}
+.card details.help{font-size:12px;color:var(--muted)}
+.card details.help summary{cursor:pointer;color:var(--accent);font-weight:600}
+.card details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:4px}
+.setup header p kbd{font-size:11px}
 .setup footer{display:flex;align-items:center;padding:14px 24px 20px;gap:10px}
 .setup footer .progress{color:var(--muted);font-size:13px}
 

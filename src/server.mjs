@@ -134,10 +134,40 @@ export async function createBirddog({
   const loaded = await loadConfig(dir, { cwd });
   let config = loaded.config;
   secrets ??= await createSecretStore({ dir });
+
+  // Secrets never live in config.json. If one was typed in by hand (say sources.jira.token),
+  // move it into the secret store and take it out of the file.
+  {
+    let moved = false;
+    const next = { ...config, sources: { ...config.sources } };
+    for (const src of sources) {
+      const cfg = next.sources[src.id];
+      if (!cfg) continue;
+      for (const [field, secretName] of Object.entries(src.secretFields ?? {})) {
+        if (typeof cfg[field] !== 'string' || !cfg[field].trim()) continue;
+        await secrets.set(secretName, cfg[field].trim());
+        const { [field]: _gone, ...rest } = next.sources[src.id];
+        next.sources[src.id] = rest;
+        moved = true;
+        log.warn?.(`birddog: moved sources.${src.id}.${field} from config.json into ${secrets.kind}`);
+      }
+    }
+    if (moved) { config = next; await saveConfig(dir, config); }
+    if (config.auth?.clientSecret && !loaded.authFile) {
+      log.warn?.('birddog: auth.clientSecret is in config.json. Move it to your keychain with "birddog secret set oidc-client-secret".');
+    }
+  }
   let refresh; // defined below; GitHub sign-in changes trigger a rescan
   const github = createGithubAuth({
     dir, secrets, getConfig: () => config, fetchImpl, cliToken, now,
-    onChange: () => { refresh?.().catch(() => {}); },
+    onChange: async () => {
+      // Signing in to GitHub switches the source back on if setup had turned it off.
+      if (config.sources?.github?.enabled === false && (await github.status().catch(() => ({}))).connected) {
+        config = { ...config, sources: { ...config.sources, github: { ...config.sources.github, enabled: true } } };
+        await saveConfig(dir, config).catch(() => {});
+      }
+      refresh?.({ only: 'github' }).catch(() => {});
+    },
   });
   // What every source gets in ctx, besides now/warn/summary.
   const context = { fetch: fetchImpl, github, secret: (name) => secrets.get(name) };
@@ -175,8 +205,8 @@ export async function createBirddog({
     return { ...snap, items: triage.apply(snap.items), refreshing: collector.refreshing };
   }
 
-  refresh = async () => {
-    const snap = await collector.refresh();
+  refresh = async (opts) => {
+    const snap = await collector.refresh(opts);
     await triage.prune(snap.items);
     return snap;
   };
@@ -194,6 +224,17 @@ export async function createBirddog({
     return { plain, secretValues };
   }
 
+  /** Settings safe to send to the browser: no secret fields, nothing that looks like a credential. */
+  const SECRETISH = /token|secret|password|passwd|api[-_]?key|credential/i;
+  function publicSettings(src) {
+    const out = {};
+    for (const [k, v] of Object.entries(config.sources?.[src.id] ?? {})) {
+      if (k in (src.secretFields ?? {}) || SECRETISH.test(k)) continue;
+      out[k] = v;
+    }
+    return out;
+  }
+
   async function savedSecrets(src) {
     const out = {};
     for (const [field, secretName] of Object.entries(src.secretFields ?? {})) {
@@ -207,6 +248,7 @@ export async function createBirddog({
     return {
       configFile: loaded.file,
       secretStore: secrets.kind,
+      secretWarning: secrets.warning ?? null,
       sources: await Promise.all(sources.map(async (s) => {
         const status = snap.sources.find((x) => x.id === s.id);
         return {
@@ -215,7 +257,7 @@ export async function createBirddog({
           description: s.description ?? '',
           available: true,
           enabled: isEnabled(s, config),
-          settings: config.sources?.[s.id] ?? {},
+          settings: publicSettings(s),
           secrets: await savedSecrets(s), // which secrets are saved (true/false), never their values
           status: status ?? null,
         };
@@ -260,6 +302,20 @@ export async function createBirddog({
     ['GET', /^\/api\/me$/, (_m, _b, ctx) => ({ authEnabled: !!oidc, user: ctx.user })],
     ['GET', /^\/api\/items$/, () => itemsPayload()],
     ['POST', /^\/api\/refresh$/, async () => itemsPayload(await refresh())],
+    ['POST', /^\/api\/sources\/([^/]+)\/retry$/, async (m) => {
+      const src = findSource(m[1]);
+      if (!isEnabled(src, config)) throw new HttpError(400, `${src.name} is switched off`);
+      return itemsPayload(await refresh({ only: src.id }));
+    }],
+    ['PUT', /^\/api\/sources\/([^/]+)\/enabled$/, async (m, body) => {
+      // Switch a source on or off without touching its settings or secrets.
+      const src = findSource(m[1]);
+      if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Send { "enabled": true | false }');
+      config = { ...config, sources: { ...config.sources, [src.id]: { ...(config.sources?.[src.id] ?? {}), enabled: body.enabled } } };
+      await saveConfig(dir, config);
+      if (body.enabled) await refresh({ only: src.id });
+      return setupPayload();
+    }],
     ['POST', /^\/api\/items\/([^/]+)\/done$/, async (m) => {
       await triage.done(findItem(m[1])); return { ok: true };
     }],
@@ -280,9 +336,12 @@ export async function createBirddog({
     ['GET', /^\/api\/setup$/, () => setupPayload()],
     ['POST', /^\/api\/sources\/([^/]+)\/test$/, async (m, body) => {
       const src = findSource(m[1]);
-      const { plain, secretValues } = splitSecrets(src, body);
+      let { plain, secretValues } = splitSecrets(src, body);
       let patch = {};
-      try { patch = Object.keys(plain).length && src.normalizeSettings ? src.normalizeSettings(plain) : {}; } catch (e) { return { ok: false, message: e.message }; }
+      try {
+        patch = Object.keys(plain).length && src.normalizeSettings ? src.normalizeSettings(plain) : {};
+        if (src.validateSecrets) secretValues = src.validateSecrets(secretValues);
+      } catch (e) { return { ok: false, message: e.message }; }
       // Try the draft secrets without saving them.
       const ctx = { ...context, now: Date.now(), secret: async (n) => secretValues[n] ?? secrets.get(n) };
       return src.test({ ...(config.sources?.[src.id] ?? {}), ...patch }, ctx);
@@ -290,9 +349,12 @@ export async function createBirddog({
     ['PUT', /^\/api\/sources\/([^/]+)$/, async (m, body) => {
       const src = findSource(m[1]);
       if (!src.normalizeSettings) throw new HttpError(400, `${src.name} has no settings to change yet`);
-      const { plain, secretValues } = splitSecrets(src, body);
+      let { plain, secretValues } = splitSecrets(src, body);
       let patch;
-      try { patch = src.normalizeSettings(plain); } catch (e) { throw new HttpError(400, e.message); }
+      try {
+        patch = src.normalizeSettings(plain);
+        if (src.validateSecrets) secretValues = src.validateSecrets(secretValues);
+      } catch (e) { throw new HttpError(400, e.message); }
       for (const [n, v] of Object.entries(secretValues)) {
         try { await secrets.set(n, v); } catch (e) { throw new HttpError(400, `Could not save the secret to ${secrets.kind}: ${e.message}`); }
       }
@@ -420,7 +482,7 @@ export async function createBirddog({
           if (autoRefresh) {
             refresh().catch(() => {});
             const every = Math.max(1, Number(config.refreshMinutes) || 5) * 60_000;
-            timer = setInterval(() => refresh().catch(() => {}), every);
+            timer = setInterval(() => refresh({ scheduled: true }).catch(() => {}), every);
             timer.unref();
           }
           resolve(server.address().port);

@@ -50,7 +50,7 @@ export function fakeFetch(handler) {
     const r = (await handler(u, init)) ?? { status: 404, body: { message: 'Not Found' } };
     const status = r.status ?? 200;
     const headers = new Headers(r.headers ?? {});
-    return { ok: status < 400, status, headers, text: async () => (r.body === undefined ? '' : JSON.stringify(r.body)), json: async () => r.body };
+    return { ok: status < 400, status, headers, text: async () => (r.text ?? (r.body === undefined ? '' : JSON.stringify(r.body))), json: async () => r.body };
   };
   fn.calls = calls;
   return fn;

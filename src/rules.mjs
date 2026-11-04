@@ -29,7 +29,20 @@ const list = (names, max = 3) => names.slice(0, max).join(', ') + (names.length 
 
 // Order matters twice: first match wins, and inside an urgency group earlier rules
 // sort first. People waiting on you come before deadlines, deadlines before hygiene.
+/** "14:30" in this machine's time zone. */
+export const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const mins = (ms) => plural(Math.max(1, Math.round(ms / 60_000)), 'minute');
+
 export const RULES = [
+  // ---- Calendar: right now ------------------------------------------------------
+  {
+    id: 'meeting-now', kind: 'meeting', urgency: 'now',
+    text: 'Meeting in progress or starting within 15 minutes → Now',
+    when: (s) => !s.allDay && s.startsIn <= 15 * 60_000 && s.endsIn > 0,
+    why: (s) => (s.startsIn > 0
+      ? `Starts **in ${mins(s.startsIn)}**${s.where ? ` · ${s.where}` : ''}`
+      : `**Happening now** · started ${mins(-s.startsIn)} ago, ends at ${clock(s.end)}`),
+  },
   // ---- GitHub: review requests ------------------------------------------------
   {
     id: 'review-waiting', kind: 'review-request', urgency: 'now',
@@ -55,6 +68,13 @@ export const RULES = [
     text: 'Sprint ends within a day and the ticket is not done → Now',
     when: (s) => s.sprintDays !== null && s.sprintDays < 1,
     why: (s) => `Sprint **${s.sprint}** ends **${until(s.sprintDays)}** · still ${s.status}`,
+  },
+  // ---- Calendar: later today ----------------------------------------------------
+  {
+    id: 'meeting-today', kind: 'meeting', urgency: 'today',
+    text: 'Meeting later today → Today',
+    when: (s) => !s.allDay && s.today,
+    why: (s) => `Starts at **${clock(s.start)}** (in ${s.startsIn < 3_600_000 ? mins(s.startsIn) : ago(s.startsIn / 86_400_000)})${s.where ? ` · ${s.where}` : ''}`,
   },
   // ---- GitHub: today ---------------------------------------------------------
   {
@@ -127,7 +147,19 @@ export const RULES = [
     when: (s) => /^(highest|high|critical|blocker|urgent|p0|p1)$/i.test(s.priority ?? ''),
     why: (s) => `**${s.priority}** priority · ${s.status}`,
   },
-  // ---- GitHub & Jira: later --------------------------------------------------
+  // ---- GitHub, Jira & Calendar: later -----------------------------------------
+  {
+    id: 'meeting-all-day', kind: 'meeting', urgency: 'later',
+    text: 'All-day event today → Later',
+    when: (s) => s.allDay && s.today,
+    why: () => '**All day** today',
+  },
+  {
+    id: 'meeting-tomorrow', kind: 'meeting', urgency: 'later',
+    text: 'Meeting tomorrow → Later',
+    when: () => true,
+    why: (s) => (s.allDay ? '**All day** tomorrow' : `Tomorrow at **${clock(s.start)}**${s.where ? ` · ${s.where}` : ''}`),
+  },
   {
     id: 'review-other', kind: 'review-request', urgency: 'later',
     text: 'Review requested of your team, or on a draft → Later',

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { createSecretStore } from '../src/secrets.mjs';
 import { createBirddog } from '../src/server.mjs';
+import * as calSource from '../src/sources/cal.mjs';
 import * as githubSource from '../src/sources/github.mjs';
 import * as jiraSource from '../src/sources/jira.mjs';
 import { fakeFetch, tmpDir } from './helpers.mjs';
@@ -22,6 +23,10 @@ const fakeApis = () => fakeFetch((u, init) => {
       return { body: { total_count: items.length, items } };
     }
     if (u.pathname === '/notifications') return { body: [] };
+  }
+  if (u.host === 'cal.example.com' && u.pathname === '/private-abc/basic.ics') {
+    const t = new Date(Date.now() + 5 * 60_000).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    return { text: `BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:x\nSUMMARY:Soon\nDTSTART:${t}\nDURATION:PT30M\nEND:VEVENT\nEND:VCALENDAR` };
   }
   if (u.host === 'acme.atlassian.net') {
     const good = init.headers.authorization === `Basic ${Buffer.from('me@acme.com:atl-good').toString('base64')}`;
@@ -49,7 +54,7 @@ describe('GitHub and Jira through the API', () => {
     dir = await tmpDir();
     secrets = await createSecretStore({ dir, backend: 'file' });
     app = await createBirddog({
-      dir, sources: [githubSource, jiraSource], autoRefresh: false, log: quiet, secrets,
+      dir, sources: [githubSource, jiraSource, calSource], autoRefresh: false, log: quiet, secrets,
       fetchImpl: fakeApis(), cliToken: async () => 'gho_cli',
     });
     await app.start(0);
@@ -115,5 +120,21 @@ describe('GitHub and Jira through the API', () => {
     assert.deepEqual(j.secrets, { token: false });
     assert.equal(await secrets.get('jira-token'), null);
     assert.equal(await source('jira'), undefined);
+  });
+
+  it('calendar: the iCal link is a secret; webcal links work', async () => {
+    const saved = await call('/api/sources/cal', { method: 'PUT', body: { url: 'webcal://cal.example.com/private-abc/basic.ics', file: '', email: '' } });
+    assert.equal(saved.status, 200);
+    const c = saved.json.sources.find((s) => s.id === 'cal');
+    assert.equal(c.status.status, 'ok');
+    assert.deepEqual(c.secrets, { url: true });
+    assert.doesNotMatch(JSON.stringify(saved.json), /private-abc/);
+    assert.equal(await secrets.get('cal-url'), 'https://cal.example.com/private-abc/basic.ics');
+    assert.doesNotMatch(await fs.readFile(path.join(dir, 'config.json'), 'utf8'), /private-abc/);
+    const items = (await call('/api/items')).json.items.filter((i) => i.source === 'cal');
+    assert.equal(items.length, 1);
+    assert.equal(items[0].urgency, 'now');
+    const bad = await call('/api/sources/cal', { method: 'PUT', body: { url: 'http://cal.example.com/x.ics' } });
+    assert.equal(bad.status, 400);
   });
 });

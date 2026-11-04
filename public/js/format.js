@@ -30,6 +30,15 @@ export function relTime(iso, now = Date.now()) {
   return `${Math.floor(ms / DAY)} days ago`;
 }
 
+/** "in 5m", "in 2h", "in 3d": for things that haven't happened yet. */
+export function shortUntil(iso, now = Date.now()) {
+  const ms = Date.parse(iso) - now;
+  if (ms < MIN) return 'now';
+  if (ms < HOUR) return `in ${Math.round(ms / MIN)}m`;
+  if (ms < DAY) return `in ${Math.round(ms / HOUR)}h`;
+  return `in ${Math.round(ms / DAY)}d`;
+}
+
 export const clock = (d) => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };

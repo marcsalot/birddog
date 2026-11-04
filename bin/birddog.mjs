@@ -29,7 +29,7 @@ const HELP = `
   Files live in ${tildify(configDir())} (set BIRDDOG_HOME to change it).
 `;
 
-const SECRET_NAMES = new Set(['oidc-client-secret']);
+const SECRET_NAMES = new Set(['oidc-client-secret', 'jira-token', 'cal-url']);
 
 function openBrowser(url) {
   const [cmd, args] = process.platform === 'darwin' ? ['open', [url]]
@@ -156,7 +156,7 @@ async function main() {
      config   ${tildify(app.configFile)}${app.firstRun ? '  (created just now)' : ''}
      scanning ${roots.join(', ') || 'nothing yet'}
      login    ${app.authEnabled ? `on · ${new URL(auth.issuer).host} · allowed: ${who}${app.authFile ? ' (from auth.json)' : ''}` : 'off (only this machine can reach Birddog)'}
-     secrets  ${app.secrets.kind}
+     secrets  ${app.secrets.kind}${app.secrets.warning ? `\n              ⚠ ${app.secrets.warning}` : ''}
 
   Press Ctrl+C to stop.
 `);

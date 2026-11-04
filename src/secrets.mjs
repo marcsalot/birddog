@@ -4,6 +4,10 @@
 //   Linux   → Secret Service (via `secret-tool`, e.g. GNOME Keyring), if installed
 //   else    → secrets.json in the config dir, readable only by you (mode 600)
 //
+// Only the keychain and Secret Service encrypt at rest. When Birddog falls back to
+// the file, `store.secure` is false and `store.warning` says so; setup and the
+// startup banner show that warning.
+//
 // Force a backend with BIRDDOG_SECRETS=keychain|secret-service|file.
 
 import { execFile, spawn } from 'node:child_process';
@@ -31,20 +35,26 @@ function run(cmd, args, input) {
   });
 }
 
+// `security find-generic-password -w` prints values that are not plain ASCII as hex,
+// which can't be told apart from a hex token. So those are stored as "b64:<base64>".
+const B64 = 'b64:';
+export const toKeychain = (v) => (/^[\x20-\x7e]*$/.test(v) && !v.startsWith(B64) ? v : B64 + Buffer.from(v, 'utf8').toString('base64'));
+export const fromKeychain = (v) => (v.startsWith(B64) ? Buffer.from(v.slice(B64.length), 'base64').toString('utf8') : v);
+
 const keychain = {
   kind: 'macOS Keychain',
+  secure: true,
   async get(name) {
-    try { return (await run('security', ['find-generic-password', '-s', SERVICE, '-a', name, '-w'])).replace(/\n$/, ''); } catch (e) {
+    try { return fromKeychain((await run('security', ['find-generic-password', '-s', SERVICE, '-a', name, '-w'])).replace(/\n$/, '')); } catch (e) {
       if (e.exitCode === 44) return null; // not found
       throw e;
     }
   },
   async set(name, value) {
     // `security -i` reads commands from stdin, so the secret never shows up in `ps`.
-    if (!/^[\x21-\x7e]+$/.test(value) || /["\\]/.test(value)) {
-      throw new Error('This secret has characters the macOS Keychain helper cannot store safely');
-    }
-    await run('security', ['-i'], `add-generic-password -U -s ${SERVICE} -a ${name} -w "${value}"\n`);
+    // -X takes the value hex-encoded, so no character in it can break the command line.
+    const hex = Buffer.from(toKeychain(value), 'utf8').toString('hex');
+    await run('security', ['-i'], `add-generic-password -U -s ${SERVICE} -a ${name} -X ${hex}\n`);
   },
   async delete(name) {
     try { await run('security', ['delete-generic-password', '-s', SERVICE, '-a', name]); } catch (e) {
@@ -55,6 +65,7 @@ const keychain = {
 
 const secretService = {
   kind: 'Secret Service',
+  secure: true,
   async get(name) {
     try { return (await run('secret-tool', ['lookup', 'service', SERVICE, 'account', name])) || null; } catch (e) {
       if (e.exitCode === 1) return null;
@@ -73,6 +84,7 @@ function fileStore(dir) {
   const file = path.join(dir, 'secrets.json');
   return {
     kind: 'file (secrets.json, mode 600)',
+    secure: false,
     async get(name) { return (await readJson(file, {}))[name] ?? null; },
     async set(name, value) { const all = await readJson(file, {}); all[name] = value; await writeJson(file, all); },
     async delete(name) { const all = await readJson(file, {}); delete all[name]; await writeJson(file, all); },
@@ -94,8 +106,14 @@ async function pickBackend(dir, wanted) {
 export async function createSecretStore({ dir, backend = process.env.BIRDDOG_SECRETS } = {}) {
   const impl = await pickBackend(dir, backend);
   const check = (name) => { if (!NAME.test(name)) throw new Error(`bad secret name "${name}"`); };
+  const why = backend === 'file' ? 'the file store was chosen (BIRDDOG_SECRETS=file)'
+    : process.platform === 'linux' ? 'no Secret Service found (install libsecret-tools and a keyring such as GNOME Keyring)'
+      : `no OS keychain support on ${process.platform}`;
   return {
     kind: impl.kind,
+    secure: impl.secure,
+    warning: impl.secure ? null
+      : `Secrets are in ${path.join(dir, 'secrets.json')} (readable only by you, but not encrypted) because ${why}.`,
     async get(name) { check(name); return impl.get(name); },
     async set(name, value) {
       check(name);

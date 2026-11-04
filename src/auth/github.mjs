@@ -29,6 +29,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
   const file = path.join(dir, 'connections.json');
   const wait = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms).unref?.()));
   let device = null; // the device flow in progress, if any
+  const notify = () => { Promise.resolve().then(onChange).catch(() => {}); };
 
   const settings = () => ({ ...GITHUB_DEFAULTS, ...(getConfig().sources?.github ?? {}) });
   const host = () => new URL(settings().webUrl).host;
@@ -82,7 +83,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
           await saveConnection({ method: 'device', login: me.login, name: me.name, connectedAt: new Date(now()).toISOString() });
           flow.status = 'done';
           flow.login = me.login;
-          onChange();
+          notify();
         } catch (e) { flow.status = 'error'; flow.error = e.message; }
         return;
       }
@@ -138,7 +139,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
       const me = await whoami(token);
       await secrets.delete(SECRET).catch(() => {});
       await saveConnection({ method: 'gh-cli', login: me.login, name: me.name, connectedAt: new Date(now()).toISOString() });
-      onChange();
+      notify();
       return this.status();
     },
 
@@ -154,7 +155,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
       device = null;
       await secrets.delete(SECRET).catch(() => {});
       await saveConnection(null);
-      onChange();
+      notify();
       return this.status();
     },
   };

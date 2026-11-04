@@ -132,7 +132,7 @@ describe('HTTP API', () => {
   it('setup: lists sources, tests and saves settings', async () => {
     const setup = (await api('/api/setup')).json;
     assert.equal(setup.sources[0].id, 'fake');
-    assert.deepEqual(setup.comingSoon.map((c) => c.id), ['cal']);
+    assert.deepEqual(setup.comingSoon, []);
     const t = await api('/api/sources/fake/test', { method: 'POST', ...json({ roots: ['/x'] }) });
     assert.equal(t.json.message, 'roots=/x');
     const saved = await api('/api/sources/fake', { method: 'PUT', ...json({ roots: ['/y'] }) });

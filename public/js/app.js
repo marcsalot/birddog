@@ -5,7 +5,7 @@ import { api } from './api.js';
 import {
   PALETTE_NAMES, appearanceHTML, cyclePalette, initAppearance, setMode, setPalette, toggleTheme,
 } from './appearance.js';
-import { esc, plain, relTime, shortAge, snoozeChoices, whenLabel, whyHTML } from './format.js';
+import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
 
 // ---------------------------------------------------------------------------
 // Static display info
@@ -24,7 +24,7 @@ const URG = {
 };
 const VIEWS = [['all', 'All', '◎'], ['now', 'Now'], ['today', 'Today'], ['later', 'Later'], ['snoozed', 'Snoozed', '☾'], ['done', 'Done', '✓']];
 const HEADINGS = { all: 'Needs me', now: 'Now', today: 'Today', later: 'Later', snoozed: 'Snoozed', done: 'Done' };
-const COMING = [['cal', 'Calendar']];
+const COMING = [];
 
 // ---------------------------------------------------------------------------
 // State
@@ -42,6 +42,8 @@ const st = {
   refreshing: false,
   setup: null,
   cards: {}, // per-source setup card UI state
+  retrying: new Set(), // sources being retried from a stale bar
+  wizard: null, // { step } while the first-run wizard is open
 };
 
 const $ = (s) => document.querySelector(s);
@@ -89,7 +91,7 @@ function renderNav() {
   const real = st.sources.map((s) => {
     const info = srcInfo(s.id);
     const on = !st.hidden.has(s.id);
-    const status = s.status === 'stale' ? '<span class="src-status warn" title="Could not refresh">! stale</span>'
+    const status = s.status === 'stale' ? `<span class="src-status warn" title="${esc(staleTitle(s))}">! stale</span>`
       : s.status === 'pending' ? '<span class="src-status">…</span>'
         : `<span class="src-status">${s.count || ''}</span>`;
     return `<button class="src-toggle ${on ? 'on' : ''}" data-src="${esc(s.id)}" style="--c:${info.c}" aria-pressed="${on}" title="${on ? 'Hide' : 'Show'} ${esc(s.name)} items"><span class="check">${on ? '✓' : ''}</span>${esc(s.name)}${status}</button>`;
@@ -102,9 +104,44 @@ function renderNav() {
   document.title = now ? `(${now}) Birddog` : 'Birddog';
 }
 
+function staleTitle(s) {
+  const next = s.nextRetryAt ? ` · next try ${whenLabel(s.nextRetryAt)}` : '';
+  return `Could not refresh since ${whenLabel(s.staleSince ?? Date.now())}${next}: ${s.error ?? ''}`;
+}
+
+/** One bar per broken source, above the list: what's wrong, how old the data is, and Retry. */
+function staleBarsHTML() {
+  if (st.view === 'done' || st.view === 'snoozed') return '';
+  return st.sources.filter((s) => s.status === 'stale' && !st.hidden.has(s.id) && s.count).map((s) => {
+    const next = s.nextRetryAt && s.failures > 1 ? ` Next automatic try ${esc(whenLabel(s.nextRetryAt))}.` : '';
+    const busy = st.retrying.has(s.id);
+    return `<div class="stale-bar" role="status"><span class="icon" aria-hidden="true">⚠</span>
+      <div class="txt"><b>${esc(s.name)}</b> is <span class="stale-badge">stale since ${esc(whenLabel(s.staleSince ?? Date.now()))}</span> · showing what it found ${esc(relTime(s.lastSuccess))}.${next}<br><small>${esc(s.error)}</small></div>
+      <button class="btn small" data-retry="${esc(s.id)}" ${busy ? 'disabled' : ''}>${busy ? 'Retrying…' : '↻ Retry'}</button><button class="btn small" data-setup>Fix</button></div>`;
+  }).join('');
+}
+
+async function retrySource(id) {
+  if (st.retrying.has(id)) return;
+  st.retrying.add(id);
+  render();
+  try {
+    applyData(await api.retrySource(id));
+    const s = st.sources.find((x) => x.id === id);
+    toast(s?.status === 'ok' ? `✓ ${esc(s.name)} is back` : `⚠ ${esc(s?.name ?? id)} still could not refresh: ${esc(s?.error ?? '')}`);
+  } catch (err) {
+    toast(`⚠ ${esc(err.message)}`);
+  } finally {
+    st.retrying.delete(id);
+    render();
+    renderUpdated();
+  }
+}
+
 function ageCell(i) {
   if (i.status === 'done') return `done ${shortAge(i.doneAt)}`;
   if (i.status === 'snoozed') return i.snoozedUntil === 'change' ? 'until it changes' : `until ${whenLabel(i.snoozedUntil)}`;
+  if (Date.parse(i.updatedAt) > Date.now() + 60_000) return shortUntil(i.updatedAt); // e.g. a meeting that hasn't started
   return shortAge(i.updatedAt);
 }
 
@@ -112,7 +149,8 @@ function rowHTML(i, selected) {
   const s = srcInfo(i.source);
   const parked = i.status !== 'open';
   const extra = (i.wokeAt ? '<span class="woke">☀ back from snooze</span> · ' : '');
-  const stale = i.stale ? ` · <span class="stale">⚠ stale since ${esc(whenLabel(i.stale.since ?? Date.now()))}</span>` : '';
+  const staleAt = st.sources.find((s) => s.id === i.source)?.staleSince ?? i.stale?.since;
+  const stale = i.stale ? ` · <span class="stale">⚠ stale since ${esc(whenLabel(staleAt ?? Date.now()))}</span>` : '';
   return `<div class="row ${selected ? 'sel' : ''}" data-id="${esc(i.id)}" style="--u:${URG[i.urgency].c}" role="option" aria-selected="${selected}">
     <div class="badge ${s.cls ?? ''}" style="--c:${s.c}" title="${esc(i.source)}">${s.short}</div>
     <div style="min-width:0"><div class="title">${esc(i.title)}</div><div class="why">${extra}${whyHTML(i.why)}${stale}</div></div>
@@ -146,7 +184,8 @@ function render() {
   const list = ordered();
   const idx = selIndex(list);
   st.selId = list[idx]?.id ?? null;
-  const head = `<div class="page-head"><h1>${HEADINGS[st.view]}</h1><span class="sub">${list.length} item${list.length === 1 ? '' : 's'}${st.query ? ` matching “${esc(st.query)}” <button class="chip" id="clearQ">clear ✕</button>` : ''}</span></div>`;
+  const bars = staleBarsHTML();
+  const head = bars + `<div class="page-head"><h1>${HEADINGS[st.view]}</h1><span class="sub">${list.length} item${list.length === 1 ? '' : 's'}${st.query ? ` matching “${esc(st.query)}” <button class="chip" id="clearQ">clear ✕</button>` : ''}</span></div>`;
   if (!list.length) {
     $('#list').innerHTML = head + emptyHTML();
     return;
@@ -325,13 +364,14 @@ function openDrawer(i) {
     : i.status === 'snoozed'
       ? `<div class="why-box" style="--u:var(--later)"><div class="lbl">Snoozed</div>${i.snoozedUntil === 'change' ? 'Until it changes.' : `Until ${esc(whenLabel(i.snoozedUntil))}.`}</div>`
       : '';
-  $('#drawer').innerHTML = `<header><div class="badge ${s.cls ?? ''}" style="--c:${s.c}">${s.short}</div><div><div style="font-weight:600">${esc(srcName)}</div><div style="font-size:12px;color:var(--muted)">${URG[i.urgency].label} · last activity ${esc(relTime(i.updatedAt))}</div></div><button class="icon-btn" style="margin-left:auto" data-close-drawer aria-label="Close details">✕</button></header>
+  const future = Date.parse(i.updatedAt) > Date.now();
+  $('#drawer').innerHTML = `<header><div class="badge ${s.cls ?? ''}" style="--c:${s.c}">${s.short}</div><div><div style="font-weight:600">${esc(srcName)}</div><div style="font-size:12px;color:var(--muted)">${URG[i.urgency].label} · ${future ? `starts ${esc(whenLabel(i.updatedAt))}` : `last activity ${esc(relTime(i.updatedAt))}`}</div></div><button class="icon-btn" style="margin-left:auto" data-close-drawer aria-label="Close details">✕</button></header>
   <div class="body"><h2>${esc(i.title)}</h2>
   ${statusBox}
   <div class="why-box" style="--u:${URG[i.urgency].c}"><div class="lbl">Why it's here</div>${whyHTML(i.why)}${i.meta?.rule ? `<div class="rule">Rule: ${esc(i.meta.rule.text)}</div>` : ''}</div>
   ${i.meta?.command ? `<div class="cmd"><div class="lbl">Suggested next step</div><div class="line"><code>${esc(i.meta.command)}</code><button class="btn small" data-copy="command">Copy <kbd>c</kbd></button></div></div>` : ''}
   ${fields.length ? `<dl class="kv">${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
-  ${i.stale ? `<div class="why-box" style="--u:var(--warn)"><div class="lbl">Stale data</div>${esc(srcName)} could not refresh. Showing what it found ${esc(relTime(i.stale.since))}.<br><small>${esc(i.stale.error)}</small><br><a href="#" data-setup>Fix in setup →</a></div>` : ''}
+  ${i.stale ? `<div class="why-box" style="--u:var(--warn)"><div class="lbl">Stale data</div>${esc(srcName)} could not refresh. Showing what it found ${esc(relTime(i.stale.since))}.<br><small>${esc(i.stale.error)}</small><div class="row-btns" style="margin-top:8px"><button class="btn small" data-retry="${esc(i.source)}">↻ Retry now</button><button class="btn small" data-setup>Fix in setup →</button></div></div>` : ''}
   </div>
   <footer>${host ? `<a class="btn primary" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">Open on ${esc(host)} ↗</a>` : ''}
   ${i.meta?.path ? `<button class="btn ${host ? '' : 'primary'}" data-copy="path">Copy path</button>` : ''}
@@ -374,6 +414,7 @@ function setHidden(next) {
 
 function openOverlay(sel) { closeAll(); $(sel).classList.add('open'); }
 function closeAll() {
+  st.wizard = null;
   document.activeElement?.blur?.();
   document.querySelectorAll('.scrim.open').forEach((s) => s.classList.remove('open'));
   closeSnooze();
@@ -403,7 +444,9 @@ function commands() {
     { label: 'Appearance…', run: openAppear },
     ...Object.entries(PALETTE_NAMES).map(([p, n]) => ({ label: `Theme: ${n}`, run: () => setPalette(p) })),
     { label: 'Mode: follow system', run: () => setMode('system') },
-    { label: 'Connect a source…', run: openSetup },
+    { label: 'Connect a source…', run: () => openSetup() },
+    { label: 'Run the setup wizard', run: openWizard },
+    ...st.sources.filter((s) => s.status === 'stale').map((s) => ({ label: `Retry ${s.name}`, run: () => retrySource(s.id) })),
     { label: 'Keyboard shortcuts', k: '?', run: () => openOverlay('#helpScrim') },
     ...(st.me?.authEnabled ? [{ label: `Sign out (${st.me.user?.email ?? ''})`, run: signOut }] : []),
     { sec: 'Filter by source' },
@@ -535,7 +578,6 @@ function jiraCardHTML(src) {
     <div class="row-btns"><button class="btn primary" data-connect="jira" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? '<button class="btn" data-cancel="jira">Cancel</button>' : ''}${hasToken ? `<button class="btn" data-disconnect="jira" ${off}>Disconnect</button>` : ''}</div></div>`;
 }
 
-const CARDS = { git: gitCardHTML, github: githubCardHTML, jira: jiraCardHTML };
 
 let ghTimer = null;
 function watchGithub() {
@@ -593,18 +635,148 @@ async function githubAction(action) {
   return rescan('github');
 }
 
-function renderCards() {
-  const s = st.setup;
-  if (!s) { $('#cards').innerHTML = '<div class="card wide"><div class="msg">Loading…</div></div>'; return; }
-  const soon = s.comingSoon.map((c) => `${cardTop(c.id, c.name, 'Coming soon', 'soon', false)}<div class="msg">${esc(c.description)}</div></div>`);
-  $('#cards').innerHTML = s.sources.map((src) => (CARDS[src.id] ?? gitCardHTML)(src)).join('') + soon.join('');
-  const ok = s.sources.filter((x) => x.status?.status === 'ok').length;
-  $('#setupProgress').textContent = `${ok} of ${s.sources.length} connected${s.comingSoon.length ? ` · ${s.comingSoon.length} more coming soon` : ''}`;
+/** Calendar: an iCal link (a secret, kept in the keychain) and/or a local .ics file. */
+function calCardHTML(src) {
+  const ui = st.cards.cal ?? {};
+  const s = src.settings ?? {};
+  const hasUrl = !!src.secrets?.url;
+  const connected = src.enabled && (hasUrl || !!s.file);
+  const { status, cls, label, msg, summary } = cardState(src, ui);
+  const store = esc(st.setup.secretStore);
+  if (connected && !ui.editing && status !== 'stale') {
+    const what = [hasUrl && `an iCal link kept in ${store}`, s.file && `<b>${esc(s.file)}</b>`].filter(Boolean).join(' and ');
+    return `${cardTop('cal', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <div class="msg">Reading ${what}${summary.replace(/^ · [^·]+/, '')}</div>${msg}
+      <div class="row-btns"><button class="btn" data-edit="cal">Change</button><button class="btn" data-test="cal" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-disconnect="cal" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
+  }
+  const d = ui.draft ?? { url: '', file: s.file ?? '', email: s.email ?? '' };
+  const off = ui.busy ? 'disabled' : '';
+  const state = connected ? label : ui.busy ? 'Working…' : 'Not connected';
+  return `${cardTop('cal', src.name, state, connected ? cls : ui.msg && !ui.msgGood ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
+    <div class="fields">
+      <label class="full"><span>iCal link</span><input data-f="cal.url" type="password" value="${esc(d.url)}" placeholder="${hasUrl ? `Saved in ${store} · leave blank to keep it` : 'https://calendar.google.com/calendar/ical/…/basic.ics'}" autocomplete="off" spellcheck="false"></label>
+      <label><span>…or a local .ics file</span><input data-f="cal.file" value="${esc(d.file)}" placeholder="~/Downloads/work.ics" autocomplete="off" spellcheck="false"></label>
+      <label><span>Your email <i>(optional)</i></span><input data-f="cal.email" type="email" value="${esc(d.email)}" placeholder="hides meetings you declined" autocomplete="off" spellcheck="false"></label>
+    </div>
+    <details class="help"><summary>Where do I find my iCal link?</summary>
+      <ul><li><b>Google Calendar:</b> Settings → your calendar → Integrate calendar → <i>Secret address in iCal format</i>.</li>
+      <li><b>Outlook / Microsoft 365:</b> Settings → Calendar → Shared calendars → Publish a calendar → copy the <i>ICS</i> link.</li>
+      <li><b>iCloud:</b> Calendar → share a calendar → <i>Public Calendar</i> → copy the link (<code>webcal://</code> is fine).</li></ul></details>
+    <div class="msg">The link works like a password, so it is stored in ${store}, never in config.json. Birddog only reads the calendar.</div>${msg}
+    <div class="row-btns"><button class="btn primary" data-connect="cal" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? '<button class="btn" data-cancel="cal">Cancel</button>' : ''}${hasUrl || (src.enabled && s.file) ? `<button class="btn" data-disconnect="cal" ${off}>Disconnect</button>` : ''}</div></div>`;
 }
 
-async function openSetup() {
+/** A source someone switched off (git or GitHub; Jira and Calendar are off until connected). */
+function offCardHTML(src) {
+  return `${cardTop(src.id, src.name, 'Off')}<div class="msg">${esc(src.description)}</div>
+    <div class="msg">Turned off. Birddog is not checking ${esc(src.name)}.</div>
+    <div class="row-btns"><button class="btn primary" data-enable="${esc(src.id)}">Turn on</button></div></div>`;
+}
+
+const CARDS = { git: gitCardHTML, github: githubCardHTML, jira: jiraCardHTML, cal: calCardHTML };
+const cardFor = (src) => (src.enabled === false && (src.id === 'git' || src.id === 'github') ? offCardHTML(src) : (CARDS[src.id] ?? gitCardHTML)(src));
+
+// ---------------------------------------------------------------------------
+// First-run wizard: one source per step, each tested live as you reach it.
+
+const WIZARD = [
+  { id: 'welcome', title: 'Welcome to Birddog 🐾', intro: 'Birddog looks through your work and points at what needs you next. Connect the places your work lives; each one is tested as soon as you reach it. Skip anything you don’t use. You can change all of it later from <b>Connect a source</b>.' },
+  { id: 'git', title: 'Your local repos', intro: 'Which folders hold your code? Birddog finds uncommitted work, unpushed commits and branches to tidy. It never changes your repos.' },
+  { id: 'github', title: 'GitHub', intro: 'Review requests, your PRs that need work, mentions and assigned issues. The quickest way in is your existing <code>gh</code> login.' },
+  { id: 'jira', title: 'Jira Cloud', intro: 'The tickets assigned to you, ranked by due date, sprint end, blockers and priority. You need your site, your email and an API token.' },
+  { id: 'cal', title: 'Calendar', intro: 'Your next meetings, so a 10:00 standup never sneaks up on you. Paste an iCal link from Google, Outlook or iCloud, or pick an .ics file.' },
+  { id: 'done', title: 'You’re all set', intro: 'Here’s what Birddog is watching. Press <kbd>r</kbd> any time to refresh, or <kbd>⌘K</kbd> → “Run the setup wizard” to come back here.' },
+];
+const SOURCE_STEPS = WIZARD.filter((w) => w.id !== 'welcome' && w.id !== 'done').length;
+
+function isConnected(src) {
+  if (!src || src.enabled === false) return false;
+  if (src.id === 'github') return !!st.setup.connections?.github?.connected;
+  if (src.id === 'jira') return !!(src.settings?.site && src.secrets?.token);
+  if (src.id === 'cal') return !!(src.secrets?.url || src.settings?.file);
+  return src.status?.status === 'ok' || src.status?.status === 'pending';
+}
+
+function stateOf(src) {
+  if (!src || src.enabled === false) return { icon: '–', cls: '', text: 'Skipped' };
+  if (src.status?.status === 'stale') return { icon: '⚠', cls: 'warn', text: src.status.error };
+  if (isConnected(src)) return { icon: '✓', cls: 'ok', text: src.status?.summary ?? 'Connected' };
+  return { icon: '–', cls: '', text: 'Not connected' };
+}
+
+function wizardHTML() {
+  const step = WIZARD[st.wizard.step];
+  const n = st.wizard.step; // 1..SOURCE_STEPS for source steps
+  const dots = WIZARD.map((w, i) => `<span class="dot ${i === n ? 'on' : i < n ? 'past' : ''}" title="${esc(w.title)}"></span>`).join('');
+  $('#setupHead').innerHTML = `<div class="wiz-dots" aria-hidden="true">${dots}</div><h2 id="setupTitle">${step.title}</h2><p>${step.intro}</p>`;
+  const warn = st.setup?.secretWarning ? `<div class="card wide warnbox"><div class="msg">⚠ ${esc(st.setup.secretWarning)}</div></div>` : '';
+  let body;
+  if (!st.setup) body = '<div class="card wide"><div class="msg">Loading…</div></div>';
+  else if (step.id === 'welcome') {
+    body = `${warn}<div class="card wide wiz-list">${st.setup.sources.map((src) => `<div class="wiz-row"><div class="badge ${srcInfo(src.id).cls ?? ''}" style="--c:${srcInfo(src.id).c}">${srcInfo(src.id).short}</div><div><b>${esc(src.name)}</b><div class="msg">${esc(src.description)}</div></div></div>`).join('')}</div>`;
+  } else if (step.id === 'done') {
+    body = `<div class="card wide wiz-list">${st.setup.sources.map((src) => {
+      const s = stateOf(src);
+      return `<div class="wiz-row"><div class="badge ${srcInfo(src.id).cls ?? ''}" style="--c:${srcInfo(src.id).c}">${srcInfo(src.id).short}</div><div style="min-width:0"><b>${esc(src.name)}</b><div class="msg ${s.cls === 'warn' ? 'bad' : ''}">${esc(s.text)}</div></div><span class="wiz-state ${s.cls}">${s.icon}</span></div>`;
+    }).join('')}</div>`;
+  } else {
+    const src = st.setup.sources.find((x) => x.id === step.id);
+    body = src ? cardFor(src) : '';
+  }
+  $('#cards').innerHTML = body;
+  const src = st.setup?.sources.find((x) => x.id === step.id);
+  const progress = step.id === 'welcome' ? '' : step.id === 'done' ? 'Setup done' : `Step ${n} of ${SOURCE_STEPS}`;
+  const next = step.id === 'welcome' ? '<button class="btn primary" data-wiz="next">Let’s go →</button>'
+    : step.id === 'done' ? '<button class="btn primary" data-wiz="finish">Go to my inbox →</button>'
+      : isConnected(src) ? '<button class="btn primary" data-wiz="next">Next →</button>'
+        : '<button class="btn" data-wiz="skip">Skip</button>';
+  $('#setupFoot').innerHTML = `<span class="progress">${progress}</span><span style="flex:1"></span>${n > 0 ? '<button class="btn" data-wiz="back">← Back</button>' : '<button class="btn" data-wiz="finish">Skip setup</button>'}${next}`;
+}
+
+/** Run a source's test() as soon as its step opens, so you see right away whether it works. */
+function autoTest(id) {
+  const src = st.setup?.sources.find((x) => x.id === id);
+  if (!src) return;
+  if (id === 'git' || (isConnected(src) && src.enabled !== false)) testCard(id);
+}
+
+async function wizardAction(action) {
+  const step = WIZARD[st.wizard.step];
+  if (action === 'finish') { st.wizard = null; closeAll(); return load(); }
+  if (action === 'skip' && step.id === 'github') {
+    // Not using GitHub: switch it off so it doesn't sit in the sidebar as "stale".
+    const src = st.setup.sources.find((x) => x.id === 'github');
+    if (src?.enabled !== false) { try { st.setup = await api.enableSource('github', false); } catch { /* keep going */ } }
+  }
+  st.wizard.step = Math.max(0, Math.min(WIZARD.length - 1, st.wizard.step + (action === 'back' ? -1 : 1)));
+  st.cards = {};
+  if (WIZARD[st.wizard.step].id === 'done') { try { st.setup = await api.setup(); } catch { /* show what we have */ } }
+  renderCards();
+  autoTest(WIZARD[st.wizard.step].id);
+}
+
+function settingsChrome() {
+  $('#setupHead').innerHTML = '<h2 id="setupTitle">Connect your sources</h2><p>Everything stays on this machine. Birddog only reads: it never changes your repos, PRs, tickets or calendar.</p>';
+  const s = st.setup;
+  const ok = s ? s.sources.filter((x) => x.status?.status === 'ok').length : 0;
+  const on = s ? s.sources.filter((x) => x.enabled !== false).length : 0;
+  $('#setupFoot').innerHTML = `<span class="progress" id="setupProgress">${s ? `${ok} of ${on} switched-on sources working` : ''}</span><span style="flex:1"></span><button class="btn" data-wiz="start">Run the setup wizard</button><button class="btn primary" data-close>Go to my inbox →</button>`;
+}
+
+function renderCards() {
+  if (st.wizard) return wizardHTML();
+  settingsChrome();
+  const s = st.setup;
+  if (!s) { $('#cards').innerHTML = '<div class="card wide"><div class="msg">Loading…</div></div>'; return; }
+  const warn = s.secretWarning ? `<div class="card wide warnbox"><div class="msg">⚠ ${esc(s.secretWarning)}</div></div>` : '';
+  const soon = s.comingSoon.map((c) => `${cardTop(c.id, c.name, 'Coming soon', 'soon', false)}<div class="msg">${esc(c.description)}</div></div>`);
+  $('#cards').innerHTML = warn + s.sources.map(cardFor).join('') + soon.join('');
+}
+
+async function openSetup({ wizard = false } = {}) {
   openOverlay('#setupScrim');
   st.cards = {};
+  st.wizard = wizard ? { step: 0 } : null;
   renderCards();
   try {
     st.setup = await api.setup();
@@ -613,6 +785,20 @@ async function openSetup() {
     $('#cards').innerHTML = `<div class="card wide err"><div class="msg">${esc(err.message)}</div></div>`;
   }
   savePrefs({ seenSetup: true });
+}
+const openWizard = () => openSetup({ wizard: true });
+
+async function enableAction(id) {
+  st.cards[id] = { busy: true };
+  renderCards();
+  try {
+    st.setup = await api.enableSource(id, true);
+    st.cards[id] = {};
+    await load();
+  } catch (err) {
+    st.cards[id] = { msg: err.message, msgGood: false };
+  }
+  renderCards();
 }
 
 /** What a card's form says right now (drafts survive re-renders). */
@@ -650,7 +836,7 @@ async function saveCard(id, form = formOf(id)) {
     const status = st.setup.sources.find((x) => x.id === id)?.status;
     st.cards[id] = status?.status === 'ok'
       ? { msg: `Saved. ${status.summary ?? ''}`, msgGood: true }
-      : { editing: true, draft: id === 'git' ? draft : { ...draft, token: '' }, msg: status?.error ?? 'Saved, but the scan failed.', msgGood: false };
+      : { editing: true, draft: id === 'git' ? draft : { ...draft, ...(draft && 'token' in draft ? { token: '' } : {}), ...(draft && 'url' in draft ? { url: '' } : {}) }, msg: status?.error ?? 'Saved, but the scan failed.', msgGood: false };
     renderCards();
     await load();
   } catch (err) {
@@ -692,7 +878,7 @@ async function disconnectCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.view) return setView(d.view);
@@ -721,6 +907,9 @@ document.addEventListener('click', (e) => {
   if (d.test) return testCard(d.test);
   if (d.save) return saveCard(d.save);
   if (d.connect) return connectCard(d.connect);
+  if (d.retry) return retrySource(d.retry);
+  if (d.enable) return enableAction(d.enable);
+  if (d.wiz) return d.wiz === 'start' ? openWizard() : wizardAction(d.wiz);
   if (d.disconnect) return disconnectCard(d.disconnect);
   if (d.edit) { st.cards[d.edit] = { editing: true }; renderCards(); return document.querySelector(`[data-in="${CSS.escape(d.edit)}"],[data-f^="${CSS.escape(d.edit)}."]`)?.focus(); }
   if (d.cancel) { st.cards[d.cancel] = {}; return renderCards(); }
@@ -730,7 +919,7 @@ document.addEventListener('click', (e) => {
 });
 
 $('#openPalette').onclick = () => openPalette();
-$('#openSetup').onclick = openSetup;
+$('#openSetup').onclick = () => openSetup();
 $('#refresh').onclick = refresh;
 $('#appearBtn').onclick = (e) => { e.stopPropagation(); appearOpen() ? closeAppear() : openAppear(); };
 $('#undoBtn').onclick = runUndo;
@@ -833,7 +1022,7 @@ async function boot() {
   await load();
   setInterval(() => { if (!st.refreshing) load({ quiet: true }); }, 60_000);
   setInterval(renderUpdated, 30_000);
-  if (!prefs.seenSetup) setTimeout(openSetup, 400);
+  if (!prefs.seenSetup) setTimeout(openWizard, 400);
   liveReload();
 }
 
