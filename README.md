@@ -381,7 +381,11 @@ Where a card shows **Sign in with …**, it's one click: Birddog uses **its own 
 | Slack | user token (`xoxp-…`) | read-only scopes | no: Slack needs a confidential secret |
 | Calendar | **iCloud** (CalDAV with an app-specific password) | your iCloud calendars, read-only | n/a |
 
-> **About Google's warning.** Until Google finishes verifying Birddog, Google shows an **"unverified app"** screen when you sign in. To continue, choose **Advanced → Go to Birddog (unsafe)**. Birddog only reads your calendar events, read-only, and they stay on your computer. Until verification is done, only the first 100 Google accounts can sign in. Rather not? Use your calendar's private **iCal link** instead, which needs no Google sign-in. The Calendar card shows this notice next to the button; it goes away when `BUILT_IN.google.verified` in `src/auth/clients.mjs` becomes `true`.
+> **About Google sign-in.** Birddog's Google app is **in testing** for now, so sign-in is **invite-only**: Google only admits accounts the maintainer added as test users, and everyone else gets "access denied" or "has not completed verification" (Birddog turns both into this advice). Use your calendar's private **iCal link** instead, which needs no Google sign-in. Test users see Google's **"unverified app"** screen (choose **Continue**, or **Advanced → Go to Birddog (unsafe)**), and Google ends test sign-ins after **7 days**, so expect **Sign in again** weekly. Birddog only reads your calendar events, read-only, and they stay on your computer.
+>
+> The Calendar card shows the matching notice next to the button. It's driven by `BUILT_IN.google.status` in `src/auth/clients.mjs`: `'testing'` (invite-only, weekly sign-in), `'unverified'` (published: anyone can sign in through the warning screen, 100 accounts in all) or `'verified'` (no notice).
+>
+> **Client secret.** Google's token exchange needs the desktop client's secret. Google says it isn't confidential for desktop apps, but it's left out of the repo for now, so the card says "client secret isn't configured" instead of showing a button. To sign in with the built-in app anyway, put the secret in your keychain with `birddog secret set google-client-secret` (or set `BIRDDOG_GOOGLE_CLIENT_SECRET`).
 
 After you sign in, the card shows the account and **Disconnect**. If a sign-in can't be renewed later (you revoked it, or PagerDuty's 30-day token ran out), the source turns stale with a **Sign in again** button.
 

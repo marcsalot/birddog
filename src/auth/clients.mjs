@@ -31,18 +31,27 @@
 //   slack      NOT built in: Slack's OAuth needs a confidential client secret.
 //              Both keep the API token as the main way in, and bring-your-own-app for experts.
 //
-// Values start empty until the owner registers the apps (see docs/register-apps.md).
+// An empty value means the owner hasn't registered that app yet (see docs/register-apps.md).
 
 export const BUILT_IN = Object.freeze({
   github: Object.freeze({ clientId: 'Ov23liwWb176mY399VPJ', host: 'https://github.com' }), // OAuth App "Birddog" (marcsalot), device flow on, no secret; token expiry off (no refresh handling yet)
   gitlab: Object.freeze({ clientId: '', host: 'https://gitlab.com' }),
   microsoft: Object.freeze({ clientId: '' }),
   google: Object.freeze({
-    clientId: '',
-    clientSecret: '', // desktop-app client secret: not confidential (see above)
-    // Google shows an "unverified app" screen, and only the first 100 accounts can sign in,
-    // until Google finishes verifying Birddog for the calendar.readonly scope. Set to true then.
-    verified: false,
+    // Google Cloud project birddog-513721 ("Birddog"), OAuth client "Birddog desktop" (Desktop app).
+    clientId: '787425286434-if73gibnotktjm2rrthk4fk3ujre313j.apps.googleusercontent.com',
+    // Google issues desktop clients a non-confidential secret (see above), and the token exchange
+    // needs it. It's left empty here until the maintainer decides whether it goes in the public
+    // repo. Until then, sign-in with this client needs the secret from the environment or the
+    // keychain ("birddog secret set google-client-secret" or BIRDDOG_GOOGLE_CLIENT_SECRET),
+    // and the Calendar card says so instead of offering a button that would fail.
+    clientSecret: '',
+    // Where Google's review of the app stands; drives the notice next to the button:
+    //   'testing'     publishing status "Testing": only test users added in the Google Cloud
+    //                 console can sign in (invite-only), and Google ends each sign-in after 7 days
+    //   'unverified'  "In production" but not verified: the "unverified app" screen, 100-account cap
+    //   'verified'    Google approved the app: no notice
+    status: 'testing',
   }),
   linear: Object.freeze({ clientId: '' }),
   pagerduty: Object.freeze({ clientId: '' }),
@@ -77,10 +86,19 @@ export function resolveClientId(p, { env = process.env, configured = null, host 
   return { clientId: null, from: null, variable };
 }
 
-/** The built-in desktop secret, only when the built-in client ID is the one in use. */
+/** The built-in desktop secret, only when the built-in client ID is the one in use (null if it ships empty). */
 export function builtInSecret(p, from, builtIn = BUILT_IN) {
   return from === 'built-in' ? (builtIn[p]?.clientSecret || null) : null;
 }
 
-/** Has Google finished verifying the built-in app? (Drives the "unverified app" notice.) */
-export const googleVerified = (builtIn = BUILT_IN) => builtIn.google?.verified === true;
+const GOOGLE_STATUSES = new Set(['testing', 'unverified', 'verified']);
+
+/** Where Google's review of the built-in app stands: 'testing' | 'unverified' | 'verified'. */
+export function googleStatus(builtIn = BUILT_IN) {
+  const g = builtIn.google ?? {};
+  if (GOOGLE_STATUSES.has(g.status)) return g.status;
+  return g.verified === true ? 'verified' : 'unverified'; // older registries used verified: true|false
+}
+
+/** Has Google finished verifying the built-in app? (No notice once it has.) */
+export const googleVerified = (builtIn = BUILT_IN) => googleStatus(builtIn) === 'verified';

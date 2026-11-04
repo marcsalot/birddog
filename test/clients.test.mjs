@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
-import { BUILT_IN, builtInSecret, NO_BUILT_IN, resolveClientId } from '../src/auth/clients.mjs';
+import { BUILT_IN, builtInSecret, googleStatus, googleVerified, NO_BUILT_IN, resolveClientId } from '../src/auth/clients.mjs';
 import { createGithubAuth } from '../src/auth/github.mjs';
 import { createOAuth } from '../src/auth/oauth.mjs';
 import { createSecretStore } from '../src/secrets.mjs';
@@ -224,5 +224,85 @@ describe('built-in OAuth clients', () => {
       assert.doesNotMatch(everything, /GOCSPX/, 'the Google desktop secret');
       assert.doesNotMatch(everything, /linear-(at|rt)-\d/, 'access or refresh tokens');
     } finally { await app.close(); }
+  });
+});
+
+describe('built-in Google app: status, missing secret, testing mode', () => {
+  const NO_SECRET = { ...FAKE_BUILT_IN, google: { clientId: FAKE_BUILT_IN.google.clientId, clientSecret: '', status: 'testing' } };
+  const CB = 'http://127.0.0.1:4747/auth/oauth/google/callback';
+  const setup = async (builtIn, fetchImpl = fakeProviders(), extra = {}) => {
+    const dir = await tmpDir();
+    const secrets = await createSecretStore({ dir, backend: 'file' });
+    return { secrets, f: fetchImpl, o: createOAuth({ dir, secrets, getConfig: () => ({}), fetchImpl, env: {}, builtIn, ...extra }) };
+  };
+
+  it('ships the Birddog desktop client in testing, with its secret left out', () => {
+    assert.match(BUILT_IN.google.clientId, /^787425286434-[a-z0-9]+\.apps\.googleusercontent\.com$/);
+    assert.equal(BUILT_IN.google.clientSecret, '', 'the maintainer decides whether the secret goes in the repo');
+    assert.equal(googleStatus(), 'testing');
+    assert.equal(googleVerified(), false);
+  });
+
+  it('status: testing | unverified | verified, and the older verified flag still works', () => {
+    for (const status of ['testing', 'unverified', 'verified']) assert.equal(googleStatus({ google: { status } }), status);
+    assert.equal(googleStatus({ google: { verified: true } }), 'verified');
+    assert.equal(googleStatus({ google: { verified: false } }), 'unverified');
+    assert.equal(googleStatus({ google: { status: 'bogus' } }), 'unverified');
+  });
+
+  it('secret not configured: no button, a clear reason; the keychain secret completes it', async () => {
+    const { o, f, secrets } = await setup(NO_SECRET);
+    const s = await o.status('google');
+    assert.deepEqual([s.configured, s.builtIn, s.needsSecret, s.hasSecret, s.secretMissing, s.googleStatus, s.unverified], [true, true, true, false, true, 'testing', true]);
+    await assert.rejects(o.start('google', CB), /client secret isn't configured.*birddog secret set google-client-secret.*iCal/);
+    await secrets.set('google-client-secret', GOOGLE_SECRET);
+    assert.equal((await o.status('google')).secretMissing, false);
+    const { code, state } = f.approve((await o.start('google', CB)).url);
+    await o.callback('google', { code, state });
+    assert.equal(f.calls.findLast((c) => c.body.grant_type === 'authorization_code').body.client_secret, GOOGLE_SECRET);
+    assert.ok((await o.status('google')).connected);
+    assert.doesNotMatch(JSON.stringify(await o.status('google')), /GOCSPX/);
+  });
+
+  it('your own Google app is unaffected: secret optional, no notice', async () => {
+    const dir = await tmpDir();
+    const secrets = await createSecretStore({ dir, backend: 'file' });
+    const o = createOAuth({ dir, secrets, getConfig: () => ({ oauth: { google: { clientId: 'mine' } } }), fetchImpl: fakeProviders(), env: {}, builtIn: NO_SECRET });
+    const s = await o.status('google');
+    assert.deepEqual([s.builtIn, s.needsSecret, s.secretMissing, s.googleStatus, s.unverified], [false, false, false, null, false]);
+  });
+
+  it('testing: access_denied and "has not completed verification" become the invite-only guidance', async () => {
+    const testing = { ...FAKE_BUILT_IN, google: { ...FAKE_BUILT_IN.google, status: 'testing' } };
+    const { o } = await setup(testing);
+    const state = new URL((await o.start('google', CB)).url).searchParams.get('state');
+    await assert.rejects(o.callback('google', { error: 'access_denied', state }), /invite-only.*test users.*iCal link/s);
+    // Google can also refuse at the token endpoint with its verification wording.
+    const base = fakeProviders();
+    const refusing = Object.assign(async (url, init) => (new URL(url).pathname === '/token'
+      ? json({ error: 'access_denied', error_description: 'Birddog has not completed the Google verification process.' }, 403)
+      : base(url, init)), base);
+    const t = await setup(testing, refusing);
+    const ok = t.f.approve((await t.o.start('google', CB)).url);
+    await assert.rejects(t.o.callback('google', { code: ok.code, state: ok.state }), /invite-only/);
+  });
+
+  it('unverified and verified get their own wording; other providers keep the generic one', async () => {
+    const un = await setup({ ...FAKE_BUILT_IN, google: { ...FAKE_BUILT_IN.google, status: 'unverified' } });
+    await assert.rejects(un.o.callback('google', { error: 'access_denied' }), /unverified app.*100-account/s);
+    const ver = await setup({ ...FAKE_BUILT_IN, google: { ...FAKE_BUILT_IN.google, status: 'verified' } });
+    assert.equal((await ver.o.status('google')).unverified, false);
+    await assert.rejects(ver.o.callback('google', { error: 'access_denied' }), /cancelled or refused/);
+    await assert.rejects(un.o.callback('linear', { error: 'access_denied' }), /cancelled or refused/);
+  });
+
+  it('testing: a refused refresh says to sign in again, weekly', async () => {
+    let now = Date.now();
+    const { o, f } = await setup({ ...FAKE_BUILT_IN, google: { ...FAKE_BUILT_IN.google, status: 'testing' } }, fakeProviders(), { now: () => now });
+    const { code, state } = f.approve((await o.start('google', CB)).url);
+    await o.callback('google', { code, state });
+    f.state.failRefresh = true;
+    now += 2 * 3600_000;
+    await assert.rejects(o.accessToken('google'), /Sign in again.*after 7 days.*weekly/s);
   });
 });

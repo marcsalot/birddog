@@ -671,10 +671,19 @@ const READS = {
 };
 const signInReady = (o) => !!o && o.canStore && o.configured && !(o.needsSecret && !o.hasSecret);
 
-/** Google's "unverified app" notice, shown before you click, until Google has verified Birddog. */
-function googleNoticeHTML() {
+const ICAL_BTN = `<div class="row-btns"><button class="btn small" data-calmode="ics">Use an iCal link instead</button><span class="msg">No Google sign-in needed.</span></div>`;
+
+/**
+ * The notice next to "Sign in with Google" while Google hasn't verified Birddog's app.
+ * status 'testing': invite-only (test users) and a 7-day sign-in; 'unverified': the warning screen.
+ */
+function googleNoticeHTML(status) {
+  if (status === 'testing') {
+    return `<div class="signin-note" role="note"><b>Invite-only for now:</b> Birddog's Google sign-in is still in testing, so Google only lets in accounts the maintainer has added as test users. Anyone else gets an <b>“access denied”</b> or <b>“has not completed verification”</b> error. Not on the list? Use your calendar's secret <b>iCal link</b> instead. If you are on it, Google shows an <b>“unverified app”</b> screen: choose <b>Continue</b> (or <b>Advanced → Go to Birddog (unsafe)</b>). And while the app is in testing, Google ends each sign-in after 7 days, so expect to <b>Sign in again</b> about once a week. Birddog only reads your calendar events (read-only), and they stay on this computer.
+    ${ICAL_BTN}</div>`;
+  }
   return `<div class="signin-note" role="note"><b>Before you sign in:</b> Google will show an <b>“unverified app”</b> screen, because Google hasn't finished verifying Birddog yet. To continue, choose <b>Advanced → Go to Birddog (unsafe)</b>. Birddog only reads your calendar events (read-only), and they stay on this computer. Until verification is done, only the first 100 Google accounts can sign in.
-    <div class="row-btns"><button class="btn small" data-calmode="ics">Use an iCal link instead</button><span class="msg">No Google sign-in needed.</span></div></div>`;
+    ${ICAL_BTN}</div>`;
 }
 
 /**
@@ -692,10 +701,11 @@ function signInRow(p, { label, fallback = 'use a token below', compact = false }
     if (compact) return '';
     const who = o.name.replace(/ \(.*\)$/, ''); // "Atlassian (Jira Cloud)" → "Atlassian"
     const why = o.noBuiltIn ? `${esc(who)} sign-in needs a secret that a downloadable app can't keep, so the quickest way in is to ${esc(fallback)}.`
+      : o.builtIn && o.secretMissing ? `${esc(who)} sign-in isn't finished in this copy of Birddog: the built-in app's client secret isn't configured yet, so ${esc(fallback)}. (Maintainers: <code>birddog secret set ${esc(p)}-client-secret</code>.)`
       : `One-click sign-in isn't set up in this copy of Birddog, so ${esc(fallback)}.`;
     return `<div class="signin-row off"><span class="msg">${why} Have your own ${esc(who)} app? <button class="linkish" data-guide-link="logins">Bring your own app</button>.</span></div>`;
   }
-  return `<div class="signin-row"><button class="btn primary" data-oauth="${esc(p)}">${esc(label)}</button><span class="consent">Birddog will read ${READS[p] ?? 'your data, read-only'}. It never changes anything, and the tokens stay in your keychain.</span></div>${p === 'google' && o.unverified ? googleNoticeHTML() : ''}`;
+  return `<div class="signin-row"><button class="btn primary" data-oauth="${esc(p)}">${esc(label)}</button><span class="consent">Birddog will read ${READS[p] ?? 'your data, read-only'}. It never changes anything, and the tokens stay in your keychain.</span></div>${p === 'google' && o.unverified ? googleNoticeHTML(o.googleStatus) : ''}`;
 }
 
 function jiraCardHTML(src) {
@@ -809,8 +819,11 @@ function calCardHTML(src) {
       <div class="row-btns"><button class="btn" data-edit="cal">Change</button><button class="btn" data-test="cal" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-disconnect="cal" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
   }
   const mode = ui.mode ?? (provider === 'caldav' ? 'caldav' : 'ics');
-  const noOneClick = ['google', 'microsoft'].filter((p) => oauthState(p) && !signInReady(oauthState(p))).map((p) => oauthState(p).name);
+  const notReady = ['google', 'microsoft'].map(oauthState).filter((o) => o && !signInReady(o));
+  const noSecret = notReady.filter((o) => o.builtIn && o.secretMissing).map((o) => o.name);
+  const noOneClick = notReady.filter((o) => !(o.builtIn && o.secretMissing)).map((o) => o.name);
   const picker = `${signInRow('google', { label: 'Sign in with Google', compact: true })}${signInRow('microsoft', { label: 'Sign in with Microsoft', compact: true })}
+    ${noSecret.length ? `<div class="msg">${esc(noSecret.join(' and '))} sign-in isn't finished in this copy of Birddog: the built-in app's client secret isn't configured yet. Use the calendar's iCal link below for now. (Maintainers: <code>birddog secret set google-client-secret</code>.)</div>` : ''}
     ${noOneClick.length ? `<div class="msg">One-click ${esc(noOneClick.join(' and '))} sign-in isn't set up in this copy of Birddog: use the calendar's iCal link below, or <button class="linkish" data-guide-link="logins">bring your own app</button>.</div>` : ''}
     <div class="oauth-row"><button class="btn ${mode === 'caldav' ? 'on' : ''}" data-calmode="caldav">iCloud</button><button class="btn ${mode === 'ics' ? 'on' : ''}" data-calmode="ics">iCal link or file</button></div>`;
   if (mode === 'caldav') {

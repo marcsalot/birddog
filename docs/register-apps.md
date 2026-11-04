@@ -121,12 +121,24 @@ domain, plus a Microsoft Partner Network ID. Personal accounts work without it.
      confidential, so it may ship in the code. Birddog still never sends it to the browser, an API
      response or a log.
 
-Until Google verifies the app:
-- Every user sees Google's **"Google hasn't verified this app"** screen, and has to choose
-  **Advanced → Go to Birddog (unsafe)**. Birddog shows a notice about this next to the button
-  while `BUILT_IN.google.verified` is `false`.
-- Only **100 users** can ever sign in. That's Google's lifetime cap for unverified apps that ask
-  for sensitive scopes like `calendar.readonly`.
+Set `BUILT_IN.google.status` to match the app's publishing status. It drives the notice next to
+the button:
+
+- **`'testing'`** (publishing status *Testing*). Only the test users listed under Audience can
+  sign in; anyone else gets `access_denied` / "has not completed the Google verification process",
+  which Birddog turns into "invite-only, use an iCal link". Google also ends test users' refresh
+  tokens after **7 days**, so they sign in again weekly. Google won't let you publish until the
+  homepage and privacy policy are on a domain you can verify (not github.com; your
+  `<you>.github.io` works).
+- **`'unverified'`** (*In production*, not verified). Every user sees Google's **"Google hasn't
+  verified this app"** screen and has to choose **Advanced → Go to Birddog (unsafe)**, and only
+  **100 users** can ever sign in. That's Google's lifetime cap for unverified apps that ask for
+  sensitive scopes like `calendar.readonly`.
+- **`'verified'`**: no notice.
+
+If `clientSecret` is left empty, the card says the secret isn't configured, and sign-in with the
+built-in client takes the secret from `birddog secret set google-client-secret` or
+`BIRDDOG_GOOGLE_CLIENT_SECRET` instead.
 
 To lift both:
 1. Submit the app for **verification**: Google Auth Platform → Verification Center.
@@ -138,7 +150,7 @@ To lift both:
      Use requirements. [`PRIVACY.md`](../PRIVACY.md) has this text.
    - a short demo video of the sign-in and of what the scope is used for
 3. Sensitive scopes don't need a security assessment.
-4. When Google approves, set `verified: true` in `BUILT_IN.google` and the notice goes away.
+4. When Google approves, set `status: 'verified'` in `BUILT_IN.google` and the notice goes away.
 
 ## Linear (authorization code + PKCE)
 

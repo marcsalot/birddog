@@ -20,7 +20,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { readJson, writeJson } from '../store.mjs';
-import { BUILT_IN, builtInSecret, googleVerified, NO_BUILT_IN, resolveClientId } from './clients.mjs';
+import { BUILT_IN, builtInSecret, googleStatus, NO_BUILT_IN, resolveClientId } from './clients.mjs';
 
 const PENDING_TTL_MS = 10 * 60_000;
 const EARLY_REFRESH_MS = 60_000;
@@ -126,10 +126,26 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
   const clientId = (p) => client(p).clientId;
   // A secret belongs to one app: the built-in client only ever uses its own (Google's
   // non-confidential desktop secret); an app you registered uses yours.
+  const localSecret = async (p) => env[envName(p, 'CLIENT_SECRET')] || (await secrets.get(`${p}-client-secret`).catch(() => null)) || null;
+  // A built-in client that comes with a secret (Google's desktop client) but ships with it empty
+  // takes that same app's secret from the environment or keychain instead.
+  const builtInHasSecret = (p) => Object.hasOwn(builtIn[p] ?? {}, 'clientSecret');
   const clientSecret = async (p) => {
     const { from } = client(p);
-    if (from === 'built-in') return builtInSecret(p, from, builtIn);
-    return env[envName(p, 'CLIENT_SECRET')] || (await secrets.get(`${p}-client-secret`).catch(() => null)) || null;
+    if (from === 'built-in') return builtInSecret(p, from, builtIn) || (builtInHasSecret(p) ? await localSecret(p) : null);
+    return localSecret(p);
+  };
+  // The built-in Google client can't finish a sign-in without its secret.
+  const needsSecret = (p) => def(p).secret === 'required' || (client(p).from === 'built-in' && builtInHasSecret(p));
+  const gStatus = (p) => (p === 'google' && client(p).from === 'built-in' ? googleStatus(builtIn) : null);
+  // What Google says when an account isn't on the test-user list (or the app isn't verified).
+  const googleRefusal = (p, code, why) => {
+    const s = gStatus(p);
+    if (!s || s === 'verified') return null;
+    if (!(code === 'access_denied' || /has not completed (the )?(google )?verification|not completed verification/i.test(why || ''))) return null;
+    return s === 'testing'
+      ? "Google didn't let this account in. Birddog's Google sign-in is still in testing, so it's invite-only: only accounts the maintainer has added as test users can sign in. Use your calendar's secret iCal link instead (Google Calendar → Settings → your calendar → Integrate calendar → Secret address in iCal format)."
+      : "Google didn't let this account in. Birddog isn't verified by Google yet, so you may have cancelled at the \"unverified app\" screen (choose Advanced → Go to Birddog (unsafe) to continue), or the 100-account limit for unverified apps is reached. Or use your calendar's secret iCal link instead.";
   };
   const tokenKey = (p) => `oauth-${p}`;
 
@@ -154,7 +170,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
     const c = settings(p);
     const body = { client_id: clientId(p), ...params };
     const secret = d.secret === 'none' ? null : await clientSecret(p);
-    if (d.secret === 'required' && !secret) throw new OAuthError(`${d.name} needs its client secret too: run "birddog secret set ${p}-client-secret" (or set ${envName(p, 'CLIENT_SECRET')}).`);
+    if (needsSecret(p) && !secret) throw new OAuthError(`${d.name} needs its client secret too: run "birddog secret set ${p}-client-secret" (or set ${envName(p, 'CLIENT_SECRET')}).`);
     if (secret) body.client_secret = secret;
     let res;
     try {
@@ -168,6 +184,8 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.access_token) {
       const why = data.error_description || data.error || `HTTP ${res.status}`;
+      const g = googleRefusal(p, data.error, why);
+      if (g) throw new OAuthError(g, 401);
       throw new OAuthError(`${d.name} refused the sign-in: ${why}`, res.status === 400 || res.status === 401 ? 401 : 502);
     }
     return data;
@@ -183,7 +201,8 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
   async function refresh(p, t) {
     if (!t.refresh_token) throw new OAuthError(`${def(p).name}: the sign-in expired. Sign in again in setup.`, 401);
     const data = await tokenRequest(p, { grant_type: 'refresh_token', refresh_token: t.refresh_token }).catch((e) => {
-      throw new OAuthError(`${def(p).name}: could not renew the sign-in (${e.message}). Sign in again in setup.`, 401);
+      const weekly = gStatus(p) === 'testing' ? " Google ends sign-ins to apps in testing after 7 days, so this happens weekly until Birddog's Google app is published." : '';
+      throw new OAuthError(`${def(p).name}: could not renew the sign-in (${e.message}). Sign in again in setup.${weekly}`, 401);
     });
     const next = stamp(data, t);
     await saveTokens(p, next);
@@ -206,8 +225,10 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
         builtIn: c.from === 'built-in',
         clientIdFrom: c.from === 'env' ? c.variable : c.from === 'config' ? `config.json (oauth.${p}.clientId)` : c.from === 'built-in' ? "Birddog's own app" : null,
         noBuiltIn: NO_BUILT_IN[p] ?? null, // why there's no one-click app for this provider
-        unverified: p === 'google' && c.from === 'built-in' && !googleVerified(builtIn), // Google's "unverified app" screen
-        needsSecret: d.secret === 'required',
+        googleStatus: gStatus(p), // 'testing' | 'unverified' | 'verified' for the built-in Google app
+        unverified: !!gStatus(p) && gStatus(p) !== 'verified', // drives the notice next to the button
+        needsSecret: needsSecret(p),
+        secretMissing: needsSecret(p) && !(await clientSecret(p)), // e.g. the built-in Google secret isn't configured
         hasSecret: d.secret === 'none' ? null : !!(await clientSecret(p)),
         connected: !!(conn && t),
         account: conn?.account ?? null,
@@ -224,7 +245,11 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       if (secrets.readOnly) throw new OAuthError(`Sign-in needs somewhere safe to keep the tokens, and ${secrets.kind} is read-only here (Docker). Use an API token or an iCal link instead.`);
       const id = clientId(p);
       if (!id) throw new OAuthError(`One-click ${d.name} sign-in isn't available in this copy of Birddog. Use a token instead, or bring your own app: set oauth.${p}.clientId in config.json or ${envName(p, 'CLIENT_ID')} (see the guide).`);
-      if (d.secret === 'required' && !(await clientSecret(p))) throw new OAuthError(`${d.name} also needs its client secret: run "birddog secret set ${p}-client-secret".`);
+      if (needsSecret(p) && !(await clientSecret(p))) {
+        throw new OAuthError(client(p).from === 'built-in'
+          ? `${d.name} sign-in isn't finished in this copy of Birddog: the built-in app's client secret isn't configured. Run "birddog secret set ${p}-client-secret" (or set ${envName(p, 'CLIENT_SECRET')}), or use an iCal link instead.`
+          : `${d.name} also needs its client secret: run "birddog secret set ${p}-client-secret".`);
+      }
       for (const [k, v] of pending) if (v.exp < now()) pending.delete(k);
       if (pending.size > 50) throw new OAuthError('Too many sign-ins in progress. Wait a minute.', 429);
       const state = rand();
@@ -242,7 +267,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
     /** The provider sent the browser back. Exchanges the code; `identify` finds out who signed in. */
     async callback(p, params, identify) {
       def(p);
-      if (params.error) throw new OAuthError(`Sign-in was cancelled or refused: ${params.error_description || params.error}`, 401);
+      if (params.error) throw new OAuthError(googleRefusal(p, params.error, params.error_description) ?? `Sign-in was cancelled or refused: ${params.error_description || params.error}`, 401);
       const pend = pending.get(params.state);
       pending.delete(params.state);
       if (!pend || pend.provider !== p || pend.exp < now()) throw new OAuthError('This sign-in link expired or was already used. Start again from setup.');

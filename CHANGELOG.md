@@ -6,14 +6,12 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ### Added
 - The guide is **resizable**: drag its left edge to any width (or focus the edge and use ←/→, Shift for bigger steps; double-click resets). ⇤ in its header, or `Shift+G`, jumps between the normal rail and a wide reading view. The width is remembered (`guideWidth` pref). **Expand all / Collapse all** opens or closes every section at once.
+- Built-in Google app: client ID `787425286434-if73gibnotktjm2rrthk4fk3ujre313j.apps.googleusercontent.com` (project "Birddog", Desktop app client), status `'testing'`. Its desktop secret is left out of the repo for now: the Calendar card says "client secret isn't configured" instead of a button that would fail, and `birddog secret set google-client-secret` (or `BIRDDOG_GOOGLE_CLIENT_SECRET`) completes it.
+- Built-in GitHub app: **Sign in with GitHub** (device flow) now works on github.com with no setup. The client ID is `Ov23liwWb176mY399VPJ` (OAuth App "Birddog"); `BIRDDOG_GITHUB_CLIENT_ID` and `sources.github.clientId` still override it.
 
 ### Changed
 - Bigger icons in the main menu, especially when it's collapsed to icons (the collapsed menu is a little wider to fit them).
-
-## [Unreleased]
-
-### Added
-- Built-in GitHub app: **Sign in with GitHub** (device flow) now works on github.com with no setup. The client ID is `Ov23liwWb176mY399VPJ` (OAuth App "Birddog"); `BIRDDOG_GITHUB_CLIENT_ID` and `sources.github.clientId` still override it.
+- The Google notice follows `BUILT_IN.google.status` (`'testing'` | `'unverified'` | `'verified'`; the older `verified: true|false` still works). In testing it says sign-in is invite-only (test users only), suggests the iCal link, and warns that Google ends test sign-ins after 7 days. Google's `access_denied` and "has not completed verification" errors, and a refused weekly refresh, now explain the same thing instead of a bare error.
 
 ## [1.11.0] - 2026-11-04
 
