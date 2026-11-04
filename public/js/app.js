@@ -128,6 +128,15 @@ function staleTitle(s) {
   return `Could not refresh since ${whenLabel(s.staleSince ?? Date.now())}${next}: ${s.error ?? ''}`;
 }
 
+/** A sign-in that couldn't be renewed: one click to sign in again (GitHub opens its own dialog). */
+const needsSignIn = (s) => s.status === 'stale' && /sign in/i.test(s.error ?? '');
+function reauthButton(s) {
+  if (!needsSignIn(s)) return '';
+  if (s.signIn) return `<button class="btn small primary" data-oauth="${esc(s.signIn)}">Sign in again</button>`;
+  if (s.id === 'github') return '<button class="btn small primary" data-next="github">Sign in again</button>';
+  return '';
+}
+
 /** One bar per broken source, above the list: what's wrong, how old the data is, and Retry. */
 function staleBarsHTML() {
   if (st.view === 'done' || st.view === 'snoozed') return '';
@@ -136,7 +145,7 @@ function staleBarsHTML() {
     const busy = st.retrying.has(s.id);
     return `<div class="stale-bar" role="status"><span class="icon" aria-hidden="true">⚠</span>
       <div class="txt"><b>${esc(s.name)}</b> is <span class="stale-badge">stale since ${esc(whenLabel(s.staleSince ?? Date.now()))}</span> · showing what it found ${esc(relTime(s.lastSuccess))}.${next}<br><small>${esc(s.error)}</small></div>
-      <button class="btn small" data-retry="${esc(s.id)}" ${busy ? 'disabled' : ''}>${busy ? 'Retrying…' : '↻ Retry'}</button><button class="btn small" data-setup>Fix</button></div>`;
+      ${reauthButton(s) || `<button class="btn small" data-retry="${esc(s.id)}" ${busy ? 'disabled' : ''}>${busy ? 'Retrying…' : '↻ Retry'}</button><button class="btn small" data-setup>Fix</button>`}</div>`;
   }).join('');
 }
 
@@ -186,7 +195,7 @@ function emptyHTML() {
   }
   const broken = st.sources.find((s) => s.status === 'stale' && !s.count);
   if (broken && st.view !== 'done' && st.view !== 'snoozed') {
-    return `<div class="empty"><div class="big">🧭</div><h2>${esc(broken.name)} needs a hand</h2><div>${esc(broken.error)}</div><button class="btn primary" data-setup>Fix in setup →</button></div>`;
+    return `<div class="empty"><div class="big">🧭</div><h2>${esc(broken.name)} needs a hand</h2><div>${esc(broken.error)}</div>${reauthButton(broken) || '<button class="btn primary" data-setup>Fix in setup →</button>'}</div>`;
   }
   if (st.view === 'done') return '<div class="empty"><div class="big">·</div><h2>Nothing done yet</h2><div>Press <kbd>x</kbd> on an item and it lands here. If it changes later, it comes back.</div></div>';
   if (st.view === 'snoozed') return '<div class="empty"><div class="big">☾</div><h2>Nothing snoozed</h2><div>Press <kbd>s</kbd> to hide an item until later.</div></div>';
@@ -640,8 +649,9 @@ function githubCardHTML(src) {
   const device = conn.deviceFlowAvailable;
   return `${cardTop('github', src.name, ui.busy ? 'Working…' : 'Not signed in', err ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
     ${err ? `<div class="msg bad">${esc(err)}</div>` : ''}
-    <div class="row-btns">${device ? `<button class="btn primary" data-gh="device" ${ui.busy ? 'disabled' : ''}>Sign in with GitHub</button>` : ''}<button class="btn ${device ? '' : 'primary'}" data-gh="cli" ${ui.busy ? 'disabled' : ''}>Use my gh CLI login</button></div>
-    ${device ? '' : '<div class="msg">Prefer signing in through the browser? Add an OAuth App client ID as <code>sources.github.clientId</code> (see README).</div>'}</div>`;
+    ${device ? `<div class="signin-row"><button class="btn primary" data-gh="device" ${ui.busy ? 'disabled' : ''}>Sign in with GitHub</button><span class="consent">Birddog will read ${READS.github}. GitHub's OAuth apps can only ask for full repo access; Birddog never writes.</span></div>` : ''}
+    <div class="row-btns"><button class="btn ${device ? '' : 'primary'}" data-gh="cli" ${ui.busy ? 'disabled' : ''}>Use my gh CLI login</button></div>
+    ${device ? '' : '<div class="msg">Your <code>gh</code> login is the quickest way in (Birddog stores no token for it). One-click browser sign-in isn\'t set up in this copy of Birddog; <button class="linkish" data-guide-link="logins">bring your own OAuth App</button> if you want it.</div>'}</div>`;
 }
 
 const JIRA_TOKEN_URL = 'https://id.atlassian.com/manage-profile/security/api-tokens';
@@ -649,15 +659,43 @@ const JIRA_TOKEN_URL = 'https://id.atlassian.com/manage-profile/security/api-tok
 /** Jira: site, email and an API token. The token goes to the keychain, never config.json. */
 /** A provider's sign-in state from /api/oauth (never tokens). */
 const oauthState = (p) => st.setup?.oauth?.find((x) => x.id === p) ?? null;
-/** "Sign in with …" if the user has set up their app's client ID; otherwise a pointer to how. */
-function oauthButton(p, label, { primary = true } = {}) {
+/** What each sign-in lets Birddog read, for the consent line next to the button. */
+const READS = {
+  github: 'your review requests, pull requests, mentions and issues',
+  google: 'your calendar events, read-only',
+  microsoft: 'your calendar events and your name, read-only',
+  gitlab: 'your merge requests, pipelines and issues (read_api)',
+  linear: 'the issues assigned to you (read)',
+  pagerduty: 'your incidents and on-call shifts (read)',
+  atlassian: 'your Jira issues (read)',
+};
+const signInReady = (o) => !!o && o.canStore && o.configured && !(o.needsSecret && !o.hasSecret);
+
+/** Google's "unverified app" notice, shown before you click, until Google has verified Birddog. */
+function googleNoticeHTML() {
+  return `<div class="signin-note" role="note"><b>Before you sign in:</b> Google will show an <b>“unverified app”</b> screen, because Google hasn't finished verifying Birddog yet. To continue, choose <b>Advanced → Go to Birddog (unsafe)</b>. Birddog only reads your calendar events (read-only), and they stay on this computer. Until verification is done, only the first 100 Google accounts can sign in.
+    <div class="row-btns"><button class="btn small" data-calmode="ics">Use an iCal link instead</button><span class="msg">No Google sign-in needed.</span></div></div>`;
+}
+
+/**
+ * The one "Sign in" row on a source card: the button and what Birddog will read, or, when this
+ * copy of Birddog has no app for the provider, the fallback (token / bring your own app).
+ */
+function signInRow(p, { label, fallback = 'use a token below', compact = false } = {}) {
   const o = oauthState(p);
   if (!o) return '';
-  if (!o.canStore) return `<span class="msg">${esc(label)} isn't available in Docker (no keychain for its tokens).</span>`;
-  if (!o.configured || (o.needsSecret && !o.hasSecret)) {
-    return `<button class="btn" data-guide-link="logins" title="Needs your own app registration">${esc(label)}: set up ↗</button>`;
+  if (!o.canStore) return compact ? '' : `<div class="signin-row off"><span class="msg">${esc(label)} isn't available in Docker (no keychain for its tokens), so ${esc(fallback)}.</span></div>`;
+  if (o.connected) {
+    return `<div class="signin-row on"><span>✓ Signed in to ${esc(o.name)}${o.account ? ` as <b>${esc(o.account)}</b>` : ''}</span><button class="btn small" data-oauth="${esc(p)}">Sign in again</button><button class="btn small" data-oauth-off="${esc(p)}">Disconnect</button></div>`;
   }
-  return `<button class="btn ${primary ? 'primary' : ''}" data-oauth="${esc(p)}">${esc(label)}</button>`;
+  if (!signInReady(o)) {
+    if (compact) return '';
+    const who = o.name.replace(/ \(.*\)$/, ''); // "Atlassian (Jira Cloud)" → "Atlassian"
+    const why = o.noBuiltIn ? `${esc(who)} sign-in needs a secret that a downloadable app can't keep, so the quickest way in is to ${esc(fallback)}.`
+      : `One-click sign-in isn't set up in this copy of Birddog, so ${esc(fallback)}.`;
+    return `<div class="signin-row off"><span class="msg">${why} Have your own ${esc(who)} app? <button class="linkish" data-guide-link="logins">Bring your own app</button>.</span></div>`;
+  }
+  return `<div class="signin-row"><button class="btn primary" data-oauth="${esc(p)}">${esc(label)}</button><span class="consent">Birddog will read ${READS[p] ?? 'your data, read-only'}. It never changes anything, and the tokens stay in your keychain.</span></div>${p === 'google' && o.unverified ? googleNoticeHTML() : ''}`;
 }
 
 function jiraCardHTML(src) {
@@ -683,7 +721,7 @@ function jiraCardHTML(src) {
   const stateCls = connected ? cls : ui.msg && !ui.msgGood ? 'err' : '';
   const off = ui.busy ? 'disabled' : '';
   return `${cardTop('jira', src.name, state, stateCls)}<div class="msg">${esc(src.description)}</div>
-    <div class="oauth-row">${oauthButton('atlassian', 'Sign in with Atlassian')}<span class="msg">or use an API token:</span></div>
+    ${signInRow('atlassian', { label: 'Sign in with Atlassian', fallback: 'use an API token below' })}
     <div class="fields">
       <label><span>Site</span><input data-f="jira.site" value="${esc(d.site)}" placeholder="acme.atlassian.net" autocomplete="off" spellcheck="false"></label>
       <label><span>Email</span><input data-f="jira.email" type="email" value="${esc(d.email)}" placeholder="you@acme.com" autocomplete="off" spellcheck="false"></label>
@@ -771,8 +809,10 @@ function calCardHTML(src) {
       <div class="row-btns"><button class="btn" data-edit="cal">Change</button><button class="btn" data-test="cal" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-disconnect="cal" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
   }
   const mode = ui.mode ?? (provider === 'caldav' ? 'caldav' : 'ics');
-  const picker = `<div class="oauth-row">${oauthButton('google', 'Sign in with Google', { primary: false })}${oauthButton('microsoft', 'Sign in with Microsoft', { primary: false })}
-    <button class="btn ${mode === 'caldav' ? 'on' : ''}" data-calmode="caldav">iCloud</button><button class="btn ${mode === 'ics' ? 'on' : ''}" data-calmode="ics">iCal link or file</button></div>`;
+  const noOneClick = ['google', 'microsoft'].filter((p) => oauthState(p) && !signInReady(oauthState(p))).map((p) => oauthState(p).name);
+  const picker = `${signInRow('google', { label: 'Sign in with Google', compact: true })}${signInRow('microsoft', { label: 'Sign in with Microsoft', compact: true })}
+    ${noOneClick.length ? `<div class="msg">One-click ${esc(noOneClick.join(' and '))} sign-in isn't set up in this copy of Birddog: use the calendar's iCal link below, or <button class="linkish" data-guide-link="logins">bring your own app</button>.</div>` : ''}
+    <div class="oauth-row"><button class="btn ${mode === 'caldav' ? 'on' : ''}" data-calmode="caldav">iCloud</button><button class="btn ${mode === 'ics' ? 'on' : ''}" data-calmode="ics">iCal link or file</button></div>`;
   if (mode === 'caldav') {
     const d = ui.draft ?? { caldavUser: s.caldavUser ?? '', caldavPassword: '' };
     return `${cardTop('cal', src.name, ui.busy ? 'Working…' : 'Not connected', ui.msg && !ui.msgGood ? 'err' : '')}<div class="msg">${esc(src.description)}</div>${picker}
@@ -837,7 +877,7 @@ function tokenCardHTML(src) {
   const off = ui.busy ? 'disabled' : '';
   const env = envSecret(tokenName);
   return `${cardTop(src.id, src.name, ui.busy ? 'Working…' : src.enabled && status === 'stale' ? 'Needs attention' : 'Not connected', ui.msg && !ui.msgGood ? 'err' : status === 'stale' && src.enabled ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
-    ${setup.oauth ? `<div class="oauth-row">${oauthButton(setup.oauth, `Sign in with ${src.name}`)}<span class="msg">or use a token:</span></div>` : ''}
+    ${setup.oauth ? signInRow(setup.oauth, { label: `Sign in with ${src.name}` }) : ''}${setup.oauth && signInReady(oauthState(setup.oauth)) ? '<div class="msg or-token">Or use a token:</div>' : ''}
     <div class="fields">
       ${setup.fields.map((f) => `<label><span>${esc(f.label)}${f.optional ? ' <i>(optional)</i>' : ''}</span><input data-f="${src.id}.${esc(f.key)}" value="${esc(d[f.key] ?? '')}" placeholder="${esc(f.placeholder ?? '')}" autocomplete="off" spellcheck="false"></label>`).join('')}
       ${env ? '' : `<label class="full"><span>${esc(setup.token.label)} · <a href="${esc(setup.token.help)}" target="_blank" rel="noopener noreferrer">how to get one ↗</a></span><input data-f="${src.id}.token" type="password" value="" placeholder="${hasToken ? `Saved in ${esc(st.setup.secretStore)} · leave blank to keep it` : esc(setup.token.placeholder ?? 'Paste your token')}" autocomplete="off"></label>`}

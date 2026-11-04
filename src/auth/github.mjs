@@ -10,6 +10,7 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { readJson, writeJson } from '../store.mjs';
+import { BUILT_IN, resolveClientId } from './clients.mjs';
 
 export const GITHUB_DEFAULTS = Object.freeze({ webUrl: 'https://github.com', apiUrl: 'https://api.github.com', scopes: 'repo read:org' });
 const SECRET = 'github-token';
@@ -25,13 +26,18 @@ export function ghCliToken(host) {
   });
 }
 
-export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, cliToken = ghCliToken, now = () => Date.now(), sleep, onChange = () => {} }) {
+export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, cliToken = ghCliToken, now = () => Date.now(), sleep, onChange = () => {}, env = process.env, builtIn = BUILT_IN }) {
   const file = path.join(dir, 'connections.json');
   const wait = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms).unref?.()));
   let device = null; // the device flow in progress, if any
   const notify = () => { Promise.resolve().then(onChange).catch(() => {}); };
 
-  const settings = () => ({ ...GITHUB_DEFAULTS, ...(getConfig().sources?.github ?? {}) });
+  // Client ID: BIRDDOG_GITHUB_CLIENT_ID, then sources.github.clientId, then Birddog's own app (github.com only).
+  const settings = () => {
+    const s = { ...GITHUB_DEFAULTS, ...(getConfig().sources?.github ?? {}) };
+    const c = resolveClientId('github', { env, configured: s.clientId || null, host: s.webUrl, builtIn });
+    return { ...s, clientId: c.clientId, clientIdFrom: c.from };
+  };
   const host = () => new URL(settings().webUrl).host;
 
   async function post(url, form) {
@@ -117,6 +123,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
         connectedAt: conn?.connectedAt ?? null,
         tokenFrom: secrets.readOnly ? (secrets.describe?.(SECRET) ?? null) : null,
         deviceFlowAvailable: !!s.clientId,
+        builtIn: s.clientIdFrom === 'built-in',
         host: host(),
         secretStore: secrets.kind,
         device: device && { status: device.status, userCode: device.userCode, verificationUri: device.verificationUri, expiresAt: device.expiresAt, error: device.error ?? null, login: device.login ?? null },
@@ -127,7 +134,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
     async startDevice() {
       const s = settings();
       if (!s.clientId) {
-        throw new Error('Device sign-in needs a GitHub OAuth App client ID in sources.github.clientId (see README), or use your gh CLI login.');
+        throw new Error('One-click GitHub sign-in isn\'t available in this copy of Birddog. Use your gh CLI login, or bring your own OAuth App: sources.github.clientId (see the guide).');
       }
       const r = await post(`${s.webUrl}/login/device/code`, { client_id: s.clientId, scope: s.scopes });
       if (r.error) throw new Error(r.error === 'device_flow_disabled' ? 'Enable "Device flow" in your GitHub OAuth App settings.' : (r.error_description || r.error));

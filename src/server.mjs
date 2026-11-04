@@ -159,13 +159,14 @@ async function serveStatic(req, res, pathname) {
  * @param {boolean} [opts.liveReload]  development: tell open pages to reload when public/ changes
  * @param {Function} [opts.notifySystem] shows a system notification (tests swap it)
  * @param {string} [opts.notifyChannel] force a channel ("system" for `birddog notify`)
+ * @param {object} [opts.builtInClients] Birddog's own OAuth client IDs (tests swap them; default src/auth/clients.mjs)
  * @param {Function} [opts.firstRunFolders] what the first-run screen offers (the demo swaps it)
  * @param {boolean} [opts.allowRemote] container mode: may listen on 0.0.0.0 without login, because
  *                                     Docker publishes the port to the host's loopback only
  */
 export async function createBirddog({
   dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console, secrets, fetchImpl = fetch, cliToken,
-  liveReload = false, allowRemote = false, notifySystem, notifyChannel, firstRunFolders,
+  liveReload = false, allowRemote = false, notifySystem, notifyChannel, firstRunFolders, builtInClients,
 }) {
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
@@ -200,6 +201,7 @@ export async function createBirddog({
   }
   let refresh; // defined below; GitHub sign-in changes trigger a rescan
   const github = createGithubAuth({
+    ...(builtInClients ? { builtIn: builtInClients } : {}),
     dir, secrets, getConfig: () => config, fetchImpl, cliToken, now,
     onChange: async () => {
       // Signing in to GitHub switches the source back on if setup had turned it off.
@@ -217,7 +219,7 @@ export async function createBirddog({
     await saveConfig(dir, config).catch(() => {});
   }
   // What every source gets in ctx, besides now/warn/summary.
-  const oauth = createOAuth({ dir, secrets, getConfig: () => config, fetchImpl, now });
+  const oauth = createOAuth({ dir, secrets, getConfig: () => config, fetchImpl, now, ...(builtInClients ? { builtIn: builtInClients } : {}) });
   const context = { fetch: fetchImpl, github, oauth, secret: (name) => secrets.get(name) };
   const collector = new Collector({ sources, dir, getConfig: () => config, now, log, context });
   const triage = new Triage({ dir, now });
@@ -269,7 +271,12 @@ export async function createBirddog({
   };
 
   function itemsPayload(snap = collector.snapshot()) {
-    return { ...snap, items: triage.apply(snap.items), refreshing: collector.refreshing };
+    // Tag sources that run on a sign-in, so a failed renewal can offer "Sign in again".
+    const sourcesOut = snap.sources.map((s) => {
+      const p = Object.keys(USES).find((k) => USES[k].source === s.id && USES[k].uses(config.sources?.[s.id] ?? {}));
+      return p ? { ...s, signIn: p } : s;
+    });
+    return { ...snap, sources: sourcesOut, items: triage.apply(snap.items), refreshing: collector.refreshing };
   }
 
   refresh = async (opts) => {
@@ -402,6 +409,17 @@ export async function createBirddog({
       const u = await r.json().catch(() => ({}));
       return { account: u.username ? `@${u.username}` : null };
     },
+    linear: async (p, token) => {
+      const r = await fetchImpl('https://api.linear.app/graphql', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ query: 'query { viewer { name email } }' }) });
+      const v = (await r.json().catch(() => ({})))?.data?.viewer ?? {};
+      return { account: v.email ?? v.name ?? null };
+    },
+    pagerduty: async (p, token) => {
+      const base = config.sources?.pagerduty?.url || 'https://api.pagerduty.com';
+      const r = await fetchImpl(`${base.replace(/\/+$/, '')}/users/me`, { headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.pagerduty+json;version=2' } });
+      const u = (await r.json().catch(() => ({})))?.user ?? {};
+      return { account: u.email ?? u.name ?? null };
+    },
   };
   /** Which source each sign-in feeds, how to switch it to that sign-in, and back. */
   const USES = {
@@ -409,6 +427,8 @@ export async function createBirddog({
     google: { source: 'cal', on: () => ({ provider: 'google' }), uses: (c) => c.provider === 'google', off: { provider: 'ics' } },
     microsoft: { source: 'cal', on: () => ({ provider: 'microsoft' }), uses: (c) => c.provider === 'microsoft', off: { provider: 'ics' } },
     gitlab: { source: 'gitlab', on: () => ({ auth: 'oauth', url: gitlabBase() }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
+    linear: { source: 'linear', on: () => ({ auth: 'oauth' }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
+    pagerduty: { source: 'pagerduty', on: () => ({ auth: 'oauth' }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
   };
   /** After a sign-in, point the matching source at it and switch it on. */
   function useProvider(p, info) {

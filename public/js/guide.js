@@ -44,15 +44,19 @@ export const SECTIONS = [
       <p>In Docker, pass the tokens as <code>GITLAB_TOKEN</code>, <code>LINEAR_API_KEY</code>, <code>AZURE_DEVOPS_EXT_PAT</code>, <code>SENTRY_AUTH_TOKEN</code>, <code>BIRDDOG_PAGERDUTY_TOKEN</code> or <code>BIRDDOG_SLACK_TOKEN</code>.</p>`,
   },
   {
-    id: 'logins', title: 'Sign-ins (Google, Microsoft, Atlassian, iCloud)', words: 'oauth login sign in google microsoft outlook office 365 atlassian jira icloud apple caldav app-specific password client id register',
-    html: `<p>Instead of pasting tokens, you can sign in. Each provider needs <b>your own app registration</b> (free, about five minutes). Birddog never creates apps or accounts for you, and never sees your password. Put the client ID in config.json under <code>oauth.&lt;provider&gt;.clientId</code> (or <code>BIRDDOG_&lt;PROVIDER&gt;_CLIENT_ID</code>) and restart.</p>
+    id: 'logins', title: 'Sign-ins (GitHub, Google, Microsoft, GitLab, Linear, PagerDuty, iCloud)', words: 'oauth login sign in google microsoft outlook office 365 atlassian jira gitlab linear pagerduty icloud apple caldav app-specific password client id register unverified own app',
+    html: `<p>Where a card shows <b>Sign in with …</b>, one click is all it takes: Birddog uses its own app for that provider, so there's nothing to register. The line next to the button says what Birddog will read. It only ever reads, and the tokens stay in your keychain. After you sign in, the card shows the account and a <b>Disconnect</b> button.</p>
       <ul>
-        <li><b>Google Calendar</b>: Google Cloud Console → APIs &amp; Services → enable the <i>Google Calendar API</i> → Credentials → <i>OAuth client ID</i>, type <b>Desktop app</b>. If you get a client secret, save it with <code>birddog secret set google-client-secret</code>.</li>
-        <li><b>Microsoft 365 / Outlook</b>: Microsoft Entra → App registrations → New registration. Add the platform <b>Mobile and desktop applications</b> with the redirect URI <code>http://127.0.0.1/auth/oauth/microsoft/callback</code> (the port doesn't matter). Allow public client flows. Add the delegated permission <i>Calendars.Read</i>.</li>
-        <li><b>Atlassian (Jira)</b>: developer.atlassian.com → Console → create an <b>OAuth 2.0 integration</b>. Add the Jira API scopes <i>read:jira-work</i> and <i>read:jira-user</i>, and the callback URL <code>http://127.0.0.1:4747/auth/oauth/atlassian/callback</code> (with your port). Atlassian needs the client secret too: <code>birddog secret set atlassian-client-secret</code>.</li>
-        <li><b>iCloud</b>: Apple has no sign-in flow for calendars. Make an <b>app-specific password</b> at appleid.apple.com → Sign-In and Security → App-Specific Passwords, then choose <i>iCloud</i> on the Calendar card.</li>
+        <li><b>GitHub</b>: a code to approve on github.com (device flow), or your <code>gh</code> login.</li>
+        <li><b>Google Calendar</b> and <b>Microsoft 365 / Outlook</b>: read-only calendar access.</li>
+        <li><b>GitLab</b> (gitlab.com), <b>Linear</b> and <b>PagerDuty</b>: read-only access, as an alternative to a token.</li>
+        <li><b>Jira</b> and <b>Slack</b> use tokens. Their sign-in needs a secret that a downloadable app can't keep, so there's no one-click app for them.</li>
+        <li><b>iCloud</b>: Apple has no sign-in for calendars. Make an <b>app-specific password</b> at appleid.apple.com → Sign-In and Security → App-Specific Passwords, then choose <i>iCloud</i> on the Calendar card.</li>
       </ul>
-      <p>Tokens go to your keychain and are renewed automatically. <b>Disconnect</b> forgets them, and revokes them too where the provider allows it (Google). Sign-ins aren't available in Docker, because there's no keychain for the tokens; use API tokens or iCal links there.</p>
+      <p><b>About Google's warning.</b> Until Google finishes verifying Birddog, signing in shows an <b>“unverified app”</b> screen. To continue, choose <b>Advanced → Go to Birddog (unsafe)</b>. Birddog only reads your calendar events, read-only, and they stay on this computer. Until then only the first 100 Google accounts can sign in. Rather not? Paste your calendar's private <b>iCal link</b> instead; that needs no Google sign-in.</p>
+      <p>If a sign-in can't be renewed (you revoked it, or it expired), the source turns <b>stale</b> and shows <b>Sign in again</b>.</p>
+      <p><b>No sign-in button?</b> This copy of Birddog has no app for that provider yet, so use a token, or bring your own app: register one (see the README) and put its client ID in config.json under <code>oauth.&lt;provider&gt;.clientId</code> or <code>BIRDDOG_&lt;PROVIDER&gt;_CLIENT_ID</code>. Your own app always wins over the built-in one.</p>
+      <p>Sign-ins aren't available in Docker, because there's no keychain for the tokens. Use API tokens or iCal links there.</p>
       <p><b>Sign in with Apple</b> for the dashboard itself is an optional login, like Google or Okta login. It needs a paid Apple Developer account, a Services ID and a public https address; see the README.</p>`,
   },
   {

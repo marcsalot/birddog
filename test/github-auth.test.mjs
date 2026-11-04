@@ -36,7 +36,7 @@ async function setup({ clientId = 'Iv1.test', script = [], cliToken } = {}) {
   const secrets = await createSecretStore({ dir, backend: 'file' });
   const gh = fakeGithub(script);
   const auth = createGithubAuth({
-    dir, secrets, fetchImpl: gh.fetch, cliToken, sleep: async () => {},
+    dir, secrets, fetchImpl: gh.fetch, cliToken, sleep: async () => {}, env: {}, builtIn: {},
     getConfig: () => ({ sources: { github: clientId ? { clientId } : {} } }),
   });
   return { dir, secrets, gh, auth };
@@ -71,7 +71,7 @@ describe('GitHub sign-in', () => {
   it('device flow needs a client id', async () => {
     const { auth } = await setup({ clientId: null });
     assert.equal((await auth.status()).deviceFlowAvailable, false);
-    await assert.rejects(auth.startDevice(), /client ID/);
+    await assert.rejects(auth.startDevice(), /One-click GitHub sign-in isn't available.*sources.github.clientId/);
   });
 
   it('gh CLI: uses gh\'s token and stores no copy', async () => {

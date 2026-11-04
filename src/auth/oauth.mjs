@@ -3,12 +3,15 @@
 //
 //   google     Google Calendar (read-only)          desktop-app client, PKCE
 //   microsoft  Microsoft 365 / Outlook calendar     public client, PKCE, no secret
-//   atlassian  Jira Cloud (OAuth 2.0 "3LO")         needs its client secret too
+//   gitlab     GitLab (read_api)                    non-confidential app, PKCE, no secret
+//   linear     Linear (read)                        PKCE, no secret
+//   pagerduty  PagerDuty (read)                     Classic User OAuth, PKCE, no secret
+//   atlassian  Jira Cloud (OAuth 2.0 "3LO")         needs your own app and its secret
 //
-// Every provider needs your own app registration and client ID (Birddog never
-// creates one for you). Client IDs come from config.json (oauth.<provider>.clientId)
-// or BIRDDOG_<PROVIDER>_CLIENT_ID; client secrets from the keychain
-// (<provider>-client-secret) or BIRDDOG_<PROVIDER>_CLIENT_SECRET.
+// Client IDs: BIRDDOG_<PROVIDER>_CLIENT_ID, then config.json (oauth.<provider>.clientId),
+// then Birddog's own built-in public client (src/auth/clients.mjs). Client secrets, for
+// your own apps: BIRDDOG_<PROVIDER>_CLIENT_SECRET or the keychain (<provider>-client-secret).
+// The built-in clients have no secret, except Google's non-confidential desktop one.
 //
 // Tokens (access + refresh) are kept in the keychain as "oauth-<provider>",
 // refreshed when they are about to expire, and removed (and revoked where the
@@ -17,6 +20,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { readJson, writeJson } from '../store.mjs';
+import { BUILT_IN, builtInSecret, googleVerified, NO_BUILT_IN, resolveClientId } from './clients.mjs';
 
 const PENDING_TTL_MS = 10 * 60_000;
 const EARLY_REFRESH_MS = 60_000;
@@ -56,6 +60,30 @@ export const PROVIDERS = {
     tokenBody: 'form',
     register: 'https://gitlab.com/-/user_settings/applications',
   },
+  linear: {
+    name: 'Linear',
+    authorize: () => 'https://linear.app/oauth/authorize',
+    token: () => 'https://api.linear.app/oauth/token',
+    revoke: 'https://api.linear.app/oauth/revoke',
+    revokeAuth: 'bearer', // Linear revokes the token sent as a Bearer credential
+    scopes: ['read'],
+    scopeSep: ',', // Linear takes a comma-separated scope list
+    extra: { prompt: 'consent' },
+    secret: 'optional', // optional with PKCE, per Linear's docs
+    tokenBody: 'form',
+    register: 'https://linear.app/settings/api/applications/new',
+  },
+  pagerduty: {
+    name: 'PagerDuty',
+    authorize: () => 'https://identity.pagerduty.com/oauth/authorize',
+    token: () => 'https://identity.pagerduty.com/oauth/token',
+    revoke: null, // no revoke endpoint; "Revoke All Tokens" in the app registration, or remove the app in PagerDuty
+    scopes: ['read'],
+    extra: {},
+    secret: 'optional', // Classic User OAuth: a non-confidential client omits it (PKCE required)
+    tokenBody: 'form',
+    register: 'https://support.pagerduty.com/main/docs/app-registration',
+  },
   atlassian: {
     name: 'Atlassian (Jira Cloud)',
     authorize: () => 'https://auth.atlassian.com/authorize',
@@ -82,7 +110,7 @@ const envName = (p, what) => `BIRDDOG_${p.toUpperCase()}_${what}`;
  * @param {object} o.secrets       secret store
  * @param {() => object} o.getConfig
  */
-export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = () => Date.now(), env = process.env }) {
+export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = () => Date.now(), env = process.env, builtIn = BUILT_IN }) {
   const file = path.join(dir, 'connections.json');
   const pending = new Map(); // state → { provider, verifier, redirectUri, exp }
   const refreshing = new Map(); // provider → promise
@@ -93,8 +121,16 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
     return d;
   };
   const settings = (p) => ({ ...(getConfig().oauth?.[p] ?? {}) });
-  const clientId = (p) => env[envName(p, 'CLIENT_ID')] || settings(p).clientId || null;
-  const clientSecret = async (p) => env[envName(p, 'CLIENT_SECRET')] || (await secrets.get(`${p}-client-secret`).catch(() => null)) || null;
+  const hostFor = (p) => (p === 'gitlab' ? settings(p).url || 'https://gitlab.com' : null);
+  const client = (p) => resolveClientId(p, { env, configured: settings(p).clientId || null, host: hostFor(p), builtIn: NO_BUILT_IN[p] ? {} : builtIn });
+  const clientId = (p) => client(p).clientId;
+  // A secret belongs to one app: the built-in client only ever uses its own (Google's
+  // non-confidential desktop secret); an app you registered uses yours.
+  const clientSecret = async (p) => {
+    const { from } = client(p);
+    if (from === 'built-in') return builtInSecret(p, from, builtIn);
+    return env[envName(p, 'CLIENT_SECRET')] || (await secrets.get(`${p}-client-secret`).catch(() => null)) || null;
+  };
   const tokenKey = (p) => `oauth-${p}`;
 
   async function readTokens(p) {
@@ -162,11 +198,15 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       const d = def(p);
       const conn = await connection(p);
       const t = await readTokens(p);
+      const c = client(p);
       return {
         id: p,
         name: d.name,
-        configured: !!clientId(p),
-        clientIdFrom: env[envName(p, 'CLIENT_ID')] ? envName(p, 'CLIENT_ID') : clientId(p) ? `config.json (oauth.${p}.clientId)` : null,
+        configured: !!c.clientId,
+        builtIn: c.from === 'built-in',
+        clientIdFrom: c.from === 'env' ? c.variable : c.from === 'config' ? `config.json (oauth.${p}.clientId)` : c.from === 'built-in' ? "Birddog's own app" : null,
+        noBuiltIn: NO_BUILT_IN[p] ?? null, // why there's no one-click app for this provider
+        unverified: p === 'google' && c.from === 'built-in' && !googleVerified(builtIn), // Google's "unverified app" screen
         needsSecret: d.secret === 'required',
         hasSecret: d.secret === 'none' ? null : !!(await clientSecret(p)),
         connected: !!(conn && t),
@@ -183,7 +223,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       const d = def(p);
       if (secrets.readOnly) throw new OAuthError(`Sign-in needs somewhere safe to keep the tokens, and ${secrets.kind} is read-only here (Docker). Use an API token or an iCal link instead.`);
       const id = clientId(p);
-      if (!id) throw new OAuthError(`${d.name} sign-in needs your own app's client ID: set oauth.${p}.clientId in config.json or ${envName(p, 'CLIENT_ID')} (see the guide).`);
+      if (!id) throw new OAuthError(`One-click ${d.name} sign-in isn't available in this copy of Birddog. Use a token instead, or bring your own app: set oauth.${p}.clientId in config.json or ${envName(p, 'CLIENT_ID')} (see the guide).`);
       if (d.secret === 'required' && !(await clientSecret(p))) throw new OAuthError(`${d.name} also needs its client secret: run "birddog secret set ${p}-client-secret".`);
       for (const [k, v] of pending) if (v.exp < now()) pending.delete(k);
       if (pending.size > 50) throw new OAuthError('Too many sign-ins in progress. Wait a minute.', 429);
@@ -193,7 +233,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       pending.set(state, { provider: p, verifier, redirectUri, exp: now() + PENDING_TTL_MS });
       const url = new URL(d.authorize(settings(p)));
       url.search = new URLSearchParams({
-        response_type: 'code', client_id: id, redirect_uri: redirectUri, scope: [...d.scopes, ...(settings(p).extraScopes ?? [])].join(' '),
+        response_type: 'code', client_id: id, redirect_uri: redirectUri, scope: [...d.scopes, ...(settings(p).extraScopes ?? [])].join(d.scopeSep ?? ' '),
         state, code_challenge: challenge, code_challenge_method: 'S256', ...d.extra,
       }).toString();
       return { url: url.toString() };
@@ -234,14 +274,16 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       let revoked = false;
       if (t && d.revoke) {
         try {
-          const form = { token: p === 'gitlab' ? t.access_token : (t.refresh_token || t.access_token), ...(p === 'gitlab' ? { client_id: clientId(p) } : {}) };
-          const res = await fetchImpl(d.revokeFor ? d.revokeFor(settings(p)) : d.revoke, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form), signal: AbortSignal.timeout(10_000) });
+          const form = { token: p === 'gitlab' || p === 'linear' ? t.access_token : (t.refresh_token || t.access_token), ...(p === 'gitlab' ? { client_id: clientId(p) } : {}) };
+          const headers = { 'content-type': 'application/x-www-form-urlencoded', ...(d.revokeAuth === 'bearer' ? { authorization: `Bearer ${t.access_token}` } : {}) };
+          const res = await fetchImpl(d.revokeFor ? d.revokeFor(settings(p)) : d.revoke, { method: 'POST', headers, body: new URLSearchParams(form), signal: AbortSignal.timeout(10_000) });
           revoked = res.ok;
         } catch { /* offline: still forget locally */ }
       }
       await secrets.delete(tokenKey(p)).catch(() => {});
       await saveConnection(p, null);
-      return { revoked, manage: d.revoke ? null : p === 'microsoft' ? 'https://account.microsoft.com/privacy/app-access' : 'https://id.atlassian.com/manage-profile/apps' };
+      const manage = { microsoft: 'https://account.microsoft.com/privacy/app-access', atlassian: 'https://id.atlassian.com/manage-profile/apps', pagerduty: 'https://support.pagerduty.com/main/docs/app-registration' };
+      return { revoked, manage: d.revoke ? null : manage[p] ?? null };
     },
   };
 }

@@ -72,11 +72,11 @@ function fakeProviders({ now = () => Date.now() } = {}) {
   return fn;
 }
 
-async function oauthFor({ config = {}, secrets, env = {}, now } = {}) {
+async function oauthFor({ config = {}, secrets, env = {}, now, builtIn = {} } = {}) {
   const dir = await tmpDir();
   const store = secrets ?? await createSecretStore({ dir, backend: 'file' });
   const f = fakeProviders({ now });
-  const o = createOAuth({ dir, secrets: store, getConfig: () => ({ oauth: config }), fetchImpl: f, env, now });
+  const o = createOAuth({ dir, secrets: store, getConfig: () => ({ oauth: config }), fetchImpl: f, env, now, builtIn });
   return { o, f, dir, store };
 }
 
@@ -98,7 +98,7 @@ describe('OAuth sign-in for sources', () => {
 
   it('needs your own client ID, and refuses in Docker where tokens cannot be stored', async () => {
     const { o } = await oauthFor();
-    await assert.rejects(o.start('google', 'http://x/y'), /client ID: set oauth\.google\.clientId in config\.json or BIRDDOG_GOOGLE_CLIENT_ID/);
+    await assert.rejects(o.start('google', 'http://x/y'), /isn't available in this copy of Birddog. Use a token instead, or bring your own app: set oauth\.google\.clientId in config\.json or BIRDDOG_GOOGLE_CLIENT_ID/);
     const ro = await createSecretStore({ dir: await tmpDir(), backend: 'env', env: {} });
     const { o: docker } = await oauthFor({ secrets: ro, env: { BIRDDOG_GOOGLE_CLIENT_ID: 'g' } });
     await assert.rejects(docker.start('google', 'http://x/y'), /read-only here \(Docker\)/);

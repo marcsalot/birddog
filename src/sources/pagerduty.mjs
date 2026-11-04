@@ -14,15 +14,23 @@ export const secretFields = Object.freeze({ token: 'pagerduty-token' });
 export const setup = tokenSetup({
   fields: [{ key: 'url', label: 'API address', placeholder: 'https://api.pagerduty.com (EU: https://api.eu.pagerduty.com)', optional: true }],
   token: { label: 'User API token (read-only is enough)', help: 'https://support.pagerduty.com/main/docs/api-access-keys#generate-a-user-token-rest-api-key', placeholder: 'Paste your user token' },
+  oauth: 'pagerduty',
 });
 
-export function normalizeSettings(input = {}) { return { url: baseUrl(input.url, 'https://api.pagerduty.com') }; }
+export function normalizeSettings(input = {}) { return { url: baseUrl(input.url, 'https://api.pagerduty.com'), auth: input.auth === 'oauth' ? 'oauth' : 'token' }; }
 
 async function client(config, ctx) {
-  const token = await ctx.secret?.(secretFields.token);
-  if (!token) throw new Error('Add a PagerDuty user API token in setup.');
+  let authorization;
+  if (config.auth === 'oauth') {
+    if (!ctx.oauth) throw new Error('Sign in to PagerDuty in setup.');
+    authorization = `Bearer ${await ctx.oauth.accessToken('pagerduty')}`;
+  } else {
+    const token = await ctx.secret?.(secretFields.token);
+    if (!token) throw new Error('Add a PagerDuty user API token in setup, or sign in with PagerDuty.');
+    authorization = `Token token=${token}`;
+  }
   const base = baseUrl(config.url, 'https://api.pagerduty.com');
-  return { base, http: jsonClient({ fetchImpl: ctx.fetch ?? fetch, label: 'PagerDuty', headers: { authorization: `Token token=${token}`, accept: 'application/vnd.pagerduty+json;version=2' }, fix: 'Make a new user API token in PagerDuty and update it in setup.' }) };
+  return { base, http: jsonClient({ fetchImpl: ctx.fetch ?? fetch, label: 'PagerDuty', headers: { authorization, accept: 'application/vnd.pagerduty+json;version=2' }, fix: config.auth === 'oauth' ? 'Sign in to PagerDuty again in setup.' : 'Make a new user API token in PagerDuty and update it in setup.' }) };
 }
 
 const when = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });

@@ -10,6 +10,19 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 ### Changed
 - Bigger icons in the main menu, especially when it's collapsed to icons (the collapsed menu is a little wider to fit them).
 
+## [1.11.0] - 2026-11-04
+
+### Added
+- **Built-in sign-in apps** (`src/auth/clients.mjs`): when Birddog ships its own public OAuth client ID for a provider, "Sign in with X" works with no app registration. Precedence: `BIRDDOG_<PROVIDER>_CLIENT_ID`, then config.json, then built-in. Only public-client flows: GitHub device flow; PKCE with no secret for GitLab (gitlab.com), Microsoft (tenant `common`), Linear and PagerDuty (Classic User OAuth); Google's desktop client with PKCE and its non-confidential desktop secret. The registry ships empty until the maintainer registers the apps.
+- **Sign in with Linear** and **Sign in with PagerDuty**, as alternatives to their tokens.
+- **Google "unverified app" notice** next to "Sign in with Google": how to continue (Advanced → Go to Birddog (unsafe)), what Birddog reads, the 100-account cap, and the iCal-link alternative. It's driven by `BUILT_IN.google.verified` and also appears in the guide and README.
+- **Sign in again**: a source whose sign-in can't be renewed turns stale with a one-click "Sign in again" (the API tags such sources with `signIn`).
+- `docs/register-apps.md` (the maintainer's checklist for each provider) and `PRIVACY.md`.
+
+### Changed
+- One "Sign in" row per source card: the button plus a line saying what Birddog will read, or, without an app for that provider, the token / bring-your-own-app path worded as a fallback. Signed in, the row shows the account and Disconnect.
+- Atlassian and Slack get no built-in app, because both need a confidential secret. Their tokens stay the main way in.
+
 ## [1.10.0] - 2026-11-04
 
 ### Changed
@@ -162,7 +175,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.10.0]: https://github.com/marcsalot/birddog/compare/7a6d029...main
+[1.11.0]: https://github.com/marcsalot/birddog/compare/d2ef6df...main
+[1.10.0]: https://github.com/marcsalot/birddog/compare/7a6d029...d2ef6df
 [1.9.0]: https://github.com/marcsalot/birddog/compare/619b986...7a6d029
 [1.8.0]: https://github.com/marcsalot/birddog/compare/ac18fb3...619b986
 [1.7.0]: https://github.com/marcsalot/birddog/compare/45bcfde...ac18fb3

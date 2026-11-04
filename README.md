@@ -367,17 +367,27 @@ Not built yet: Bitbucket Cloud. Its "PRs waiting for my review" needs a query pe
 
 ## Sign in instead of pasting tokens
 
-Where the provider allows it, the setup cards offer a real sign-in. It uses the OAuth 2.0 authorization code flow with **PKCE**, with the redirect coming back to this Birddog on `127.0.0.1`:
+Where a card shows **Sign in with …**, it's one click: Birddog uses **its own public app** for that provider, so you don't register anything. Every sign-in is the OAuth 2.0 authorization code flow with **PKCE** (or GitHub's device flow), with the redirect coming back to this Birddog on `127.0.0.1`. None of them needs a secret Birddog would have to hide. The line next to each button says what Birddog will read.
 
-| Card | Button | What Birddog gets |
-|---|---|---|
-| GitHub | **Sign in with GitHub** (device flow) or **Use my gh CLI login** | read access to repos, PRs, issues, notifications |
-| Jira Cloud | **Sign in with Atlassian** (OAuth 2.0 "3LO") | `read:jira-work`, `read:jira-user` |
-| Calendar | **Sign in with Google** | `calendar.readonly` |
-| Calendar | **Sign in with Microsoft** | `Calendars.Read`, `User.Read` |
-| Calendar | **iCloud** (CalDAV with an app-specific password) | your iCloud calendars, read-only |
+| Card | Sign-in | What Birddog gets | Built-in app? |
+|---|---|---|---|
+| GitHub | device flow, or **Use my gh CLI login** | `repo read:org` (GitHub has no read-only repo scope; Birddog only reads) | yes, github.com |
+| Calendar | **Sign in with Google** (desktop app + PKCE) | `calendar.readonly` | yes |
+| Calendar | **Sign in with Microsoft** (public client, work and personal accounts) | `Calendars.Read`, `User.Read` | yes |
+| GitLab | **Sign in with GitLab** (PKCE, no secret) | `read_api` | yes, gitlab.com |
+| Linear | **Sign in with Linear** (PKCE, no secret) | `read` | yes |
+| PagerDuty | **Sign in with PagerDuty** (Classic User OAuth, PKCE, no secret) | `read` | yes |
+| Jira Cloud | API token; advanced: your own Atlassian app | `read:jira-work`, `read:jira-user` | no: Atlassian needs a confidential secret |
+| Slack | user token (`xoxp-…`) | read-only scopes | no: Slack needs a confidential secret |
+| Calendar | **iCloud** (CalDAV with an app-specific password) | your iCloud calendars, read-only | n/a |
 
-**Every provider needs your own app registration.** Birddog ships no shared client ID and never creates apps or accounts for you. Registering is free and takes a few minutes. Put the client ID in config.json, or in an environment variable, and restart:
+> **About Google's warning.** Until Google finishes verifying Birddog, Google shows an **"unverified app"** screen when you sign in. To continue, choose **Advanced → Go to Birddog (unsafe)**. Birddog only reads your calendar events, read-only, and they stay on your computer. Until verification is done, only the first 100 Google accounts can sign in. Rather not? Use your calendar's private **iCal link** instead, which needs no Google sign-in. The Calendar card shows this notice next to the button; it goes away when `BUILT_IN.google.verified` in `src/auth/clients.mjs` becomes `true`.
+
+After you sign in, the card shows the account and **Disconnect**. If a sign-in can't be renewed later (you revoked it, or PagerDuty's 30-day token ran out), the source turns stale with a **Sign in again** button.
+
+**Which app is used**: `BIRDDOG_<PROVIDER>_CLIENT_ID` first, then `oauth.<provider>.clientId` in config.json (`sources.github.clientId` for GitHub), then Birddog's built-in one ([src/auth/clients.mjs](src/auth/clients.mjs)). The built-in apps only cover each provider's main cloud. GitHub Enterprise and self-managed GitLab need your own app, and so does any copy of Birddog built without the built-in IDs. In that case the card says so and offers the token instead. Maintainers: [docs/register-apps.md](docs/register-apps.md) is the checklist for registering the built-in apps, and [PRIVACY.md](PRIVACY.md) is the privacy policy they point to.
+
+**Bring your own app** (optional, for the providers above or for Atlassian). Put the client ID in config.json, or in an environment variable, and restart:
 
 ```json
 { "oauth": { "google": { "clientId": "1234-abc.apps.googleusercontent.com" },
@@ -385,9 +395,11 @@ Where the provider allows it, the setup cards offer a real sign-in. It uses the 
              "atlassian": { "clientId": "AbCdEf123" } } }
 ```
 
-(`BIRDDOG_GOOGLE_CLIENT_ID`, `BIRDDOG_MICROSOFT_CLIENT_ID`, `BIRDDOG_ATLASSIAN_CLIENT_ID` work too.) Tokens and refresh tokens go to your keychain as `oauth-<provider>`, never to a file. They are renewed automatically before they expire (Atlassian and Microsoft rotate refresh tokens; Birddog keeps the new one). **Disconnect** forgets them, revokes them at Google, and switches off the source that used them. Microsoft and Atlassian have no per-token revoke, so to remove Birddog's access entirely, use account.microsoft.com → *Privacy → App access*, or id.atlassian.com → *Connected apps*.
+(`BIRDDOG_GOOGLE_CLIENT_ID`, `BIRDDOG_MICROSOFT_CLIENT_ID`, `BIRDDOG_ATLASSIAN_CLIENT_ID` and so on work too.) A secret for your own app goes in the keychain (`birddog secret set <provider>-client-secret`) and is only ever used with your own client ID. Tokens and refresh tokens go to your keychain as `oauth-<provider>`, never to a file. They are renewed automatically before they expire (several providers rotate refresh tokens; Birddog keeps the new one).
 
-**Register your app**
+**Disconnect** forgets them and switches off the source that used them. It also revokes them at Google, GitLab and Linear. Microsoft, Atlassian and PagerDuty have no per-token revoke, so to remove Birddog's access entirely, use account.microsoft.com → *Privacy → App access*, id.atlassian.com → *Connected apps*, or PagerDuty's app settings.
+
+**Registering your own app**
 
 - **Google Calendar.** In the [Google Cloud console](https://console.cloud.google.com/apis/credentials):
   1. Create a project, and enable the **Google Calendar API**.
@@ -808,6 +820,7 @@ test/                  node:test suites
 8. ✅ GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, GitHub Actions and Dependabot (1.8)
 9. ✅ One-step first run (1.9)
 10. ✅ Sources A–Z with search, top-right account menu, Fetch the floating assistant (1.10)
+11. ✅ One-click sign-ins through Birddog's own public apps, Sign in with Linear and PagerDuty (1.11)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later.
 

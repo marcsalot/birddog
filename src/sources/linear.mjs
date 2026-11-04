@@ -15,19 +15,26 @@ export const setup = tokenSetup({
   fields: [],
   token: { label: 'Personal API key', help: 'https://linear.app/settings/account/security', placeholder: 'lin_api_…' },
   notes: 'Linear → Settings → Security & access → Personal API keys. Read access is enough.',
+  oauth: 'linear',
 });
 
-export function normalizeSettings() { return {}; }
+export function normalizeSettings(input = {}) { return { auth: input.auth === 'oauth' ? 'oauth' : 'token' }; }
 
 const URL_ = 'https://api.linear.app/graphql';
 const FIELDS = 'id identifier title url priorityLabel dueDate updatedAt state { name type } cycle { name number endsAt }';
 const QUERY = `query Birddog { viewer { name email assignedIssues(first: 100, filter: { state: { type: { nin: ["completed", "canceled"] } } }) { nodes { ${FIELDS} inverseRelations { nodes { type issue { identifier state { type } } } } } } } }`;
 const QUERY_SIMPLE = `query Birddog { viewer { name email assignedIssues(first: 100, filter: { state: { type: { nin: ["completed", "canceled"] } } }) { nodes { ${FIELDS} } } } }`;
 
-async function run(ctx, query) {
-  const key = await ctx.secret?.(secretFields.token);
-  if (!key) throw new Error('Add a Linear personal API key in setup.');
-  const http = jsonClient({ fetchImpl: ctx.fetch ?? fetch, label: 'Linear', headers: { authorization: key }, fix: 'Make a new personal API key in Linear and update it in setup.' });
+async function run(ctx, query, config = {}) {
+  let authorization;
+  if (config.auth === 'oauth') {
+    if (!ctx.oauth) throw new Error('Sign in to Linear in setup.');
+    authorization = `Bearer ${await ctx.oauth.accessToken('linear')}`; // OAuth tokens are Bearer; API keys are sent bare
+  } else {
+    authorization = await ctx.secret?.(secretFields.token);
+    if (!authorization) throw new Error('Add a Linear personal API key in setup, or sign in with Linear.');
+  }
+  const http = jsonClient({ fetchImpl: ctx.fetch ?? fetch, label: 'Linear', headers: { authorization }, fix: config.auth === 'oauth' ? 'Sign in to Linear again in setup.' : 'Make a new personal API key in Linear and update it in setup.' });
   const r = await http.query(URL_, { query });
   if (r?.errors?.length) throw Object.assign(new Error(`Linear: ${r.errors[0].message}`), { graphql: true });
   return r?.data;
@@ -50,7 +57,7 @@ export function linearSignal(issue, now) {
 
 export async function test(config = {}, ctx = {}) {
   try {
-    const d = await run(ctx, 'query { viewer { name email } }');
+    const d = await run(ctx, 'query { viewer { name email } }', config);
     return { ok: true, message: `Connected to Linear as ${d.viewer.name ?? d.viewer.email}` };
   } catch (err) { return { ok: false, message: err.message }; }
 }
@@ -58,10 +65,10 @@ export async function test(config = {}, ctx = {}) {
 export async function collect(config = {}, ctx = {}) {
   const now = ctx.now ?? Date.now();
   let data;
-  try { data = await run(ctx, QUERY); } catch (err) {
+  try { data = await run(ctx, QUERY, config); } catch (err) {
     if (!err.graphql) throw err;
     (ctx.warn ?? (() => {}))('Linear: blockers are skipped (the relations query was refused)');
-    data = await run(ctx, QUERY_SIMPLE);
+    data = await run(ctx, QUERY_SIMPLE, config);
   }
   const issues = data?.viewer?.assignedIssues?.nodes ?? [];
   const items = issues.map((i) => {

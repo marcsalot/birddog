@@ -596,3 +596,13 @@ body.guide-open.guide-wide .keybar{display:none}
 }
 @media (prefers-reduced-motion:reduce){.drawer.chat,.fetch-fab{transition:none}}
 .content{padding-bottom:96px}@media (max-width:760px){.content{padding-bottom:96px}}
+
+/* One "Sign in" row per source card */
+.signin-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:10px 0 4px}
+.signin-row .consent{flex:1;min-width:200px;font-size:12px;color:var(--muted);line-height:1.45}
+.signin-row.on{padding:8px 10px;border:1px solid color-mix(in srgb,var(--ok,#0ca30c) 40%,var(--line));border-radius:8px;font-size:13px}
+.signin-row.on span{flex:1;min-width:0}
+.signin-row.off .msg{font-size:12px}
+.signin-note{margin:6px 0 8px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 9%,var(--panel));border-radius:10px;font-size:12px;line-height:1.5}
+.signin-note .row-btns{margin-top:8px;align-items:center}
+.or-token{margin-top:6px}
