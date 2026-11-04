@@ -2,6 +2,15 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-11-04
+
+### Added
+- **User guide**: a searchable, collapsible rail on the right (📖 or `g`). It covers getting started, sources, triage, shortcuts, notifications, chat, Docker and MCP. It docks on wide screens, floats on narrow ones, and remembers if it was open. `⌘K` jumps to its sections.
+- `npm run screenshots`: a Playwright script that captures the guide's screenshots in light and dark, from `--demo` data only. Playwright is a devDependency; there are still no runtime dependencies.
+
+### Changed
+- The top bar no longer wraps on narrow windows.
+
 ## [1.4.0] - 2026-11-04
 
 ### Added
@@ -86,7 +95,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.4.0]: https://github.com/marcsalot/birddog/compare/f1288c5...main
+[1.5.0]: https://github.com/marcsalot/birddog/compare/35cffb9...main
+[1.4.0]: https://github.com/marcsalot/birddog/compare/f1288c5...35cffb9
 [1.3.0]: https://github.com/marcsalot/birddog/compare/c5a5fad...f1288c5
 [1.2.0]: https://github.com/marcsalot/birddog/compare/74c3238...c5a5fad
 [1.1.0]: https://github.com/marcsalot/birddog/compare/8453eb7...74c3238

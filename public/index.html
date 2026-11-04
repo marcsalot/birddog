@@ -42,12 +42,15 @@
       <button class="search" id="openPalette" aria-label="Search or run a command"><span aria-hidden="true">🔍</span><span>Search or run a command…</span><kbd>⌘K</kbd></button>
       <span class="updated" id="updated" aria-live="polite"></span>
       <button class="icon-btn" id="refresh" title="Refresh (r)" aria-label="Refresh"><span>⟳</span></button>
+      <button class="icon-btn guide-btn" id="guideBtn" title="Guide (g)" aria-label="Guide" aria-controls="guideRail" aria-expanded="false">📖</button>
       <button class="ask-btn" id="chatBtn" title="Ask Birddog (a)" aria-label="Ask Birddog"><span aria-hidden="true">💬</span><span>Ask</span></button>
       <button class="icon-btn notify-btn" id="notifyBtn" title="Notifications" aria-label="Notifications" aria-haspopup="dialog">🔕</button>
       <button class="appear-btn" id="appearBtn" title="Appearance" aria-haspopup="dialog"><i></i><span>Appearance</span></button>
     </div>
     <div class="content" id="content"><div class="wrap" id="list" aria-live="polite"></div></div>
   </main>
+
+  <aside class="guide" id="guideRail" aria-label="Guide" aria-hidden="true"></aside>
 </div>
 
 <div class="keybar" aria-hidden="true"><span><kbd>j</kbd> <kbd>k</kbd> move</span><span><kbd>↵</kbd> details</span><span><kbd>x</kbd> done</span><span><kbd>s</kbd> snooze</span><span><kbd>z</kbd> undo</span><span><kbd>c</kbd> copy command</span><span><kbd>⌘K</kbd> commands</span></div>
@@ -67,7 +70,7 @@
   <div>Toggle light / dark <kbd>t</kbd></div><div>Next theme <kbd>p</kbd></div>
   <div>Switch view <span><kbd>1</kbd>–<kbd>6</kbd></span></div><div>Close <kbd>esc</kbd></div>
   <div>Restore (Done / Snoozed) <kbd>u</kbd></div><div>This sheet <kbd>?</kbd></div>
-  <div>Ask Birddog <kbd>a</kbd></div><div></div>
+  <div>Ask Birddog <kbd>a</kbd></div><div>Guide <kbd>g</kbd></div>
 </div></div></div>
 
 <div class="scrim" id="setupScrim"><div class="modal setup" role="dialog" aria-labelledby="setupTitle">

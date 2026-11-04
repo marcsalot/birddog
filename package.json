@@ -1,6 +1,6 @@
 {
   "name": "@marcusferrell/birddog",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "A local-first \"what needs me next?\" inbox for developers: local git, GitHub, Jira and calendar, ranked by plain rules that explain themselves. Zero dependencies, with an MCP server.",
   "type": "module",
   "bin": {
@@ -22,7 +22,8 @@
     "dev": "node bin/birddog.mjs --open",
     "dev:watch": "node --watch-path=src --watch-path=bin --watch-path=package.json bin/birddog.mjs --dev",
     "test": "node --test \"test/*.test.mjs\"",
-    "dev:login": "node dev/login.mjs --open"
+    "dev:login": "node dev/login.mjs --open",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "keywords": [
     "dashboard",
@@ -51,5 +52,8 @@
     "name": "Marcus Ferrell",
     "url": "https://github.com/marcsalot"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
 }

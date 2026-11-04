@@ -22,6 +22,7 @@ export const DEFAULT_PREFS = Object.freeze({
   notifications: DEFAULT_NOTIFY,
   railOpen: true,
   chatConsent: false,
+  guideOpen: false,
 });
 
 const PREF_CHECKS = {
@@ -31,6 +32,7 @@ const PREF_CHECKS = {
   hiddenSources: (v) => Array.isArray(v) && v.length < 50 && v.every((s) => typeof s === 'string' && s.length < 50),
   railOpen: (v) => typeof v === 'boolean',
   chatConsent: (v) => typeof v === 'boolean',
+  guideOpen: (v) => typeof v === 'boolean',
 };
 
 export class Triage {

@@ -6,6 +6,7 @@ import {
   PALETTE_NAMES, appearanceHTML, cyclePalette, initAppearance, setMode, setPalette, toggleTheme,
 } from './appearance.js';
 import { chatOpen, closeChat, initChat, onChatEvent, toggleChat } from './chat.js';
+import { closeGuide, guideOpen, initGuide, loadShots, onGuideEvent, openGuide, toggleGuide } from './guide.js';
 import { bindOverview, overviewData, overviewHTML } from './overview.js';
 import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
@@ -462,6 +463,8 @@ function commands() {
     { label: 'Appearance…', run: openAppear },
     { label: 'Notifications…', run: () => toggleNotifyPanel() },
     { label: 'Ask Birddog…', k: 'a', run: () => toggleChat() },
+    { label: guideOpen() ? 'Hide the guide' : 'Open the guide', k: 'g', run: () => toggleGuide() },
+    ...[['start', 'Getting started'], ['sources', 'Sources'], ['notifications', 'Notifications'], ['chat', 'Ask Birddog'], ['docker', 'Docker'], ['mcp', 'MCP']].map(([id, t]) => ({ label: `Guide: ${t}`, run: () => openGuide(id) })),
     ...Object.entries(PALETTE_NAMES).map(([p, n]) => ({ label: `Theme: ${n}`, run: () => setPalette(p) })),
     { label: 'Mode: follow system', run: () => setMode('system') },
     { label: 'Connect a source…', run: () => openSetup() },
@@ -970,6 +973,8 @@ $('#openSetup').onclick = () => openSetup();
 $('#refresh').onclick = refresh;
 $('#appearBtn').onclick = (e) => { e.stopPropagation(); appearOpen() ? closeAppear() : openAppear(); };
 $('#chatBtn').onclick = () => toggleChat();
+$('#guideBtn').onclick = () => toggleGuide();
+for (const type of ['click', 'input', 'keydown']) $('#guideRail').addEventListener(type, (e) => { if (onGuideEvent(e)) e.stopPropagation(); });
 for (const type of ['click', 'change', 'submit', 'keydown']) $('#chatPanel').addEventListener(type, (e) => { e.stopPropagation(); onChatEvent(e); });
 $('#notifyBtn').onclick = (e) => { e.stopPropagation(); closeAppear(); toggleNotifyPanel(); };
 $('#notifyPanel').addEventListener('change', (e) => { onNotifyPanelEvent(e); });
@@ -1027,6 +1032,7 @@ document.addEventListener('keydown', (e) => {
     case 'c': return sel?.meta?.command ? copy(sel.meta.command, 'command') : undefined;
     case 'o': return openLink(sel);
     case 'a': e.preventDefault(); return toggleChat();
+    case 'g': e.preventDefault(); return toggleGuide();
     case 'r': return refresh();
     // No toast here: it would replace a pending "Undo" toast, and the change is visible anyway.
     case 't': toggleTheme(); return;
@@ -1076,7 +1082,8 @@ async function boot() {
   let prefs = {};
   try { prefs = await api.prefs(); } catch { /* use defaults */ }
   api.me().then(renderMe).catch(() => {});
-  initAppearance({ prefs, save: savePrefs, changed: () => { if (appearOpen()) renderAppear(); } });
+  initAppearance({ prefs, save: savePrefs, changed: () => { if (appearOpen()) renderAppear(); loadShots(); } });
+  initGuide({ open: !!prefs.guideOpen, save: (open) => savePrefs({ guideOpen: open }), theme: () => document.documentElement.dataset.theme });
   st.hidden = new Set(prefs.hiddenSources ?? []);
   render();
   await load();

@@ -1,0 +1,173 @@
+// The user guide: a searchable, collapsible rail on the right (press g).
+// Screenshots come from `npm run screenshots`, which runs Birddog in --demo mode,
+// so they only ever show made-up data.
+
+import { esc } from './format.js';
+
+const shot = (name, alt) => `<figure class="g-shot"><img data-shot="${name}" alt="${esc(alt)}" loading="lazy" width="640" height="400"><figcaption>${esc(alt)}</figcaption></figure>`;
+const keys = (...k) => k.map((x) => `<kbd>${esc(x)}</kbd>`).join(' ');
+
+export const SECTIONS = [
+  {
+    id: 'start', title: 'Getting started', words: 'start first run setup wizard demo overview inbox what is',
+    html: `<p>Birddog looks through your local git repos, GitHub, Jira and calendar, and lists what needs you, most urgent first. Every item says <b>why</b> it's there and which rule put it there.</p>
+      ${shot('overview', 'The Overview: load dial, open items, meetings and the last 14 days')}
+      <p><b>Overview</b> (${keys('0')}) is the front page: how busy you are right now, what has waited longest, and how the last two weeks went. <b>Inbox</b> (${keys('1')}) is the list itself, grouped into <b>Now</b>, <b>Today</b> and <b>Later</b>.</p>
+      <p>On first run a <b>setup wizard</b> walks through each source and tests it as you go. Run it again any time with ${keys('⌘K')} → <i>Run the setup wizard</i>.</p>
+      <p>Just looking? <code>birddog --demo</code> runs on made-up data and never touches your repos, tokens or calendar.</p>`,
+  },
+  {
+    id: 'sources', title: 'Sources', words: 'git github jira calendar ical connect token sign in folders repos stale retry',
+    html: `<p>Connect them in <b>Connect a source</b>, in the sidebar.</p>
+      <ul>
+        <li><b>Local git</b>: pick the folders that hold your code. Birddog finds unpushed commits, uncommitted work and branches to tidy. It never changes your repos.</li>
+        <li><b>GitHub</b>: <i>Use my gh CLI login</i> is the quickest way in. You get review requests, your PRs with failing checks or change requests, @mentions and assigned issues.</li>
+        <li><b>Jira Cloud</b>: your site, your email and an API token. You get your tickets, ranked by due date, sprint end, blockers and priority.</li>
+        <li><b>Calendar</b>: paste a private iCal link (Google, Outlook, iCloud) or choose an <code>.ics</code> file. You get meetings starting soon and later today.</li>
+      </ul>
+      <p>Tokens and private links go to your OS keychain, never to config.json. If a source fails, its last good items stay, marked <b>stale</b>, with a <b>Retry</b> button.</p>`,
+  },
+  {
+    id: 'triage', title: 'Done, snooze and undo', words: 'triage done snooze undo restore hide comes back change',
+    html: `${shot('inbox', 'The inbox with an item open: why it is here, the rule, and the next step')}
+      <ul>
+        <li>${keys('x')} <b>Done</b> hides an item until it changes. New commits or new activity bring it back.</li>
+        <li>${keys('s')} <b>Snooze</b>: then ${keys('1')} one hour, ${keys('2')} tomorrow 9:00, ${keys('3')} next Monday, ${keys('4')} until it changes.</li>
+        <li>${keys('z')} <b>Undo</b> right after either one. ${keys('u')} <b>Restore</b> from the Done or Snoozed view.</li>
+        <li>${keys('↵')} opens the details: why it's here, the rule that ranked it, and a suggested next step you can copy with ${keys('c')}.</li>
+      </ul>
+      <p>Done and snooze only change Birddog's own list, never GitHub, Jira or git.</p>`,
+  },
+  {
+    id: 'shortcuts', title: 'Keyboard shortcuts', words: 'keyboard shortcuts keys hotkeys',
+    html: `<table class="g-keys"><tbody>
+      <tr><td>${keys('j')} ${keys('k')}</td><td>Move down / up</td></tr>
+      <tr><td>${keys('↵')}</td><td>Open details</td></tr>
+      <tr><td>${keys('x')} ${keys('s')} ${keys('z')} ${keys('u')}</td><td>Done, snooze, undo, restore</td></tr>
+      <tr><td>${keys('c')} ${keys('o')}</td><td>Copy the next-step command, open the link</td></tr>
+      <tr><td>${keys('0')}</td><td>Overview</td></tr>
+      <tr><td>${keys('1')}–${keys('6')}</td><td>All, Now, Today, Later, Snoozed, Done</td></tr>
+      <tr><td>${keys('a')}</td><td>Ask Birddog</td></tr>
+      <tr><td>${keys('g')}</td><td>This guide</td></tr>
+      <tr><td>${keys('m')}</td><td>Show or hide the menu</td></tr>
+      <tr><td>${keys('r')}</td><td>Refresh everything</td></tr>
+      <tr><td>${keys('/')} ${keys('⌘K')}</td><td>Search and commands</td></tr>
+      <tr><td>${keys('t')} ${keys('p')}</td><td>Light / dark, next theme</td></tr>
+      <tr><td>${keys('?')}</td><td>All shortcuts at a glance</td></tr>
+      <tr><td>${keys('esc')}</td><td>Close whatever is open</td></tr>
+    </tbody></table>`,
+  },
+  {
+    id: 'notifications', title: 'Notifications', words: 'notifications desktop alert bell quiet hours snooze all notify system',
+    html: `<p>Press 🔔 and switch on <b>Tell me when something needs me now</b>. Birddog then announces each item that becomes <b>Now</b> (a review someone is waiting on, a meeting about to start) and each source that stops working, <b>at most once</b>.</p>
+      <ul>
+        <li>Notifications show in the browser while a Birddog tab is open, and from the system otherwise. You can pick one.</li>
+        <li>Switch sources and kinds on and off, set <b>quiet hours</b>, or <b>snooze all</b> for an hour or until tomorrow.</li>
+        <li>No dashboard running? <code>birddog notify</code> keeps the system notifications coming. <code>birddog notify --test</code> checks that your OS lets them through.</li>
+      </ul>`,
+  },
+  {
+    id: 'chat', title: 'Ask Birddog (chat)', words: 'chat ask claude anthropic api key question assistant ai',
+    html: `${shot('chat', 'Ask Birddog answering "What needs me now?" from the inbox')}
+      <p>Press ${keys('a')} and ask in plain words: <i>What needs me now? What's due tomorrow? Which PRs need work?</i> Birddog answers from your own items, and can mark things done or snooze them. It always asks you to <b>Confirm</b> first.</p>
+      <p><b>Before you turn it on:</b> answers come from Claude, through your own Anthropic API key, and your question plus the items it looks up (titles, "why" lines, fields, links) are sent to Anthropic. It stays off until you add a key and agree to that. <b>Turn off</b> forgets the key.</p>`,
+  },
+  {
+    id: 'docker', title: 'Docker', words: 'docker container compose volume repos env token port loopback',
+    html: `<pre><code>docker compose up -d                 # http://127.0.0.1:4747
+docker compose --profile demo up     # made-up data, port 4848</code></pre>
+      <ul>
+        <li>Publish the port on <code>127.0.0.1</code> only. Anything wider shares your work inbox with your network.</li>
+        <li>Your code is mounted read-only at <code>/repos</code>. Config and done/snooze state live on the <code>birddog-data</code> volume.</li>
+        <li>Tokens come from environment variables or Docker secrets: <code>GITHUB_TOKEN</code>, <code>BIRDDOG_JIRA_TOKEN</code>, <code>BIRDDOG_CAL_URL</code>, <code>ANTHROPIC_API_KEY</code>, or their <code>_FILE</code> versions. They're never written to disk.</li>
+        <li>Set <code>TZ</code> so meeting times show in your time zone.</li>
+      </ul>`,
+  },
+  {
+    id: 'mcp', title: 'MCP (Claude Code, Claude Desktop)', words: 'mcp claude code desktop tools model context protocol ai',
+    html: `<p><code>birddog mcp</code> lets AI tools ask "what needs me?" and triage items. It reads the same data as this dashboard.</p>
+      <pre><code>claude mcp add --scope user birddog -- npx -y @marcusferrell/birddog mcp</code></pre>
+      <p>Tools: <code>list_items</code>, <code>get_item</code>, <code>list_sources</code>, <code>mark_done</code>, <code>snooze</code>, <code>restore</code>. They never return tokens or settings. For Claude Desktop, add the same command under <code>mcpServers</code> in <code>claude_desktop_config.json</code>.</p>`,
+  },
+];
+
+let ctx = null; // { save(open), theme() }
+let query = '';
+
+const $ = (s) => document.querySelector(s);
+export const guideOpen = () => document.body.classList.contains('guide-open');
+
+export function initGuide(options) {
+  ctx = options;
+  render();
+  if (options.open) setGuide(true, { save: false });
+}
+
+function setGuide(open, { save = true, section } = {}) {
+  document.body.classList.toggle('guide-open', open);
+  $('#guideBtn')?.setAttribute('aria-expanded', String(open));
+  $('#guideRail')?.setAttribute('aria-hidden', String(!open));
+  if (open) {
+    loadShots();
+    if (section) {
+      const d = document.querySelector(`#guideRail details[data-g="${CSS.escape(section)}"]`);
+      if (d) { d.open = true; d.scrollIntoView({ block: 'start' }); }
+    }
+  }
+  if (save) ctx.save(open);
+  window.dispatchEvent(new Event('resize')); // charts re-measure
+}
+export const openGuide = (section) => setGuide(true, { section });
+export const closeGuide = () => setGuide(false);
+export const toggleGuide = () => setGuide(!guideOpen());
+
+/** Point screenshots at the light or dark set, matching the current theme. */
+export function loadShots() {
+  const mode = ctx?.theme?.() === 'dark' ? 'dark' : 'light';
+  for (const img of document.querySelectorAll('#guideRail img[data-shot]')) {
+    const src = `/guide/${img.dataset.shot}-${mode}.jpg`;
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  }
+}
+
+const plainText = (html) => html.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ');
+
+/** Sections matching the search, with how many matched. */
+export function searchGuide(q, sections = SECTIONS) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return sections.map((s) => s.id);
+  return sections.filter((s) => {
+    const hay = `${s.title} ${s.words} ${plainText(s.html)}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  }).map((s) => s.id);
+}
+
+function render() {
+  const el = $('#guideRail');
+  if (!el) return;
+  el.innerHTML = `<header><b>Guide</b><button class="icon-btn" data-guide="close" aria-label="Close the guide (g)">✕</button></header>
+    <div class="g-search"><input id="guideSearch" type="search" placeholder="Search the guide…" aria-label="Search the guide" autocomplete="off" spellcheck="false"><span id="guideCount" aria-live="polite"></span></div>
+    <div class="g-body">${SECTIONS.map((s, i) => `<details data-g="${s.id}" ${i === 0 ? 'open' : ''}><summary>${esc(s.title)}</summary><div class="g-sec">${s.html}</div></details>`).join('')}
+      <p class="g-none" hidden>Nothing in the guide matches that. Try fewer words, or the README on GitHub.</p></div>`;
+}
+
+function applySearch() {
+  const ids = new Set(searchGuide(query));
+  let shown = 0;
+  for (const d of document.querySelectorAll('#guideRail details')) {
+    const on = ids.has(d.dataset.g);
+    d.hidden = !on;
+    if (on) shown++;
+    if (query) d.open = on;
+  }
+  $('#guideRail .g-none').hidden = shown > 0;
+  $('#guideCount').textContent = query ? `${shown} of ${SECTIONS.length}` : '';
+}
+
+export function onGuideEvent(e) {
+  if (!e.target.closest?.('#guideRail')) return false;
+  if (e.type === 'input' && e.target.id === 'guideSearch') { query = e.target.value.trim(); applySearch(); return true; }
+  if (e.type === 'keydown' && e.key === 'Escape') { if (query) { e.target.value = ''; query = ''; applySearch(); } else closeGuide(); return true; }
+  if (e.type === 'click' && e.target.closest('[data-guide="close"]')) { closeGuide(); return true; }
+  return false;
+}

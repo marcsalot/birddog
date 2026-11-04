@@ -35,6 +35,7 @@ kbd{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 6px;
 code{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .app{display:grid;grid-template-columns:232px 1fr;height:100vh}
+body.guide-open .app{grid-template-columns:232px minmax(0,1fr) 360px}
 
 /* Sidebar */
 aside{border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:18px;background:var(--panel);overflow:auto}
@@ -304,7 +305,7 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .toast button{background:none;border:0;color:var(--accent);font-weight:700;filter:brightness(1.3);white-space:nowrap}
 .toast kbd{background:transparent;color:inherit;border-color:currentColor;opacity:.6}
 
-.keybar{position:fixed;bottom:0;left:232px;right:0;display:flex;gap:16px;justify-content:center;padding:8px;font-size:12px;color:var(--faint);background:linear-gradient(transparent,var(--bg) 40%);pointer-events:none}
+.keybar{position:fixed;bottom:0;left:232px;right:var(--guide-w,0px);display:flex;gap:16px;justify-content:center;padding:8px;font-size:12px;color:var(--faint);background:linear-gradient(transparent,var(--bg) 40%);pointer-events:none}
 
 @media (max-width:760px){
   .app{grid-template-columns:1fr}
@@ -393,3 +394,52 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .health li.wait .ico{background:var(--panel-2);color:var(--muted)}
 @media (max-width:1100px){.ov-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ov-card.half{grid-column:1/-1}}
 @media (max-width:620px){.ov-grid{grid-template-columns:1fr}}
+
+/* ---- Guide rail (right) --------------------------------------------------- */
+body.guide-open{--guide-w:360px}
+.guide{display:none;flex-direction:column;border-left:1px solid var(--line);border-right:0;background:var(--panel);padding:0;gap:0;overflow:hidden;min-width:0}
+body.guide-open .guide{display:flex}
+.guide header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+.guide .g-search{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.guide .g-search input{flex:1;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:var(--text);font:inherit;font-size:13px}
+.guide .g-search input:focus{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent)}
+.guide #guideCount{font-size:11px;color:var(--muted);white-space:nowrap}
+.guide .g-body{overflow:auto;padding:6px 16px 80px;font-size:13px;line-height:1.55}
+.guide details{border-bottom:1px solid var(--line);padding:4px 0}
+.guide summary{cursor:pointer;font-weight:700;padding:8px 0;list-style:none;display:flex;align-items:center;gap:8px}
+.guide summary::-webkit-details-marker{display:none}
+.guide summary::before{content:'▸';color:var(--muted);transition:transform .15s}
+.guide details[open] summary::before{transform:rotate(90deg)}
+.guide .g-sec{padding:0 0 12px}
+.guide .g-sec p{margin:0 0 10px}
+.guide .g-sec ul{margin:0 0 10px;padding-left:18px;display:grid;gap:6px}
+.guide .g-sec pre{background:var(--panel-2);border-radius:8px;padding:8px 10px;overflow:auto;font-size:11.5px;margin:0 0 10px}
+.guide .g-sec code{font-size:11.5px}
+.guide .g-sec kbd{font-size:11px}
+.guide .g-shot{margin:2px 0 12px}
+.guide .g-shot img{width:100%;height:auto;border-radius:8px;border:1px solid var(--line);display:block;background:var(--panel-2);aspect-ratio:16/10}
+.guide .g-shot figcaption{font-size:11px;color:var(--muted);margin-top:4px}
+.guide .g-keys{border-collapse:collapse;width:100%}
+.guide .g-keys td{padding:4px 6px 4px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.guide .g-keys td:first-child{white-space:nowrap;width:1%}
+.guide .g-none{color:var(--muted)}
+.guide-btn[aria-expanded="true"]{border-color:var(--accent);color:var(--accent)}
+/* Narrow windows: the guide floats over the page instead of squeezing it. */
+@media (max-width:1199px){
+  body.guide-open .app{grid-template-columns:232px minmax(0,1fr)}
+  body.guide-open{--guide-w:0px}
+  .guide{position:fixed;top:0;right:0;bottom:0;width:min(92vw,380px);z-index:19;box-shadow:var(--shadow)}
+}
+@media (max-width:760px){
+  body.guide-open .app{grid-template-columns:1fr}
+}
+
+/* The top bar never wraps: the search label shrinks, the timestamp goes first. */
+.topbar{flex-wrap:nowrap}
+.topbar .search{min-width:0;flex:1 1 auto}
+.topbar .search span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.topbar .updated{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
+.topbar>button{flex:0 0 auto}
+.page-head .btn{white-space:nowrap}
+@media (max-width:1100px){.topbar .updated{display:none}}
+@media (max-width:1400px){body.guide-open .keybar{display:none}}

@@ -384,6 +384,12 @@ Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom a
 
 Inside a group, items sort by rule order, then oldest first (the work that has waited longest is most at risk). A branch counts as either stale *or* unpushed, never both, and repos with no remote are never nagged about pushing.
 
+## User guide
+
+Press 📖 or `g` for the **guide**, a searchable rail on the right: getting started, sources, triage, shortcuts, notifications, chat, Docker and MCP. On wide screens it docks beside the page; on narrower ones it floats over it. It remembers whether you left it open, and `⌘K` → *Guide: …* jumps to a section.
+
+Its screenshots come from `npm run screenshots`, a [Playwright](https://playwright.dev) script that starts Birddog in `--demo` mode (made-up data only) and captures light and dark versions into `public/guide/`. Playwright is a **devDependency**; the published package still has no runtime dependencies. It needs a Chromium: `npx playwright install chromium`, or point `BIRDDOG_CHROMIUM` at one.
+
 ## Overview
 
 Birddog opens on an **Overview**: one look at what your day is like. The inbox is a click away (or `1`; `0` comes back).
@@ -446,6 +452,7 @@ All of it lives in `~/.config/birddog/state.json`, along with your theme.
 | `c` | copy suggested command | `o` | open link |
 | `r` | refresh | `/` or `⌘K` | command palette |
 | `0` | Overview | `?` | shortcuts |
+| `g` | guide | | |
 | `1`–`6` | All / Now / Today / Later / Snoozed / Done | `a` | Ask Birddog |
 | `t` | light / dark | `p` | next theme |
 
@@ -636,6 +643,7 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 npm test          # node:test, no dependencies, no network; builds throwaway git repos and fakes GitHub and Jira
 npm run dev       # start and open the browser
 npm run dev:watch # live reload: restarts on src/ changes, reloads open pages on src/ or public/ changes
+npm run screenshots  # guide screenshots in light and dark, from --demo (needs `npm install` for Playwright)
 ```
 
 `dev:watch` uses Node's built-in `--watch`, so it needs nothing extra. It doesn't open a browser, because it would open a new tab on every restart; open `http://127.0.0.1:4747` yourself once.
@@ -667,6 +675,8 @@ src/notify.mjs         notifications: what's news, filters, quiet hours, system 
 src/chat.mjs           Ask Birddog: Claude Messages API over fetch, MCP tools, confirm-before-change
 src/history.mjs        the small per-day history behind the overview chart
 public/js/overview.js  the overview page: hand-rolled SVG charts and dials
+public/js/guide.js     the user guide rail (content and search)
+public/guide/          guide screenshots (made by scripts/screenshots.mjs from demo data)
 src/demo.mjs           demo mode: canned git items and fake GitHub / Jira / calendar APIs
 docs/                  demo GIF, screenshot, launch post
 test/fixtures/         sample Google- and Outlook-style .ics files
