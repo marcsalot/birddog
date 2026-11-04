@@ -38,7 +38,7 @@ export const SECTIONS = [
         <li><b>Azure DevOps</b>: pull requests you haven't voted on yet, and work items assigned to you. Needs a personal access token with <i>Work Items: Read</i> and <i>Code: Read</i>.</li>
         <li><b>Sentry</b>: unresolved errors assigned to you, with regressed and new ones first. Needs an auth token with <code>event:read</code> and <code>org:read</code>.</li>
         <li><b>PagerDuty</b>: incidents paged to you (triggered ones are <b>Now</b>), and when you're on call. Needs a user API token.</li>
-        <li><b>Slack</b>: messages that mention you, and DMs waiting for your reply. Needs a user token (<code>xoxp-…</code>) from your own Slack app, with <code>search:read</code>, <code>im:read</code>, <code>im:history</code> and <code>users:read</code>.</li>
+        <li><b>Slack</b>: messages that mention you, and DMs waiting for your reply. Needs a user token (<code>xoxp-…</code>) from your own Slack app, with <code>search:read</code>, <code>im:read</code>, <code>im:history</code> and <code>users:read</code>. Add <code>chat:write</code> too if you want to <a href="#" data-guide-link="replies">reply from Birddog</a>.</li>
         <li><b>GitHub</b> also shows <b>failing Actions runs</b> on branches you pushed this week, and <b>Dependabot alerts</b> on those repos. Turn them off with <code>"actions": false</code> or <code>"security": false</code> under <code>sources.github</code>.</li>
       </ul>
       <p>In Docker, pass the tokens as <code>GITLAB_TOKEN</code>, <code>LINEAR_API_KEY</code>, <code>AZURE_DEVOPS_EXT_PAT</code>, <code>SENTRY_AUTH_TOKEN</code>, <code>BIRDDOG_PAGERDUTY_TOKEN</code> or <code>BIRDDOG_SLACK_TOKEN</code>.</p>`,
@@ -72,12 +72,27 @@ export const SECTIONS = [
       <p>Done and snooze only change Birddog's own list, never GitHub, Jira or git.</p>`,
   },
   {
+    id: 'replies', title: 'Reply from Birddog (Slack)', words: 'reply answer respond send post message slack dm mention thread chat write scope undo allow replies',
+    html: `<p>Answer a Slack DM, or reply in the thread of a mention, right from the item's details.</p>
+      <ul>
+        <li><b>Off until you turn it on.</b> Tick <b>Allow replies</b> on the Slack card in <b>Sources &amp; settings</b>. Birddog then posts <b>as you</b>, but only when you press Send. It never posts on its own.</li>
+        <li><b>One more scope:</b> add <code>chat:write</code> under <i>User Token Scopes</i> in your Slack app, reinstall the app, and paste the new user token on the Slack card. Without it, the reply box tells you so before you type.</li>
+        <li>The box says who and where: <i>Reply to @priya in DM</i>, or <i>Reply in thread in #payments</i>. For a thread, <b>Also send to #payments</b> also shows it in the channel.</li>
+        <li>Press ${keys('⇧R')} to jump to the box, type, then ${keys('⌘↵')} (or ${keys('Ctrl+↵')}). You have <b>5 seconds to undo</b> (${keys('z')} or <b>Undo send</b>). Then it goes out, you get a link to it, and the item clears.</li>
+        <li>Plain text, up to 4000 characters. <code>@channel</code> and <code>@here</code> only work if you typed them yourself.</li>
+        <li><b>Fetch</b> can draft a reply for you (<i>“reply to Priya that I'm free at 3”</i>). It shows the full text and sends only when you press <b>Confirm and send</b>.</li>
+        <li><b>MCP</b> agents can reply only if you add <code>"mcp": { "allowReplies": true }</code> to config.json. That lets an AI post real messages under your name, so only turn it on for agents you trust.</li>
+      </ul>
+      <p>Slack is the first source that can reply. Other chats (Teams, Discord, Google Chat) can plug into the same reply box later.</p>`,
+  },
+  {
     id: 'shortcuts', title: 'Keyboard shortcuts', words: 'keyboard shortcuts keys hotkeys',
     html: `<table class="g-keys"><tbody>
       <tr><td>${keys('j')} ${keys('k')}</td><td>Move down / up</td></tr>
       <tr><td>${keys('↵')}</td><td>Open details</td></tr>
       <tr><td>${keys('x')} ${keys('s')} ${keys('z')} ${keys('u')}</td><td>Done, snooze, undo, restore</td></tr>
       <tr><td>${keys('c')} ${keys('o')}</td><td>Copy the next-step command, open the link</td></tr>
+      <tr><td>${keys('⇧R')} ${keys('⌘↵')}</td><td>Reply (Slack), send the reply</td></tr>
       <tr><td>${keys('0')}</td><td>Overview</td></tr>
       <tr><td>${keys('1')}–${keys('6')}</td><td>All, Now, Today, Later, Snoozed, Done</td></tr>
       <tr><td>${keys('a')}</td><td>Ask Fetch</td></tr>
@@ -121,7 +136,7 @@ docker compose --profile demo up     # made-up data, port 4848</code></pre>
     id: 'mcp', title: 'MCP (Claude Code, Claude Desktop)', words: 'mcp claude code desktop tools model context protocol ai',
     html: `<p><code>birddog mcp</code> lets AI tools ask "what needs me?" and triage items. It reads the same data as this dashboard.</p>
       <pre><code>claude mcp add --scope user birddog -- npx -y @marcusferrell/birddog mcp</code></pre>
-      <p>Tools: <code>list_items</code>, <code>get_item</code>, <code>list_sources</code>, <code>mark_done</code>, <code>snooze</code>, <code>restore</code>. They never return tokens or settings. For Claude Desktop, add the same command under <code>mcpServers</code> in <code>claude_desktop_config.json</code>.</p>`,
+      <p>Tools: <code>list_items</code>, <code>get_item</code>, <code>list_sources</code>, <code>mark_done</code>, <code>snooze</code>, <code>restore</code>. They never return tokens or settings. A <code>reply</code> tool, which posts real messages as you, is off unless you set <code>"mcp": { "allowReplies": true }</code> (see <a href="#" data-guide-link="replies">Reply from Birddog</a>). For Claude Desktop, add the same command under <code>mcpServers</code> in <code>claude_desktop_config.json</code>.</p>`,
   },
 ];
 

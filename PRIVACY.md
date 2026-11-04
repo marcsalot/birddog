@@ -10,8 +10,9 @@ meetings. This policy explains what it reads and where that data goes.
 
 - Birddog runs **on your computer**. There is no Birddog server, no account, no analytics and no
   telemetry.
-- It only **reads**. It never posts, edits, deletes, or marks anything read in the services you
-  connect.
+- It **reads**. It never edits, deletes, or marks anything read in the services you connect. The
+  one thing it can write is a **reply you send yourself** (Slack, for now), and only after you turn
+  on **Allow replies** for that service. Then it posts as you.
 - What it reads stays on your computer. The one exception is the optional chat (see below).
 - Sign-in tokens are kept in your operating system's keychain.
 
@@ -38,13 +39,31 @@ Birddog's use and transfer of information received from Google APIs adheres to t
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
 including the Limited Use requirements.
 
+## Replies (opt-in)
+
+Replying is off until you tick **Allow replies** on a source's card (Slack is the only one so far).
+With it on:
+
+- Birddog posts a message **as you**, only when you press **Send** on an item, into that DM or into
+  the thread of that mention. Each reply waits 5 seconds so you can undo it.
+- What it sends is exactly the text you typed, plus the channel and thread it goes to, to that
+  service only (Slack's `chat.postMessage`, with the token in your keychain).
+- **Fetch** (the optional chat) can draft a reply, but it shows you the full text and sends nothing
+  until you confirm. The draft is written by Claude through Anthropic's API, like any Fetch answer.
+- **MCP** clients (AI agents such as Claude Code) can post replies only if you also set
+  `"mcp": { "allowReplies": true }` in config.json. That lets an agent post real messages under your
+  name, so turn it on only for agents you trust to ask you first.
+
+Turning **Allow replies** off makes Birddog read-only again.
+
 ## Where data is kept
 
 - Copies of your items, and your done and snooze choices, are kept in Birddog's folder on your
   computer (`~/.config/birddog`).
 - Sign-in tokens and API tokens go to your OS keychain (macOS Keychain, or Secret Service on
   Linux). They're never written to Birddog's files in plain text.
-- Birddog sends data only to the services you connected, to read from them.
+- Birddog sends data only to the services you connected: requests to read from them, and the
+  replies you send.
 
 ## The optional chat ("Ask Fetch")
 

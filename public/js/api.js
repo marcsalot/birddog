@@ -18,7 +18,7 @@ async function call(method, url, body) {
     location.assign(`/auth/login?returnTo=${encodeURIComponent(location.pathname)}`);
     throw new Error('Signing you in again…');
   }
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { code: data.code, scope: data.scope, status: res.status });
   return data;
 }
 
@@ -30,6 +30,11 @@ export const api = {
   done: (id) => call('POST', item(id, 'done'), {}),
   snooze: (id, until) => call('POST', item(id, 'snooze'), { until }),
   restore: (id) => call('POST', item(id, 'restore'), {}),
+  replyDetails: (id) => call('GET', item(id, 'reply')),
+  reply: (id, text, broadcast) => call('POST', item(id, 'reply'), { text, broadcast }),
+  replyStatus: (pid) => call('GET', `/api/replies/${encodeURIComponent(pid)}`),
+  replyUndo: (pid) => call('POST', `/api/replies/${encodeURIComponent(pid)}/undo`, {}),
+  allowReplies: (id, allow) => call('PUT', `/api/sources/${encodeURIComponent(id)}/replies`, { allow }),
   prefs: () => call('GET', '/api/prefs'),
   savePrefs: (patch) => call('PUT', '/api/prefs', patch),
   setup: () => call('GET', '/api/setup'),

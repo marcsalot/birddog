@@ -606,3 +606,22 @@ body.guide-open.guide-wide .keybar{display:none}
 .signin-note{margin:6px 0 8px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 9%,var(--panel));border-radius:10px;font-size:12px;line-height:1.5}
 .signin-note .row-btns{margin-top:8px;align-items:center}
 .or-token{margin-top:6px}
+
+/* Replies (Slack): the drawer's reply box and the card's "Allow replies" switch */
+.reply-box{margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);display:flex;flex-direction:column;gap:8px}
+.reply-box .lbl{font-size:12px;font-weight:600;color:var(--text)}
+.reply-box .lbl small{font-weight:500;color:var(--muted)}
+.reply-box textarea{width:100%;min-height:76px;resize:vertical;font:inherit;font-size:14px;line-height:1.45;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--text)}
+.reply-box textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:0;border-color:transparent}
+.reply-also{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.reply-also input,.reply-switch input{width:auto;flex:none;margin:0}
+.reply-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.reply-foot .msg{flex:1;min-width:140px;margin:0}
+.reply-count{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.reply-quote{margin:0;padding:8px 10px;border-left:3px solid var(--accent);background:var(--panel);border-radius:0 8px 8px 0;white-space:pre-wrap;word-break:break-word;font-size:14px}
+.msg.warn{color:var(--warn)}
+.reply-switch{margin:10px 0 2px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px}
+.reply-switch.on{border-style:solid;border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:var(--accent-soft)}
+.reply-switch label{display:flex;align-items:center;gap:8px;cursor:pointer}
+.reply-switch .msg{margin-top:4px}
+.msg-confirm .reply-quote{margin:6px 0}

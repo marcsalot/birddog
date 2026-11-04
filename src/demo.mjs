@@ -199,7 +199,9 @@ export function demoClaude(body) {
   const last = msgs.at(-1);
   const question = [...msgs].reverse().find((m) => m.role === 'user' && typeof m.content === 'string')?.content?.toLowerCase() ?? '';
   const wantsChange = /\b(done|snooze|clear)\b/.test(question);
+  const wantsReply = /\b(reply|answer|respond)\b/.test(question);
   if (last?.role === 'user' && typeof last.content === 'string') {
+    if (wantsReply) return toolEvents('list_items', { source: 'slack' });
     const urgency = /calendar|meeting/.test(question) ? undefined : /today/.test(question) ? 'today' : 'now';
     return toolEvents('list_items', /calendar|meeting/.test(question) ? { source: 'cal' } : { urgency });
   }
@@ -207,10 +209,14 @@ export function demoClaude(body) {
   const prevTool = msgs.at(-2)?.content?.find?.((b) => b.type === 'tool_use');
   if (prevTool?.name === 'list_items') {
     const items = parseList(result?.content);
+    if (wantsReply && items[0]) return toolEvents('reply', { id: items[0].id, text: 'Sure, happy to. I can do 10:15, right after standup.' });
     if (wantsChange && items[0]) return toolEvents(/snooze/.test(question) ? 'snooze' : 'mark_done', /snooze/.test(question) ? { id: items[0].id, until: 'tomorrow' } : { id: items[0].id });
     if (!items.length) return textEvents('Nothing to fetch there right now. Good dog, you.');
     const lines = items.slice(0, 4).map((i) => `- **${i.title}**: ${i.why}`).join('\n');
     return textEvents(`Fetched! Here's what needs you${/today/.test(question) ? ' today' : ' first'}:\n${lines}\n\nI'd start with the first one: ${items[0].why.split(' · ')[0].toLowerCase()}.`);
+  }
+  if (prevTool?.name === 'reply') {
+    return textEvents(/declined/.test(result?.content ?? '') ? "Okay, not sent. It's still in your inbox." : `Sent! ${result?.content ?? ''} (Demo mode: the fake Slack kept it to itself.)`);
   }
   if (prevTool && ['mark_done', 'snooze', 'restore'].includes(prevTool.name)) {
     return textEvents(/declined/.test(result?.content ?? '') ? "Okay, I'll drop it. Left as it is." : `Done, and brought back the receipt: ${result?.content ?? ''}`);
@@ -218,12 +224,41 @@ export function demoClaude(body) {
   return textEvents('Woof. I\'m Fetch, in demo mode: a scripted stand-in. With your own Anthropic API key, Claude answers here as me.');
 }
 
+// ---------------------------------------------------------------------------
+// Slack (fake): one DM and one channel mention, and replies that go nowhere.
+
+const SLACK_ME = 'U0DEMOSAM';
+const SLACK_PEOPLE = { U0DEMOPRI: 'priya', U0DEMOJON: 'jonas' };
+
+function slackData(t0, sent, now) {
+  const ts = (agoMs) => ((t0 - agoMs) / 1000).toFixed(6);
+  const dmTs = ts(40 * MIN);
+  const mentionTs = ts(2 * HOUR);
+  return {
+    'auth.test': { ok: true, team: 'Acme', user: 'sam', user_id: SLACK_ME },
+    'search.messages': { ok: true, messages: { matches: sent.has('C0DEMOPAY') ? [] : [{ ts: mentionTs, user: 'U0DEMOJON', text: `<@${SLACK_ME}> can you sanity-check the webhook retry cap before Friday's deploy?`, channel: { id: 'C0DEMOPAY', name: 'payments', is_im: false }, permalink: `https://acme-demo.slack.com/archives/C0DEMOPAY/p${mentionTs.replace('.', '')}` }] } },
+    'conversations.list': { ok: true, channels: [{ id: 'D0DEMOPRI', user: 'U0DEMOPRI', is_im: true }] },
+    'conversations.history': { ok: true, messages: sent.has('D0DEMOPRI') ? [{ ts: ((now - MIN) / 1000).toFixed(6), user: SLACK_ME, text: '(your reply)' }] : [{ ts: dmTs, user: 'U0DEMOPRI', text: 'Got 5 min to pair on the Safari login bug after standup?' }] },
+  };
+}
+
 /** fetch() for the demo: answers for the fake APIs above, and refuses everything else. */
 export function demoFetch(clock = () => Date.now()) {
+  const sent = new Set(); // channels the demo "replied" in, so the item clears like the real thing
+  const t0 = clock(); // fake Slack messages keep their timestamps (and so their ids) across refreshes
   return async (url, init = {}) => {
     const u = new URL(url);
     const now = clock();
-    const json = (body, status = 200) => ({ ok: status < 400, status, headers: new Headers(), text: async () => JSON.stringify(body), json: async () => body });
+    const json = (body, status = 200, headers = {}) => ({ ok: status < 400, status, headers: new Headers(headers), text: async () => JSON.stringify(body), json: async () => body });
+    if (u.origin === 'https://slack.com') {
+      const method = u.pathname.replace('/api/', '');
+      const body = init.body ? JSON.parse(init.body) : Object.fromEntries(u.searchParams);
+      if (method === 'chat.postMessage') { sent.add(body.channel); return json({ ok: true, channel: body.channel, ts: (now / 1000).toFixed(6) }); }
+      if (method === 'chat.getPermalink') return json({ ok: true, permalink: `https://acme-demo.slack.com/archives/${body.channel}/p${String(body.message_ts).replace('.', '')}` });
+      if (method === 'users.info') return json({ ok: true, user: { name: SLACK_PEOPLE[body.user] ?? 'someone', profile: { display_name: SLACK_PEOPLE[body.user] ?? '' } } });
+      const data = slackData(t0, sent, now)[method];
+      return data ? json(data, 200, { 'x-oauth-scopes': 'search:read,im:read,im:history,users:read,chat:write' }) : json({ ok: false, error: 'unknown_method' });
+    }
     if (u.origin === API) {
       const gh = githubData(now);
       if (u.pathname === '/search/issues') {
@@ -265,7 +300,7 @@ export function demoHistory(now) {
 
 /** A secret store that lives in memory and starts with the demo's fake credentials. */
 export function demoSecrets() {
-  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant']]);
+  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token']]);
   return {
     kind: 'demo (in memory)',
     secure: true,
@@ -289,6 +324,8 @@ export async function createDemo() {
       git: { enabled: true, roots: ['~/code'] },
       jira: { enabled: true, site: JIRA, email: 'sam@acme.example' },
       cal: { enabled: true, file: '', email: 'sam@acme.example' },
+      // Replies are on in the demo; the fake Slack above takes them and sends nothing anywhere.
+      slack: { enabled: true, allowReplies: true },
     },
     chat: { demo: true },
   });

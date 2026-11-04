@@ -2,8 +2,9 @@
 //
 // The local server calls the Claude Messages API with plain fetch (no SDK, no
 // dependencies) and hands the model Birddog's own MCP tools. Reading tools run
-// straight away; tools that change something (mark_done, snooze, restore) stop
-// the turn and wait for you to confirm in the UI.
+// straight away; tools that change something (mark_done, snooze, restore, reply)
+// stop the turn and wait for you to confirm in the UI. A reply is shown in full
+// before you confirm, because it posts a real message as you.
 //
 // Opt-in: nothing is sent anywhere until you add an Anthropic API key and agree
 // that inbox content (titles, "why" lines, fields) goes to Anthropic.
@@ -23,7 +24,7 @@ const MAX_TOKENS = 64_000;
 const MAX_STEPS = 8; // model calls per user message
 const MAX_SESSIONS = 20;
 const SESSION_TTL_MS = 2 * 3_600_000;
-const CHANGES = new Set(['mark_done', 'snooze', 'restore']);
+const CHANGES = new Set(['mark_done', 'snooze', 'restore', 'reply']);
 
 class ChatError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -139,6 +140,8 @@ Answer from the user's inbox using the tools: list_items, get_item and list_sour
 
 mark_done, snooze and restore change Birddog's own list (never GitHub, Jira or git). Only use them when the user asks you to; the app then asks the user to confirm each change before it happens. If they decline, accept that and don't retry.
 
+reply posts a real message AS THE USER (for example in Slack), to items that list a "reply" target. Only call it when the user asks you to reply or to send something. Write the reply in their voice, short and plain, with no @channel or @here. The app shows the user the full text and asks them to confirm before anything is sent; if they decline, don't send it again. Items whose reply target says allowed: false can't be answered until the user turns on "Allow replies" for that source.
+
 Now is ${new Date(now).toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}.`;
 
 /**
@@ -150,12 +153,14 @@ Now is ${new Date(now).toLocaleString('en-US', { weekday: 'long', year: 'numeric
  * @param {() => object} o.getConfig
  */
 export function createChat({ app, secrets, getPrefs, setPrefs, getConfig, fetchImpl = fetch, version = '0', now = () => Date.now() }) {
-  const mcp = createMcpHandler({ app, version, now });
-  const toolDefs = mcp.tools;
+  // Fetch may use `reply` (once a source has "Allow replies" on), because every send waits
+  // for the user's confirmation below.
+  const mcp = createMcpHandler({ app, version, now, allowReplies: () => Object.values(app.config.sources ?? {}).some((s) => s?.allowReplies === true) });
+  const toolDefs = () => mcp.tools;
   const sessions = new Map(); // id → { messages, pending, at }
 
   const model = () => process.env.BIRDDOG_CHAT_MODEL || getConfig().chat?.model || DEFAULT_MODEL;
-  const tools = () => toolDefs.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, eager_input_streaming: true }));
+  const tools = () => toolDefs().map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, eager_input_streaming: true }));
   const apiKey = async () => (await secrets.get(SECRET).catch(() => null)) || null;
 
   async function status() {
@@ -212,6 +217,10 @@ export function createChat({ app, secrets, getPrefs, setPrefs, getConfig, fetchI
     const title = r.structured?.item?.title ?? input.id;
     if (name === 'mark_done') return `Mark done: ${title}`;
     if (name === 'restore') return `Put back in the open list: ${title}`;
+    if (name === 'reply') {
+      const to = r.structured?.item?.reply?.to ?? 'Reply';
+      return `Send as you (${to}${input.also_send_to_channel ? ', also sent to the channel' : ''}):\n\n${input.text}`;
+    }
     return `Snooze until ${input.until}: ${title}`;
   }
 
@@ -246,7 +255,7 @@ export function createChat({ app, secrets, getPrefs, setPrefs, getConfig, fetchI
       const results = [];
       const pending = [];
       for (const u of uses) {
-        const def = toolDefs.find((t) => t.name === u.name);
+        const def = toolDefs().find((t) => t.name === u.name);
         const invalid = u._invalid !== undefined && u._invalid !== null ? 'the tool input was not valid JSON' : !def ? `no tool called ${u.name}` : validateInput(def.inputSchema, u.input);
         if (invalid) { results.push({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: `INVALID_INPUT: ${invalid}` }); continue; }
         if (CHANGES.has(u.name)) {

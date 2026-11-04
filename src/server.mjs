@@ -22,6 +22,7 @@ import { createHistory } from './history.mjs';
 import { createNotifier } from './notify.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
 import { repoFolders } from './firstrun.mjs';
+import { canReply, createReplies, ReplyError } from './replies.mjs';
 import { RULES } from './rules.mjs';
 import { createSecretStore } from './secrets.mjs';
 import { COMING_SOON, isEnabled, SOURCES, validateSource } from './sources/index.mjs';
@@ -50,7 +51,8 @@ const PUBLIC_PATHS = new Set(['/api/health', '/favicon.svg']); // reachable with
 export const VERSION = JSON.parse(await fs.readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
 
 class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  /** extra: more fields for the JSON error body (e.g. { code: 'missing_scope' }); never secrets. */
+  constructor(status, message, extra = null) { super(message); this.status = status; this.extra = extra; }
 }
 
 function send(res, status, body, headers = {}) {
@@ -161,12 +163,13 @@ async function serveStatic(req, res, pathname) {
  * @param {string} [opts.notifyChannel] force a channel ("system" for `birddog notify`)
  * @param {object} [opts.builtInClients] Birddog's own OAuth client IDs (tests swap them; default src/auth/clients.mjs)
  * @param {Function} [opts.firstRunFolders] what the first-run screen offers (the demo swaps it)
+ * @param {number} [opts.replyUndoMs] how long a reply waits for "Undo send" (default 5 s; tests shorten it)
  * @param {boolean} [opts.allowRemote] container mode: may listen on 0.0.0.0 without login, because
  *                                     Docker publishes the port to the host's loopback only
  */
 export async function createBirddog({
   dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console, secrets, fetchImpl = fetch, cliToken,
-  liveReload = false, allowRemote = false, notifySystem, notifyChannel, firstRunFolders, builtInClients,
+  liveReload = false, allowRemote = false, notifySystem, notifyChannel, firstRunFolders, builtInClients, replyUndoMs,
 }) {
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
@@ -276,7 +279,9 @@ export async function createBirddog({
       const p = Object.keys(USES).find((k) => USES[k].source === s.id && USES[k].uses(config.sources?.[s.id] ?? {}));
       return p ? { ...s, signIn: p } : s;
     });
-    return { ...snap, sources: sourcesOut, items: triage.apply(snap.items), refreshing: collector.refreshing };
+    // Items whose source can reply say who and where a reply goes, and whether replies are on.
+    const items = triage.apply(snap.items).map((i) => { const r = replies.target(i); return r ? { ...i, reply: r } : i; });
+    return { ...snap, sources: sourcesOut, items, refreshing: collector.refreshing };
   }
 
   refresh = async (opts) => {
@@ -344,6 +349,8 @@ export async function createBirddog({
           secrets: await savedSecrets(s), // which secrets are saved (true/false), never their values
           setup: s.setup ?? null, // fields for the generic token card
           secretNames: s.secretFields ?? {}, // names only, e.g. { token: 'gitlab-token' }
+          capabilities: [...(s.capabilities ?? [])],
+          replies: canReply(s) ? { allowed: config.sources?.[s.id]?.allowReplies === true } : null,
           status: status ?? null,
         };
       })).then((list) => list.sort(byName)), // A–Z by display name, wherever they're listed
@@ -358,13 +365,30 @@ export async function createBirddog({
     return it;
   }
 
+  // ---- Replies (the one way Birddog writes; opt-in per source) ----
+  const replies = createReplies({
+    sources, getConfig: () => config, findItem, context, log, now,
+    ...(replyUndoMs !== undefined ? { undoMs: replyUndoMs } : {}),
+    // A reply answers the item: a DM is no longer waiting, a mention is handled.
+    onSent: async (item) => {
+      await triage.done(item);
+      await history.record(triage.apply(collector.snapshot().items)).catch(() => {});
+    },
+  });
+  const replyRoute = (fn) => async (...a) => {
+    try { return await fn(...a); } catch (e) {
+      if (e instanceof ReplyError) throw new HttpError(e.status, e.message, { code: e.code, ...(e.scope ? { scope: e.scope } : {}), ...(e.retryAfter ? { retryAfter: e.retryAfter } : {}) });
+      throw e;
+    }
+  };
+
   const asBadRequest = (fn) => async (...args) => {
     try { return await fn(...args); } catch (e) { throw e instanceof HttpError ? e : new HttpError(400, e.message); }
   };
 
   // ---- Ask Fetch (chat) ----
   const chat = createChat({
-    app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; } },
+    app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; }, replies },
     secrets, fetchImpl, version: VERSION, now,
     getPrefs: () => triage.prefs,
     setPrefs: (p) => triage.setPrefs(p),
@@ -499,6 +523,20 @@ export async function createBirddog({
         throw new HttpError(400, 'until must be a future ISO date or "change"');
       }
       await triage.snooze(findItem(m[1]), until); return { ok: true };
+    }],
+    ['GET', /^\/api\/items\/([^/]+)\/reply$/, replyRoute((m) => replies.details(findItem(m[1])))],
+    ['POST', /^\/api\/items\/([^/]+)\/reply$/, replyRoute((m, body) => replies.queue(m[1], body.text, { broadcast: body.broadcast === true }))],
+    ['GET', /^\/api\/replies\/([^/]+)$/, replyRoute((m) => replies.get(m[1]))],
+    ['POST', /^\/api\/replies\/([^/]+)\/undo$/, replyRoute((m) => replies.undo(m[1]))],
+    ['PUT', /^\/api\/sources\/([^/]+)\/replies$/, async (m, body) => {
+      // "Allow replies": the only switch that lets Birddog post anything, as you.
+      const src = findSource(m[1]);
+      if (!canReply(src)) throw new HttpError(400, `${src.name} can't send replies.`);
+      if (typeof body.allow !== 'boolean') throw new HttpError(400, 'Send { "allow": true | false }');
+      config = { ...config, sources: { ...config.sources, [src.id]: { ...(config.sources?.[src.id] ?? {}), allowReplies: body.allow } } };
+      await saveConfig(dir, config);
+      log.log?.(`birddog: replies ${body.allow ? 'on' : 'off'} for ${src.name}`);
+      return setupPayload();
     }],
     ['POST', /^\/api\/items\/([^/]+)\/restore$/, async (m) => { await triage.restore(m[1]); return { ok: true }; }],
     ['GET', /^\/api\/prefs$/, async () => { await triage.sync(); return triage.prefs; }],
@@ -681,7 +719,7 @@ export async function createBirddog({
     handle(req, res).catch((err) => {
       const status = err.status ?? 500;
       if (status === 500) log.error?.('birddog:', err);
-      if (!res.headersSent) send(res, status, { error: status === 500 ? 'Something went wrong. Check the terminal for details.' : err.message });
+      if (!res.headersSent) send(res, status, { error: status === 500 ? 'Something went wrong. Check the terminal for details.' : err.message, ...(status !== 500 && err.extra ? err.extra : {}) });
       else res.end();
     });
   });
@@ -697,6 +735,7 @@ export async function createBirddog({
     github,
     secrets,
     get config() { return config; },
+    replies,
     configFile: loaded.file,
     authFile: loaded.authFile,
     firstRun: loaded.created,
@@ -729,6 +768,7 @@ export async function createBirddog({
     async close() {
       clearInterval(timer);
       clearInterval(flushTimer);
+      replies.close();
       watcher?.close();
       for (const res of listeners) res.end();
       const closed = new Promise((r) => server.close(() => r()));

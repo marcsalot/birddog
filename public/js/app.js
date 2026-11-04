@@ -307,14 +307,15 @@ function savePrefs(patch) {
 // ---------------------------------------------------------------------------
 // Triage actions (optimistic, with undo)
 
-function toast(html, undo) {
+function toast(html, undo, { label = 'Undo', ms } = {}) {
   st.undo = undo ?? null;
   $('#toastMsg').innerHTML = html;
   $('#undoBtn').style.display = undo ? '' : 'none';
+  $('#undoBtn').innerHTML = `${esc(label)} <kbd>z</kbd>`;
   const t = $('#toast');
   t.classList.add('show');
   clearTimeout(t._h);
-  t._h = setTimeout(() => t.classList.remove('show'), undo ? 6000 : 4000);
+  t._h = setTimeout(() => t.classList.remove('show'), ms ?? (undo ? 6000 : 4000));
 }
 
 function runUndo() {
@@ -409,6 +410,7 @@ function openDrawer(i) {
   <div class="why-box" style="--u:${URG[i.urgency].c}"><div class="lbl">Why it's here</div>${whyHTML(i.why)}${i.meta?.rule ? `<div class="rule">Rule: ${esc(i.meta.rule.text)}</div>` : ''}</div>
   ${i.meta?.command ? `<div class="cmd"><div class="lbl">Suggested next step</div><div class="line"><code>${esc(i.meta.command)}</code><button class="btn small" data-copy="command">Copy <kbd>c</kbd></button></div></div>` : ''}
   ${fields.length ? `<dl class="kv">${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+  ${i.reply && !parked ? `<div class="reply-box" id="replyBox">${replyBoxHTML(i, srcName)}</div>` : ''}
   ${i.stale ? `<div class="why-box" style="--u:var(--warn)"><div class="lbl">Stale data</div>${esc(srcName)} could not refresh. Showing what it found ${esc(relTime(i.stale.since))}.<br><small>${esc(i.stale.error)}</small><div class="row-btns" style="margin-top:8px"><button class="btn small" data-retry="${esc(i.source)}">↻ Retry now</button><button class="btn small" data-setup>Fix in setup →</button></div></div>` : ''}
   </div>
   <footer>${host ? `<a class="btn primary" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">Open on ${esc(host)} ↗</a>` : ''}
@@ -416,7 +418,136 @@ function openDrawer(i) {
   ${parked ? '<button class="btn" data-d="restore">↩ Restore</button>' : '<button class="btn" data-d="done">Done <kbd>x</kbd></button><button class="btn" data-d="snooze">Snooze <kbd>s</kbd></button>'}</footer>`;
   $('#drawer').classList.add('open');
   $('#drawer').dataset.id = i.id;
+  if (i.reply?.allowed && !parked) checkReply(i);
 }
+// ---------------------------------------------------------------------------
+// Replies (sources with the "reply" capability, e.g. Slack). Posting is opt-in per source,
+// shows who and where it goes, and waits 5 seconds with "Undo send" before it leaves.
+
+const drafts = new Map(); // item id → unsent text, so moving around keeps what you typed
+let sending = null; // { itemId, pid, text, sendsAt, label, timer }
+
+function replyBoxHTML(i, srcName) {
+  const r = i.reply;
+  if (!r.allowed) {
+    return `<div class="lbl">Reply</div><div class="msg">You can answer this from Birddog. Replying is off until you turn on <b>Allow replies</b> on the ${esc(srcName)} card; then Birddog posts <b>as you</b>.</div><div class="row-btns"><button class="btn small" data-setup>Open Sources &amp; settings</button></div>`;
+  }
+  if (r.missingScope) {
+    return `<div class="lbl">${esc(r.label)}</div><div class="msg warn">⚠ Your ${esc(srcName)} token can't post yet: it needs the <code>${esc(r.missingScope)}</code> scope. Add it under <b>User Token Scopes</b> in your Slack app, reinstall the app, then paste the new token on the ${esc(srcName)} card.</div><div class="row-btns"><button class="btn small" data-guide-link="replies">How to set it up</button><button class="btn small" data-setup>Open Sources &amp; settings</button></div>`;
+  }
+  if (sending?.itemId === i.id) {
+    const left = Math.max(0, Math.ceil((sending.sendsAt - Date.now()) / 1000));
+    return `<div class="lbl">${esc(r.label)}</div><blockquote class="reply-quote">${esc(sending.text)}</blockquote><div class="reply-foot"><span class="msg" data-reply-msg>${left ? `Sending in ${left} s…` : 'Sending…'}</span>${left ? '<button class="btn small" data-reply-undo>Undo send <kbd>z</kbd></button>' : ''}</div>`;
+  }
+  const text = drafts.get(i.id) ?? '';
+  return `<label class="lbl" for="replyText">${esc(r.label)} <small>· posts as you</small></label>
+    <textarea id="replyText" data-reply rows="3" maxlength="${r.maxLength ?? 4000}" placeholder="Write a reply… (plain text)">${esc(text)}</textarea>
+    ${r.canBroadcast ? `<label class="reply-also"><input type="checkbox" data-reply-broadcast> Also send to ${esc(r.where)}</label>` : ''}
+    <div class="reply-foot"><span class="msg" data-reply-msg>You'll have 5 seconds to undo.</span><span class="reply-count" data-reply-count>${text.length}/${r.maxLength ?? 4000}</span><button class="btn primary small" data-reply-send>Send <kbd>⌘↵</kbd></button></div>`;
+}
+
+function renderReplyBox(i) {
+  const box = $('#replyBox');
+  if (!box || !i || drawerItem()?.id !== i.id) return;
+  box.innerHTML = replyBoxHTML(i, st.sources.find((x) => x.id === i.source)?.name ?? i.source);
+}
+
+/** Before you type: e.g. does the Slack token have chat:write? */
+async function checkReply(i) {
+  try {
+    const d = await api.replyDetails(i.id);
+    if (d.missingScope && !i.reply.missingScope) { i.reply = { ...i.reply, missingScope: d.missingScope }; renderReplyBox(i); }
+  } catch { /* the send itself will say what's wrong */ }
+}
+
+function focusReply(i) {
+  if (!i?.reply) return toast('This item can’t be answered from Birddog.');
+  if (!drawerOpen() || drawerItem()?.id !== i.id) openDrawer(i);
+  const ta = $('#replyText');
+  if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } else $('#replyBox')?.scrollIntoView({ block: 'nearest' });
+}
+
+async function sendReply() {
+  const i = drawerItem();
+  const ta = $('#replyText');
+  if (!i?.reply || !ta || sending) return;
+  const text = ta.value.trim();
+  if (!text) { ta.focus(); return; }
+  const broadcast = !!$('[data-reply-broadcast]')?.checked;
+  const btn = $('[data-reply-send]');
+  if (btn) btn.disabled = true;
+  let q;
+  try { q = await api.reply(i.id, text, broadcast); } catch (err) { return replyFailed(i, text, err); }
+  sending = { itemId: i.id, pid: q.id, text, sendsAt: Date.parse(q.sendsAt), label: i.reply.label };
+  drafts.delete(i.id);
+  renderReplyBox(i);
+  toast(`✉ Sending ${esc(i.reply.label.replace(/^Reply/, 'reply'))}…`, () => undoReply(), { label: 'Undo send', ms: Math.max(1000, sending.sendsAt - Date.now()) });
+  sending.timer = setInterval(() => tickReply(i), 400);
+}
+
+async function tickReply(i) {
+  const s = sending;
+  if (!s) return;
+  if (Date.now() < s.sendsAt) return renderReplyBox(i);
+  if (s.polling) return;
+  s.polling = true;
+  try {
+    const r = await api.replyStatus(s.pid);
+    if (r.state === 'sent') {
+      clearInterval(s.timer); sending = null;
+      if (drawerItem()?.id === i.id) closeDrawer();
+      leave(i.id, () => { i.status = 'done'; i.doneAt = new Date().toISOString(); });
+      toast(`✓ Sent ${esc(s.label.replace(/^Reply/, 'reply'))}${r.url ? ` · <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open in Slack ↗</a>` : ''}`);
+    } else if (r.state === 'failed') {
+      clearInterval(s.timer); sending = null;
+      replyFailed(i, s.text, Object.assign(new Error(r.error?.message ?? 'Not sent.'), r.error ?? {}));
+    } else if (Date.now() - s.sendsAt > 60_000) {
+      clearInterval(s.timer); sending = null;
+      toast('⚠ No answer from Slack yet. Check Slack before sending again.');
+    }
+  } catch (err) {
+    clearInterval(s.timer); sending = null;
+    replyFailed(i, s.text, err);
+  } finally { s.polling = false; }
+}
+
+async function undoReply() {
+  const s = sending;
+  if (!s) return;
+  try {
+    await api.replyUndo(s.pid);
+    clearInterval(s.timer); sending = null;
+    drafts.set(s.itemId, s.text);
+    const i = byId(s.itemId);
+    renderReplyBox(i);
+    const m = $('[data-reply-msg]');
+    if (m) m.textContent = 'Not sent. Your reply is back in the box.';
+    toast('↩ Not sent');
+  } catch (err) { toast(`⚠ ${esc(err.message)}`); }
+}
+
+function replyFailed(i, text, err) {
+  drafts.set(i.id, text);
+  if (err.code === 'missing_scope') i.reply = { ...i.reply, missingScope: err.scope ?? 'chat:write' };
+  if (drawerItem()?.id === i.id) {
+    renderReplyBox(i);
+    const m = $('[data-reply-msg]');
+    if (m) { m.textContent = `⚠ ${err.message}`; m.classList.add('warn'); }
+  }
+  toast(`⚠ Not sent: ${esc(err.message)}`);
+}
+
+async function setAllowReplies(id, allow, input) {
+  input.disabled = true;
+  try {
+    st.setup = await api.allowReplies(id, allow);
+    toast(allow ? '✉ Replies on: Birddog can now post as you when you send a reply.' : 'Replies off: Birddog is read-only again.');
+    await load({ quiet: true });
+  } catch (err) { input.checked = !allow; toast(`⚠ ${esc(err.message)}`); }
+  input.disabled = false;
+  renderCards();
+}
+
 function closeDrawer() { $('#drawer').classList.remove('open'); }
 const drawerOpen = () => $('#drawer').classList.contains('open');
 const drawerItem = () => byId($('#drawer').dataset.id);
@@ -878,6 +1009,14 @@ function offCardHTML(src) {
 }
 
 /** Any token-based source (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack), from its `setup` metadata. */
+/** "Allow replies" on a source that can reply (Slack): the only switch that lets Birddog post. */
+function replySwitchHTML(src) {
+  if (!src.replies) return '';
+  const on = src.replies.allowed;
+  return `<div class="reply-switch ${on ? 'on' : ''}"><label><input type="checkbox" data-allow-replies="${esc(src.id)}" ${on ? 'checked' : ''}> <b>Allow replies</b></label>
+    <div class="msg">${on ? 'On. When you send a reply from an item, Birddog posts it <b>as you</b> in' : 'Off: Birddog only reads. Turn this on to answer DMs and mentions from Birddog. It will post <b>as you</b> in'} ${esc(src.name)}: into the DM, or in the thread of a mention. It never posts on its own, and every reply waits 5 seconds so you can undo it. Needs the <code>chat:write</code> scope on your token.</div></div>`;
+}
+
 function tokenCardHTML(src) {
   const ui = st.cards[src.id] ?? {};
   const s = src.settings ?? {};
@@ -891,7 +1030,7 @@ function tokenCardHTML(src) {
   if (connected && !ui.editing && status !== 'stale') {
     const how = viaOauth ? `signed in with ${esc(oauthState(setup.oauth).name)}` : envSecret(tokenName)?.from ? `token from <code>${esc(envSecret(tokenName).from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`;
     return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
-      <div class="msg">Connected, ${how}${summary}</div>${msg}
+      <div class="msg">Connected, ${how}${summary}</div>${msg}${replySwitchHTML(src)}
       <div class="row-btns"><button class="btn" data-edit="${src.id}">Change</button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button>${viaOauth ? `<button class="btn" data-oauth-off="${esc(setup.oauth)}">Disconnect</button>` : `<button class="btn" data-disconnect="${src.id}" ${ui.busy ? 'disabled' : ''}>Disconnect</button>`}</div></div>`;
   }
   const d = ui.draft ?? Object.fromEntries(setup.fields.map((f) => [f.key, s[f.key] ?? '']));
@@ -1253,9 +1392,12 @@ async function disconnectCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-allow-replies],[data-reply-send],[data-reply-undo],[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
+  if (d.allowReplies) return setAllowReplies(d.allowReplies, t.checked, t);
+  if ('replySend' in d) return sendReply();
+  if ('replyUndo' in d) return undoReply();
   if (d.view) return setView(d.view);
   if (d.ovItem) { e.preventDefault(); setView('all'); const i = byId(d.ovItem); if (i) { st.selId = i.id; render(); openDrawer(i); } return; }
   if (d.src) { const next = new Set(st.hidden); next.has(d.src) ? next.delete(d.src) : next.add(d.src); return setHidden(next); }
@@ -1299,6 +1441,14 @@ document.addEventListener('click', (e) => {
   if ('close' in d) return closeAll();
   if ('setup' in d) { e.preventDefault(); closeDrawer(); return openSetup(); }
   if (d.copy) { const i = drawerItem(); return copy(d.copy === 'path' ? i?.meta?.path : i?.meta?.command, d.copy); }
+});
+
+document.addEventListener('input', (e) => {
+  if (!e.target.matches?.('textarea[data-reply]')) return;
+  const i = drawerItem();
+  if (i) drafts.set(i.id, e.target.value);
+  const c = $('[data-reply-count]');
+  if (c) c.textContent = `${e.target.value.length}/${e.target.maxLength}`;
 });
 
 $('#openPalette').onclick = () => openPalette();
@@ -1361,6 +1511,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.target.matches?.('textarea[data-in]') && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveCard(e.target.dataset.in); return; }
+  if (e.target.matches?.('textarea[data-reply]') && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); return; }
   if (e.target.matches?.('input[data-fr-other]') && e.key === 'Enter') { e.preventDefault(); firstRunGo(); return; }
   if (e.target.matches?.('input[data-f]') && e.key === 'Enter') { e.preventDefault(); connectCard(e.target.dataset.f.split('.')[0]); return; }
   if (e.target.matches?.('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1383,6 +1534,7 @@ document.addEventListener('keydown', (e) => {
     case 's': return openSnooze(sel);
     case 'u': return sel && sel.status !== 'open' ? restore(sel) : undefined;
     case 'z': return runUndo();
+    case 'R': e.preventDefault(); return focusReply(drawerOpen() ? drawerItem() : sel);
     case 'c': return sel?.meta?.command ? copy(sel.meta.command, 'command') : undefined;
     case 'o': return openLink(sel);
     case 'a': e.preventDefault(); return toggleChat();

@@ -8,6 +8,10 @@
 //
 // What it exposes: items (title, why, urgency, link, fields) and source health.
 // What it never exposes: tokens, secrets, settings or your config.
+//
+// One tool writes outside Birddog: `reply` posts a message AS YOU (e.g. in Slack).
+// It's hidden and refused unless config.json has "mcp": { "allowReplies": true }, the
+// source's own "Allow replies" switch is on, and it posts exactly the text in the call.
 
 import readline from 'node:readline';
 
@@ -84,6 +88,24 @@ const TOOLS = [
   },
 ];
 
+/** Posts as the user, so it's only listed when config allows it (mcp.allowReplies). */
+const REPLY_TOOL = {
+  name: 'reply',
+  title: 'Reply as the user',
+  description: 'Post a reply AS THE USER to an item whose source can reply (Slack DMs and mentions; see "reply" in list_items). DMs get the reply in the DM; channel mentions get it in the thread. This sends a real message that other people will read, so only use it when the user asked you to send that exact text. Birddog posts exactly `text`, as plain text (no @channel/@here), and then clears the item.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'Item id from list_items' },
+      text: { type: 'string', description: 'The exact message to post (up to 4000 characters)' },
+      also_send_to_channel: { type: 'boolean', description: 'For a thread reply: also show it in the channel (default false)' },
+    },
+    required: ['id', 'text'],
+    additionalProperties: false,
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+};
+
 /** Resolve a snooze target to an ISO date (or "change"). Exported for tests. */
 export function snoozeUntil(input, now = Date.now()) {
   const v = String(input ?? '').trim().toLowerCase();
@@ -116,6 +138,7 @@ export function publicItem(i) {
     rule: i.meta?.rule?.text ?? null,
     nextStep: i.meta?.command ?? null,
     fields: i.meta?.fields ?? {},
+    ...(i.reply ? { reply: { to: i.reply.label, allowed: !!i.reply.allowed } } : {}),
   };
 }
 
@@ -132,7 +155,10 @@ const line = (i) => `- [${i.urgency}${i.status !== 'open' ? `, ${i.status}` : ''
  * The protocol, without any I/O: give it a parsed message, get the reply (or null).
  * `app` is a Birddog app from createBirddog() (it is never started; nothing listens).
  */
-export function createMcpHandler({ app, version, now = () => Date.now(), refreshAfterMs }) {
+export function createMcpHandler({ app, version, now = () => Date.now(), refreshAfterMs, allowReplies }) {
+  // Chat (Fetch) passes allowReplies: true, because it asks you to confirm each send itself.
+  const repliesOn = () => !!app.replies && !!(typeof allowReplies === 'function' ? allowReplies() : allowReplies ?? (app.config.mcp?.allowReplies === true));
+  const toolList = () => (repliesOn() ? [...TOOLS, REPLY_TOOL] : TOOLS);
   let fresh = null; // promise of the first refresh, if the cache was old
 
   async function data() {
@@ -144,7 +170,8 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
     }
     await app.triage.sync();
     const snap = app.collector.snapshot();
-    return { items: app.triage.apply(snap.items), sources: snap.sources };
+    const items = app.triage.apply(snap.items).map((i) => { const r = app.replies?.target(i); return r ? { ...i, reply: r } : i; });
+    return { items, sources: snap.sources };
   }
 
   async function find(id) {
@@ -201,6 +228,16 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
       await app.triage.snooze(it, until);
       return result(`Snoozed until ${until === 'change' ? 'it changes' : new Date(until).toLocaleString()}: ${it.title}`, { id: it.id, status: 'snoozed', until });
     },
+    async reply(a) {
+      if (!repliesOn()) throw new ToolError('Replies through MCP are off. The user can turn them on with "mcp": { "allowReplies": true } in config.json.');
+      if (typeof a.text !== 'string') throw new ToolError('text is required');
+      const it = await find(a.id);
+      if (!it.reply) throw new ToolError(`${it.source} items can't be answered from Birddog.`);
+      try {
+        const r = await app.replies.sendNow(it.id, a.text, { broadcast: a.also_send_to_channel === true, mentions: false });
+        return result(`Sent as the user (${it.reply.label}).${r.url ? ` ${r.url}` : ''} The item is cleared.`, { id: it.id, sent: true, url: r.url });
+      } catch (err) { throw new ToolError(err.message); }
+    },
     async restore(a) {
       const it = await find(a.id);
       await app.triage.restore(it.id);
@@ -220,9 +257,9 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
         };
       }
       case 'ping': return {};
-      case 'tools/list': return { tools: TOOLS };
+      case 'tools/list': return { tools: toolList() };
       case 'tools/call': {
-        const fn = tools[params?.name];
+        const fn = params?.name === 'reply' && !repliesOn() ? null : tools[params?.name];
         if (!fn) throw Object.assign(new Error(`Unknown tool: ${params?.name}`), { code: ERR.params });
         const args = params.arguments ?? {};
         if (typeof args !== 'object' || Array.isArray(args)) throw Object.assign(new Error('arguments must be an object'), { code: ERR.params });
@@ -257,7 +294,7 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
     }
   }
 
-  return { handle, tools: TOOLS };
+  return { handle, get tools() { return toolList(); } };
 }
 
 /** Run over stdio: newline-delimited JSON on stdin/stdout. Logs go to stderr only. */

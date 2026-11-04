@@ -4,7 +4,16 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-04
+
 ### Added
+- **Reply from Birddog** (Slack first). Answer a DM in the DM, or a channel mention in its thread (optional "Also send to #channel"), from the item's details: `⇧R` to jump to the box, `⌘↵` / `Ctrl+↵` to send. The box says who and where ("Reply to @priya in DM", "Reply in thread in #payments"). Each reply waits **5 seconds with Undo send** before it goes out; then you get a link to it and the item clears.
+- **Opt-in writing.** Nothing posts until you tick **Allow replies** on the Slack card, which says plainly that Birddog will post as you. Needs the `chat:write` user scope; without it the reply box says so (with the fix) before you type.
+- **A generic reply capability** for sources: `capabilities: ['reply']` with `replyTarget()`, `reply()` and an optional `replyCheck()` (`src/replies.mjs`). Other chats (Teams, Discord, Google Chat) plug in the same way; PR and ticket comments could later.
+- **Fetch drafts replies**: it shows the full text and where it goes, and sends only on **Confirm and send**. It's offered the `reply` tool only once a source has replies on.
+- **MCP `reply` tool**, hidden and refused unless config has `"mcp": { "allowReplies": true }` (and the source's own switch is on). It posts exactly the text in the call.
+- Plain text only, up to 4000 characters: `&`, `<`, `>` escaped; `@channel` / `@here` only when you typed them in the dashboard, never from Fetch or MCP. Slack 429s wait out a short `Retry-After` (≤ 20 s, twice) or say when to try again.
+- Demo mode has a fake Slack (one DM, one mention) that takes replies and sends nothing anywhere.
 - The guide is **resizable**: drag its left edge to any width (or focus the edge and use ←/→, Shift for bigger steps; double-click resets). ⇤ in its header, or `Shift+G`, jumps between the normal rail and a wide reading view. The width is remembered (`guideWidth` pref). **Expand all / Collapse all** opens or closes every section at once.
 - Built-in Google app: client ID `787425286434-if73gibnotktjm2rrthk4fk3ujre313j.apps.googleusercontent.com` (project "Birddog", Desktop app client), status `'testing'`. Its desktop secret is **not shipped** (not in code, config defaults or docs). Until it's stored locally, the Calendar card shows one friendly step instead of a button that would fail: get the secret from whoever runs the Birddog Google project, then `birddog secret set google-client-secret`, or `BIRDDOG_GOOGLE_CLIENT_SECRET` / `BIRDDOG_GOOGLE_CLIENT_SECRET_FILE`.
 - `birddog secret set <name>` asks for the value at a hidden prompt when run at a terminal (still reads stdin when piped), and refuses a value given as an argument, so secrets stay out of shell history.

@@ -189,7 +189,7 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **Azure DevOps** | PRs you haven't voted on, work items assigned to you | PAT with Work Items: Read, Code: Read |
 | **Sentry** | New and regressed errors assigned to you | Auth token with `event:read`, `org:read` |
 | **PagerDuty** | Incidents paged to you (**Now**), your on-call shifts | User API token |
-| **Slack** | Mentions, and DMs waiting for your reply | User token with `search:read`, `im:read`, `im:history`, `users:read` |
+| **Slack** | Mentions, and DMs waiting for your reply. Can reply, opt-in | User token with `search:read`, `im:read`, `im:history`, `users:read`; `chat:write` to reply |
 
 GitHub also reports **failing Actions runs** on branches you pushed this week, and **Dependabot alerts** on those repos (`"actions": false` / `"security": false` under `sources.github` turn them off).
 
@@ -199,7 +199,7 @@ When a source fails, its last good items stay in the list, marked stale, with a 
 
 - Everything stays on your machine: config, cache and triage state live in `~/.config/birddog/` as plain JSON.
 - Tokens and private calendar links go to your **OS keychain** (macOS Keychain, or Secret Service on Linux), never into config files, never into API responses, and never to the browser. If no keychain is available, Birddog says so clearly before falling back to a file only you can read. See [Secrets](#secrets).
-- Birddog only talks to the services you connect, with `GET` requests, and to nothing else.
+- Birddog only talks to the services you connect, and to nothing else. It reads with `GET` requests. The one exception is a **reply** you send yourself (Slack, see [Reply from Birddog](#reply-from-birddog)): off until you turn on **Allow replies**, and it posts as you only when you press Send.
 - For a shared machine, you can put the dashboard behind your own OpenID Connect login (Google, Okta, Entra, …). See [Login](#login-for-the-dashboard-sso).
 - In [Docker](#run-it-in-docker), tokens come only from environment variables or Docker secrets and are never written to the volume. Your repos are mounted read-only, and the port is published to `127.0.0.1` only.
 
@@ -238,8 +238,11 @@ Want to try it first? Use `["-y", "@marcusferrell/birddog", "mcp", "--demo"]` an
 | `mark_done` | Done in Birddog until the item changes. |
 | `snooze` | Hide until `1h`, `3h`, `2d`, `tomorrow`, `next-week`, `change`, or a date. |
 | `restore` | Undo a done or snooze. |
+| `reply` | **Off by default.** Post a reply as you (Slack DMs and mentions). Listed only with `"mcp": { "allowReplies": true }` in config.json *and* "Allow replies" on the Slack card. |
 
 The tools return titles, "why" lines, links and fields, never tokens, secrets or settings. Triage tools only change Birddog's own list. If the dashboard hasn't refreshed recently, the MCP server refreshes the sources itself.
+
+> **`reply` is outward-facing.** With it on, an AI agent can post real messages that other people read, under your name, without the dashboard's 5-second undo. Birddog posts exactly the `text` in the tool call, as plain text (an agent can't trigger `@channel` or `@here`), and only to the DM or thread of an item in your inbox. Turn it on only for agents you trust to ask you first.
 
 ## How it works
 
@@ -349,7 +352,7 @@ The reader is built in (no dependencies) and handles what real feeds contain: fo
 
 Sources & settings lists every source A–Z, with a search box that matches names and kinds of thing (*calendar* finds Google, Microsoft, iCloud and iCal; *ci* finds GitHub Actions, GitLab pipelines and Azure).
 
-GitLab, Linear, Azure DevOps, Sentry, PagerDuty and Slack are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token` and `slack-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN` and `BIRDDOG_SLACK_TOKEN`. None of them write anything. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL.
+GitLab, Linear, Azure DevOps, Sentry, PagerDuty and Slack are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token` and `slack-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN` and `BIRDDOG_SLACK_TOKEN`. None of them write anything while collecting. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL. Slack can also post your replies, only once you turn on [Allow replies](#reply-from-birddog).
 
 | Source | Ranks it as | Rules that fire |
 |---|---|---|
@@ -378,7 +381,7 @@ Where a card shows **Sign in with …**, it's one click: Birddog uses **its own 
 | Linear | **Sign in with Linear** (PKCE, no secret) | `read` | yes |
 | PagerDuty | **Sign in with PagerDuty** (Classic User OAuth, PKCE, no secret) | `read` | yes |
 | Jira Cloud | API token; advanced: your own Atlassian app | `read:jira-work`, `read:jira-user` | no: Atlassian needs a confidential secret |
-| Slack | user token (`xoxp-…`) | read-only scopes | no: Slack needs a confidential secret |
+| Slack | user token (`xoxp-…`) | read-only scopes, plus `chat:write` to reply | no: Slack needs a confidential secret |
 | Calendar | **iCloud** (CalDAV with an app-specific password) | your iCloud calendars, read-only | n/a |
 
 > **About Google sign-in.** Birddog's Google app is **in testing** for now, so sign-in is **invite-only**: Google only admits accounts the maintainer added as test users, and everyone else gets "access denied" or "has not completed verification" (Birddog turns both into this advice). Use your calendar's private **iCal link** instead, which needs no Google sign-in. Test users see Google's **"unverified app"** screen (choose **Continue**, or **Advanced → Go to Birddog (unsafe)**), and Google ends test sign-ins after **7 days**, so expect **Sign in again** weekly. Birddog only reads your calendar events, read-only, and they stay on your computer.
@@ -517,6 +520,7 @@ Press the **✦** button in the bottom-right corner (or `a`) to ask **Fetch**, B
 - **Your key stays in your keychain** (`anthropic-api-key`), or in `ANTHROPIC_API_KEY` in Docker. It never goes into config.json, API responses or logs.
 - **It uses Birddog's own MCP tools.** The model reads with `list_items`, `get_item` and `list_sources`, and the panel shows which ones ran. Tool inputs are checked against their schemas before anything runs.
 - **It asks before it changes anything.** `mark_done`, `snooze` and `restore` stop the answer and show a **Confirm / Cancel** card. Only Birddog's own list changes, never GitHub, Jira or git.
+- **It can draft a reply, never send one on its own.** Once Slack has **Allow replies** on, ask *"reply to Priya that I'm free at 3"*: Fetch drafts it, and the card shows the **full text** and where it goes, with **Confirm and send / Cancel**. Nothing posts until you confirm.
 - **Model:** `claude-sonnet-5-5` by default. Override it with `"chat": { "model": "…" }` in config.json or `BIRDDOG_CHAT_MODEL`. Answers stream in. Birddog calls the Messages API with plain `fetch` (no SDK, still zero dependencies) and opts into Anthropic's server-side refusal fallback (`fallbacks: "default"`).
 - In `--demo`, a scripted stand-in answers instead, so you can try it with no key; nothing goes to Anthropic.
 
@@ -547,6 +551,21 @@ On macOS, the first notification may need permission for your terminal (or Scrip
 
 All of it lives in `~/.config/birddog/state.json`, along with your theme.
 
+## Reply from Birddog
+
+Sources with the **reply** capability let you answer an item without leaving Birddog. Slack is the first: answer a DM, or reply in the thread of a channel mention.
+
+- **Off until you turn it on.** Birddog only reads until you tick **Allow replies** on the Slack card. The card says it plainly: Birddog will post **as you**. It never posts on its own.
+- **One more scope.** Replying needs `chat:write` under *User Token Scopes* in your Slack app. Add it, reinstall the app, and paste the new user token on the Slack card. Without it, the reply box says so (and how to fix it) before you type, instead of failing silently.
+- **Where it goes is spelled out:** *Reply to @priya in DM*, or *Reply in thread in #payments*. A thread reply has an **Also send to #payments** box (off by default).
+- **Write** in the box in the details drawer (or press `⇧R`), then `⌘↵` / `Ctrl+↵` or **Send**. You get **5 seconds to undo** (`z` or **Undo send**); only then does it go out. When it's posted you get a link to the message, and the item clears: a DM you answered is no longer waiting, a mention counts as handled.
+- **Plain text**, up to 4000 characters. `&`, `<` and `>` are escaped, so nothing turns into a mention by accident. `@channel` and `@here` only work if you typed them yourself in the box; text drafted by Fetch or an MCP client never pings a channel.
+- **Rate limits:** if Slack answers 429, Birddog waits out a short `Retry-After` (up to 20 s, twice) and otherwise tells you when to try again. Nothing is sent twice.
+- **Fetch** can draft a reply and asks you to confirm the full text. **MCP** has a `reply` tool that is off unless you set `"mcp": { "allowReplies": true }` (see [MCP](#use-it-from-claude-mcp)).
+- In `--demo`, a fake Slack takes replies and sends nothing anywhere.
+
+Your token stays in the keychain; replies, like reads, never put it in logs or API responses.
+
 ## Keyboard
 
 | Key | Action | Key | Action |
@@ -560,6 +579,7 @@ All of it lives in `~/.config/birddog/state.json`, along with your theme.
 | `g` | guide | `m` | collapse / expand the menu |
 | `1`–`6` | All / Now / Today / Later / Snoozed / Done | `a` | Ask Fetch |
 | `t` | light / dark | `p` | next theme |
+| `⇧R` | reply (Slack DMs and mentions) | `⌘↵` | send the reply |
 
 ## Themes
 
@@ -709,6 +729,7 @@ Optionally export:
 - `secretFields`: setup fields that are secrets, e.g. `{ token: 'weather-token' }`. Birddog stores them in the keychain under that name, strips them before `normalizeSettings` sees the form, and never writes them to config.json. `test()` gets the unsaved draft through `ctx.secret()`, so "Test" works before "Save". A blank field keeps the saved secret.
 - `validateSecrets(values)`: check or clean secret values (keyed by secret name) before they are tested or stored; throw to reject. Calendar uses it to turn `webcal://` into `https://`.
 - `enabledByDefault = false`: keep the source off until the user saves its settings (Jira and Calendar do this).
+- `capabilities = ['reply']`, with `replyTarget(item)` (who and where a reply goes, no network), `reply(item, text, ctx, { broadcast, mentions })` → `{ ok, url? }`, and optionally `replyCheck(ctx)` (e.g. a missing scope, before the user types). Birddog adds the reply box, the "Allow replies" switch, the 5-second undo, Fetch's confirmation and the MCP tool around it; see [`src/replies.mjs`](src/replies.mjs) and the Slack source. Slack is the only one so far. Another chat (Teams, Discord, Google Chat) plugs in the same way, and so could comments later: GitHub and GitLab PR comments, Jira comments.
 
 The rules of the road:
 
@@ -717,7 +738,7 @@ The rules of the road:
 - **Keep `why` short and specific.** It is the most important line in the app. `**bold**` is the only markup.
 - **Rank with rules** from `src/rules.mjs`, so the drawer can say which rule fired.
 - Each run has a 60 second timeout.
-- **Stay read-only.** Sources only send `GET` requests (see [`src/sources/http.mjs`](src/sources/http.mjs)).
+- **Stay read-only when collecting.** `test()` and `collect()` only send `GET` requests (see [`src/sources/http.mjs`](src/sources/http.mjs)). Writing happens only in `reply()`, which runs only after the user turned replies on and sent one.
 
 ## API
 
@@ -730,6 +751,11 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `POST` | `/api/items/:id/done` | mark done |
 | `POST` | `/api/items/:id/snooze` | `{ "until": "<ISO date>" \| "change" }` |
 | `POST` | `/api/items/:id/restore` | undo done/snooze |
+| `GET` | `/api/items/:id/reply` | who and where a reply goes, and e.g. a missing scope |
+| `POST` | `/api/items/:id/reply` | `{ "text", "broadcast"? }`: queue a reply; it goes out after 5 s unless undone |
+| `GET` | `/api/replies/:id` | `pending` / `sent` (with `url`) / `failed` (with `error`) / `undone` |
+| `POST` | `/api/replies/:id/undo` | stop a queued reply; returns its text |
+| `PUT` | `/api/sources/:id/replies` | `{ "allow": true \| false }`: the "Allow replies" switch |
 | `GET`/`PUT` | `/api/prefs` | theme, mode, hidden sources, `notifications` settings |
 | `GET` | `/api/oauth` | sign-in providers: set up?, signed in as whom, the redirect URI to register (never tokens) |
 | `POST` | `/api/oauth/:provider/start` | the provider URL to send the browser to (`google`, `microsoft`, `atlassian`) |
@@ -825,8 +851,9 @@ test/                  node:test suites
 9. ✅ One-step first run (1.9)
 10. ✅ Sources A–Z with search, top-right account menu, Fetch the floating assistant (1.10)
 11. ✅ One-click sign-ins through Birddog's own public apps, Sign in with Linear and PagerDuty (1.11)
+12. ✅ Reply from Birddog: Slack DMs and mentions, opt-in, with undo; Fetch drafts, MCP opt-in (1.12)
 
-Ideas for later: Bitbucket Cloud, a "focus" view that hides Later.
+Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Teams, Discord, Google Chat) and comments (GitHub/GitLab PRs, Jira).
 
 ## Changelog
 

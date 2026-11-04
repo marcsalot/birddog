@@ -71,8 +71,12 @@ function entryHTML(e, i) {
   if (e.role === 'note') return `<div class="msg-note">${esc(e.text)}</div>`;
   if (e.role === 'confirm') {
     const done = e.state && e.state !== 'pending';
-    return `<div class="msg-confirm ${done ? 'answered' : ''}"><div class="lbl">Fetch wants to change your list</div><div>${esc(e.summary)}</div>
-      ${done ? `<div class="msg">${e.state === 'yes' ? '✓ Confirmed' : '✕ Cancelled'}</div>` : `<div class="row-btns"><button class="btn primary small" data-chat-yes="${i}">Confirm</button><button class="btn small" data-chat-no="${i}">Cancel</button></div>`}</div>`;
+    // A reply posts a real message as you, so its full text is shown before you confirm.
+    const isReply = e.name === 'reply';
+    const [head, ...body] = String(e.summary).split('\n\n');
+    const what = isReply ? `<div>${esc(head)}</div><blockquote class="reply-quote">${esc(body.join('\n\n'))}</blockquote>` : `<div>${esc(e.summary)}</div>`;
+    return `<div class="msg-confirm ${done ? 'answered' : ''}"><div class="lbl">${isReply ? 'Fetch drafted a reply. Send it as you?' : 'Fetch wants to change your list'}</div>${what}
+      ${done ? `<div class="msg">${e.state === 'yes' ? (isReply ? '✓ Sent' : '✓ Confirmed') : '✕ Cancelled'}</div>` : `<div class="row-btns"><button class="btn primary small" data-chat-yes="${i}">${isReply ? 'Confirm and send' : 'Confirm'}</button><button class="btn small" data-chat-no="${i}">Cancel</button></div>`}</div>`;
   }
   return '';
 }
