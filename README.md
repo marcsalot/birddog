@@ -106,6 +106,24 @@ GITHUB_TOKEN=$(gh auth token) docker compose up -d     # http://127.0.0.1:4747
 docker compose --profile demo up birddog-demo          # http://127.0.0.1:4848, no mounts, no tokens
 ```
 
+Compose reads these from your shell (or a `.env` file next to `docker-compose.yml`, which you keep out of git):
+
+| Variable | Default | What it does |
+|---|---|---|
+| `BIRDDOG_REPOS` | `~/code` | The folder holding your git repos, mounted read-only at `/repos`. Set it if your code lives elsewhere. |
+| `TZ` | `UTC` | Your time zone, e.g. `America/Chicago`, so meeting times and "today" match your clock. |
+| `BIRDDOG_PORT` | `4747` | Host port for the dashboard (always on `127.0.0.1`). |
+| `BIRDDOG_DEMO_PORT` | `4848` | Host port for the demo service. |
+| `GITHUB_TOKEN`, `BIRDDOG_JIRA_TOKEN`, `BIRDDOG_CAL_URL` | unset | Tokens for the sources you use. See the table below. |
+
+For example, with your repos in `~/Projects`:
+
+```bash
+BIRDDOG_REPOS=~/Projects TZ=America/Chicago GITHUB_TOKEN=$(gh auth token) docker compose up -d
+```
+
+If `BIRDDOG_REPOS` points to a folder that doesn't exist, Docker creates an empty one and Birddog finds no repos. Check the path if setup shows nothing under `/repos`.
+
 > ⚠️ **Publish the port on `127.0.0.1` only**, as every example here does. Inside the container Birddog listens on `0.0.0.0`, because that's the only way Docker can forward to it, and it trusts Docker to keep the port on your loopback. `-p 4747:4747` or `-p 0.0.0.0:4747:4747` would let anyone on your network read your work inbox: PR titles, ticket names, meetings. To reach it from other machines, put it behind [login](#login-for-the-dashboard-sso) and a reverse proxy with HTTPS.
 
 **How the container differs from running it directly**
