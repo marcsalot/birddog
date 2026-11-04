@@ -1,21 +1,104 @@
 # 🐾 Birddog
 
-**What needs me next?** Birddog is a local-first dashboard for developers. A bird dog finds what matters and points at it: Birddog sniffs through your work, ranks it with plain rules, and tells you *why* each thing is in your list.
+**What needs me next?** Birddog is a local-first inbox for developers. It looks through your local git repos, GitHub, Jira and calendar, ranks what it finds with plain rules, and tells you *why* each thing is there.
 
-<!-- Screenshot placeholder: add docs/screenshot.png and replace this comment with
-     ![Birddog inbox](docs/screenshot.png). A demo GIF comes in v0.4. -->
-> 📸 *Screenshot coming soon.*
+![Birddog demo: the inbox, opening an item, marking one done, snoozing another, and switching themes](https://raw.githubusercontent.com/marcsalot/birddog/main/docs/demo.gif)
 
-- **Local-first.** Runs on your machine, binds to `127.0.0.1`, stores everything in a JSON file you can read. No account, no cloud, no telemetry.
-- **Explains itself.** Every item has a "why" line and names the rule that put it there. No mystery scores.
+```bash
+npx bird-dog --demo     # look around with made-up data
+npx bird-dog --open     # the real thing, on http://127.0.0.1:4747
+```
+
+You need Node 22 or newer. There's no account, no cloud and nothing else to install.
+
+## Why
+
+Work-in-progress hides in too many places: a branch you forgot to push, a review someone is waiting on, a Jira ticket due tomorrow, a meeting in ten minutes. Each tool has its own inbox and its own idea of "important". Birddog puts them in one list and is upfront about its reasoning:
+
+> **@ana-lopez** requested your review **2 days** ago · they are waiting on you
+> *Rule: Review requested of you over a day ago → Now*
+
+- **Explains itself.** Every item has a "why" line and names the rule that put it there. There are no scores and no machine learning, just a list of rules you can read in [`src/rules.mjs`](src/rules.mjs).
+- **Local-first.** It runs on your machine, listens only on `127.0.0.1`, and keeps its state in JSON files you can read. There's no telemetry.
+- **Read-only.** It never pushes, comments, moves tickets, RSVPs, or marks notifications as read. Done and snooze only change Birddog's own list.
 - **Keyboard-first.** `j`/`k` to move, `x` done, `s` snooze, `z` undo, `⌘K` for everything else.
-- **Zero runtime dependencies.** Node 22+ and `git`. That's it.
-- **Read-only.** Birddog looks at git, GitHub, Jira and your calendar. It never pushes, comments, transitions, RSVPs or marks anything as read.
-- **Optional SSO.** Put Birddog behind your Google, Okta or Entra login when you run it somewhere shared.
+- **Zero runtime dependencies.** It's plain Node and browser JavaScript. Even the iCalendar parser and the MCP server are hand-written.
+- **Talks to your AI tools.** `birddog mcp` lets Claude Code, Claude Desktop or any MCP client ask "what needs me?" and triage items.
 
-> **Status: v0.3, milestone 3.** Local git, GitHub, Jira Cloud and Calendar sources are live, with a first-run setup wizard. Next up: a read-only MCP server and the npm release.
+## Sources
 
-## Quick start
+| Source | What it finds | How it connects |
+|---|---|---|
+| **Local git** | Unpushed commits, uncommitted work, merged and stale branches | Scans folders you pick; runs read-only `git` commands |
+| **GitHub** | Review requests, your PRs with failing checks, change requests or conflicts, unread @mentions, assigned issues | Your existing `gh` login, or "Sign in with GitHub" (device flow) |
+| **Jira Cloud** | Your tickets: overdue, sprint ending, blocked, high priority | Site + email + API token |
+| **Calendar** | Meetings starting soon or later today, all-day events | Any iCal link (Google, Outlook, iCloud) or `.ics` file |
+
+When a source fails, its last good items stay in the list, marked stale, with a **Retry** button. One broken token never empties your inbox. Details for each source are [further down](#what-it-finds-local-git).
+
+## Privacy and secrets
+
+- Everything stays on your machine: config, cache and triage state live in `~/.config/birddog/` as plain JSON.
+- Tokens and private calendar links go to your **OS keychain** (macOS Keychain, or Secret Service on Linux), never into config files, never into API responses, and never to the browser. If no keychain is available, Birddog says so clearly before falling back to a file only you can read. See [Secrets](#secrets).
+- Birddog only talks to the services you connect, with `GET` requests, and to nothing else.
+- For a shared machine, you can put the dashboard behind your own OpenID Connect login (Google, Okta, Entra, …). See [Login](#login-for-the-dashboard-sso).
+
+## Use it from Claude (MCP)
+
+`birddog mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. It reads the same data as the dashboard, so both can run at once, and decisions made in one show up in the other.
+
+**Claude Code:**
+
+```bash
+claude mcp add birddog -- npx -y bird-dog mcp
+```
+
+**Claude Desktop:** add this to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "birddog": {
+      "command": "npx",
+      "args": ["-y", "bird-dog", "mcp"]
+    }
+  }
+}
+```
+
+Claude Desktop starts servers with a short `PATH`. If it can't find `npx`, use the full path (`which npx`). If you use the GitHub CLI login, add `"env": { "PATH": "/opt/homebrew/bin:/usr/bin:/bin" }` so Birddog can find `gh`.
+
+Want to try it first? Use `["-y", "bird-dog", "mcp", "--demo"]` and it runs on made-up data.
+
+| Tool | What it does |
+|---|---|
+| `list_items` | What needs you, most urgent first, each with its "why". Filter by `urgency`, `source`, `status`; `limit`. |
+| `get_item` | One item in full: rule, fields, link, suggested next step. |
+| `list_sources` | Which sources are connected, item counts, and which are stale (with the error). |
+| `mark_done` | Done in Birddog until the item changes. |
+| `snooze` | Hide until `1h`, `3h`, `2d`, `tomorrow`, `next-week`, `change`, or a date. |
+| `restore` | Undo a done or snooze. |
+
+The tools return titles, "why" lines, links and fields, never tokens, secrets or settings. Triage tools only change Birddog's own list. If the dashboard hasn't refreshed recently, the MCP server refreshes the sources itself.
+
+## How it works
+
+```
+ sources (git, GitHub, Jira, iCal)        each returns Items: title, why, urgency, url, fields
+        │   plain rules rank them          src/rules.mjs: first match wins, the rule is shown
+        ▼
+ collector ── cache.json                  keeps the last good result per source; stale + backoff on failure
+        │
+ triage ──── state.json                   done / snooze, comes back when the item changes
+        │
+        ├── HTTP server + UI               127.0.0.1 only, strict CSP, no build step (public/)
+        └── MCP server (stdio)             birddog mcp
+ secrets ─── OS keychain                  tokens and private links, never in files or responses
+```
+
+Each source is one small ES module with `test()` and `collect()`. Adding one is about a page of code; see [Writing a source](#writing-a-source). The whole thing is about 5,500 lines of JavaScript with 159 `node:test` tests, and none of the tests touch the network.
+
+## Get started
 
 ```bash
 npx bird-dog --open
@@ -24,15 +107,17 @@ npx bird-dog --open
 Or from a clone:
 
 ```bash
-git clone <this repo> birddog && cd birddog
+git clone https://github.com/marcsalot/birddog && cd birddog
 node bin/birddog.mjs --open
 ```
 
-On first run a **setup wizard** walks you through each source: your code folders (Birddog guesses `~/code`, `~/src`, `~/projects`, `~/Developer`, … or the folder you ran it from), GitHub, Jira and your calendar. Each step runs that source's test as soon as you reach it, so you see straight away whether it works. Skip whatever you don't use; skipping GitHub switches it off so it doesn't sit there as "stale". Change anything later in **Connect a source**, or run the wizard again with `⌘K` → "Run the setup wizard".
+On first run a **setup wizard** walks you through each source: your code folders (Birddog guesses `~/code`, `~/src`, `~/projects`, `~/Developer`, …, or the folder you ran it from), then GitHub, Jira and your calendar. Each step runs that source's test as soon as you reach it, so you see straight away whether it works. Skip whatever you don't use; skipping GitHub switches it off so it doesn't sit there as "stale". You can change anything later in **Connect a source**, or run the wizard again with `⌘K` → "Run the setup wizard".
 
 ```
 birddog                 start on http://127.0.0.1:4747
 birddog --open          start and open your browser
+birddog --demo          made-up data in a temporary folder; your real setup is never touched
+birddog mcp             MCP server on stdio (add --demo for made-up data)
 birddog --port 5000     use another port
 birddog --host 0.0.0.0  listen beyond localhost (only with login turned on)
 birddog secret set jira-token   store a secret in your keychain (reads stdin; also cal-url, oidc-client-secret)
@@ -40,6 +125,10 @@ birddog --help
 ```
 
 If the port is busy, Birddog tries the next one. If Birddog is already running, `birddog --open` just opens the existing one.
+
+### Demo mode
+
+`birddog --demo` starts Birddog with an imaginary company's repos, PRs, tickets and meetings. It uses a fresh temporary folder, an in-memory secret store and a fake network layer. Your repos, tokens and calendar are never read, nothing goes over the network, and everything is deleted when you stop it. The real GitHub, Jira and Calendar sources run against fake APIs, so the ranking and "why" lines are exactly what real data would produce. The GIF above was recorded this way.
 
 ## What it finds (local git)
 
@@ -402,6 +491,9 @@ src/sources/jira.mjs   Jira Cloud source (assigned tickets, blocked work, deadli
 src/sources/cal.mjs    Calendar source (meetings from an iCal link or .ics file)
 src/sources/ical.mjs   iCalendar reader: parsing, time zones, recurring events
 src/sources/http.mjs   GET-only helpers shared by the web sources
+src/mcp.mjs            MCP server (JSON-RPC over stdio)
+src/demo.mjs           demo mode: canned git items and fake GitHub / Jira / calendar APIs
+docs/                  demo GIF, screenshot, launch post
 test/fixtures/         sample Google- and Outlook-style .ics files
 public/                the UI: plain HTML, CSS and ES modules, no build step
 test/                  node:test suites
@@ -412,7 +504,9 @@ test/                  node:test suites
 1. ✅ Skeleton, local git source, real UI, optional SSO, GitHub sign-in, OS keychain secrets
 2. ✅ GitHub and Jira Cloud sources
 3. ✅ Setup wizard, calendar (iCal) source, hardened keychain secrets, stale-source retry and backoff
-4. Read-only MCP server so your AI tools can ask "what needs me?", demo GIF, npm release
+4. ✅ MCP server, demo mode, `npx bird-dog` release
+
+Ideas for later: GitLab and Linear sources, a "focus" view that hides Later, desktop notifications for Now.
 
 ## License
 

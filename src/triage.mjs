@@ -2,7 +2,11 @@
 //
 // Done and "snooze until it changes" remember the item's fingerprint. When the item
 // changes (new commits, new files), it comes back, because it needs you again.
+//
+// Several processes may share state.json (the dashboard and `birddog mcp`), so
+// every change first re-reads the file if someone else wrote it.
 
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fingerprint } from './items.mjs';
 import { readJson, writeJson } from './store.mjs';
@@ -33,9 +37,23 @@ export class Triage {
   async load() {
     const d = await readJson(this.file, null);
     if (d) this.data = { version: 1, items: d.items ?? {}, prefs: { ...DEFAULT_PREFS, ...d.prefs } };
+    this.mtime = await this.#mtime();
   }
 
-  save() { return writeJson(this.file, this.data); }
+  async #mtime() {
+    try { return (await fs.stat(this.file)).mtimeMs; } catch { return null; }
+  }
+
+  /** Pick up changes another process (say, `birddog mcp`) wrote to state.json. */
+  async sync() {
+    const m = await this.#mtime();
+    if (m !== this.mtime) await this.load();
+  }
+
+  async save() {
+    await writeJson(this.file, this.data);
+    this.mtime = await this.#mtime();
+  }
 
   /** Annotate items with status: 'open' | 'done' | 'snoozed'. Pure: does not change stored state. */
   apply(items) {
@@ -54,12 +72,14 @@ export class Triage {
   }
 
   async done(item) {
+    await this.sync();
     this.data.items[item.id] = { status: 'done', at: new Date(this.now()).toISOString(), fp: fingerprint(item), seen: this.now() };
     await this.save();
   }
 
   /** until: ISO date string in the future, or 'change'. */
   async snooze(item, until) {
+    await this.sync();
     if (until !== 'change') {
       const t = Date.parse(until);
       if (Number.isNaN(t)) throw new RangeError('until must be an ISO date or "change"');
@@ -70,12 +90,14 @@ export class Triage {
   }
 
   async restore(id) {
+    await this.sync();
     delete this.data.items[id];
     await this.save();
   }
 
   /** Forget decisions about items that have not been seen for a month. */
   async prune(currentItems) {
+    await this.sync();
     const live = new Set(currentItems.map((i) => i.id));
     const now = this.now();
     let changed = false;
@@ -90,6 +112,7 @@ export class Triage {
 
   /** Merge valid prefs; returns the list of rejected keys. */
   async setPrefs(patch) {
+    await this.sync();
     const rejected = [];
     for (const [k, v] of Object.entries(patch ?? {})) {
       if (PREF_CHECKS[k]?.(v)) this.data.prefs[k] = v;

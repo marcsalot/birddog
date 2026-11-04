@@ -1,10 +1,11 @@
 {
   "name": "bird-dog",
-  "version": "0.3.0",
-  "description": "A local-first \"what needs me next?\" dashboard for developers. Birddog finds what matters and points at it.",
+  "version": "1.0.0",
+  "description": "A local-first \"what needs me next?\" inbox for developers: local git, GitHub, Jira and calendar, ranked by plain rules that explain themselves. Zero dependencies, with an MCP server.",
   "type": "module",
   "bin": {
-    "birddog": "bin/birddog.mjs"
+    "birddog": "bin/birddog.mjs",
+    "bird-dog": "bin/birddog.mjs"
   },
   "files": [
     "bin",
@@ -25,15 +26,26 @@
   },
   "keywords": [
     "dashboard",
-    "calendar",
     "developer-tools",
+    "inbox",
+    "local-first",
+    "productivity",
     "git",
     "github",
-    "inbox",
     "jira",
-    "local-first",
-    "productivity"
+    "calendar",
+    "ical",
+    "mcp",
+    "model-context-protocol"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcsalot/birddog.git"
+  },
+  "homepage": "https://github.com/marcsalot/birddog#readme",
+  "bugs": {
+    "url": "https://github.com/marcsalot/birddog/issues"
+  },
   "author": "Marcus Ferrell",
   "license": "MIT"
 }

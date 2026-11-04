@@ -4,6 +4,8 @@
 import { execFile } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { configDir, DEFAULT_PORT, tildify } from '../src/config.mjs';
+import { createDemo } from '../src/demo.mjs';
+import { createMcpHandler, serveStdio } from '../src/mcp.mjs';
 import { createSecretStore } from '../src/secrets.mjs';
 import { createBirddog, VERSION } from '../src/server.mjs';
 
@@ -15,6 +17,9 @@ const HELP = `
     birddog --open          start it and open your browser
     birddog --port 5000     use another port
 
+    birddog --demo          try it with made-up data (never touches your repos, tokens or calendar)
+    birddog mcp             run as an MCP server on stdio, for Claude Code, Claude Desktop and friends
+
     birddog secret set <name>      store a secret in your OS keychain (value read from stdin)
     birddog secret delete <name>   remove it
 
@@ -22,6 +27,7 @@ const HELP = `
     -o, --open              open the dashboard in your browser
     -p, --port <number>     port to listen on (default ${DEFAULT_PORT}, or "port" in config.json)
         --host <address>    address to listen on (default 127.0.0.1; anything else needs login turned on)
+        --demo              use made-up demo data in a temporary folder (also works with "mcp")
         --dev               reload open pages when the UI changes (used by npm run dev:watch)
     -v, --version           print the version
     -h, --help              show this help
@@ -74,6 +80,23 @@ async function secretCommand([action, name]) {
   console.log(`  Saved ${name} to ${store.kind}.`);
 }
 
+/** `birddog mcp`: stdio MCP server. stdout carries protocol messages only; everything else goes to stderr. */
+async function mcpCommand(args) {
+  const stderr = { log: (...a) => console.error(...a), warn: (...a) => console.error(...a), error: (...a) => console.error(...a) };
+  const demo = args.demo ? await createDemo() : null;
+  let app;
+  try {
+    app = await createBirddog({ dir: demo?.options.dir ?? configDir(), cwd: process.cwd(), autoRefresh: false, log: stderr, ...(demo?.options ?? {}) });
+  } catch (err) {
+    console.error(`birddog mcp: ${err.message}`);
+    process.exit(1);
+  }
+  console.error(`birddog mcp ${VERSION}: ready on stdio${demo ? ' (demo data)' : ` · ${tildify(app.configFile)}`}`);
+  await serveStdio(createMcpHandler({ app, version: VERSION }));
+  await app.close();
+  await demo?.cleanup();
+}
+
 async function main() {
   let args;
   let positionals;
@@ -85,6 +108,7 @@ async function main() {
         port: { type: 'string', short: 'p' },
         host: { type: 'string' },
         dev: { type: 'boolean' },
+        demo: { type: 'boolean' },
         version: { type: 'boolean', short: 'v' },
         help: { type: 'boolean', short: 'h' },
       },
@@ -96,6 +120,7 @@ async function main() {
   if (args.help) { console.log(HELP); return; }
   if (args.version) { console.log(VERSION); return; }
   if (positionals[0] === 'secret') return secretCommand(positionals.slice(1));
+  if (positionals[0] === 'mcp') return mcpCommand(args);
   if (positionals.length) {
     console.error(`birddog: unknown command "${positionals[0]}"\n${HELP}`);
     process.exit(2);
@@ -111,10 +136,11 @@ async function main() {
   }
   const host = args.host ?? '127.0.0.1';
 
-  const dir = configDir();
+  const demo = args.demo ? await createDemo() : null;
+  const dir = demo?.options.dir ?? configDir();
   let app;
   try {
-    app = await createBirddog({ dir, cwd: process.cwd(), ...(args.dev ? { liveReload: true } : {}) });
+    app = await createBirddog({ dir, cwd: process.cwd(), ...(demo?.options ?? {}), ...(args.dev ? { liveReload: true } : {}) });
   } catch (err) {
     console.error(`birddog: ${err.message}`);
     process.exit(1);
@@ -129,7 +155,7 @@ async function main() {
       break;
     } catch (err) {
       if (err.code !== 'EADDRINUSE') { console.error(`birddog: ${err.message}`); process.exit(1); }
-      if (await isBirddog(tryPort)) {
+      if (!demo && await isBirddog(tryPort)) {
         const url = `http://127.0.0.1:${tryPort}`;
         console.log(`\n  Birddog is already running at ${url}\n`);
         if (args.open) openBrowser(url);
@@ -150,7 +176,16 @@ async function main() {
   const url = auth.enabled && auth.publicUrl ? auth.publicUrl.replace(/\/+$/, '') : `http://127.0.0.1:${port}`;
   const roots = app.config.sources?.git?.roots ?? [];
   const who = [...(auth.allowedEmails ?? []), ...(auth.allowedDomains ?? []).map((d) => `@${d.replace(/^@/, '')}`)].join(', ');
-  console.log(`
+  if (demo) {
+    console.log(`
+  🐾 Birddog ${VERSION} demo is pointing at ${url}
+
+     Made-up data for an imaginary company. Your repos, tokens and calendar are not touched,
+     and nothing goes over the network. Changes vanish when you stop it.
+
+  Press Ctrl+C to stop.
+`);
+  } else console.log(`
   🐾 Birddog ${VERSION} is pointing at ${url}${host !== '127.0.0.1' ? `  (listening on ${host}:${port})` : ''}
 
      config   ${tildify(app.configFile)}${app.firstRun ? '  (created just now)' : ''}
@@ -165,6 +200,7 @@ async function main() {
   const stop = async () => {
     console.log('\n  Birddog is going to sleep. Bye!');
     await app.close();
+    await demo?.cleanup();
     process.exit(0);
   };
   process.on('SIGINT', stop);

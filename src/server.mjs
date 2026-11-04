@@ -300,7 +300,7 @@ export async function createBirddog({
   const routes = [
     ['GET', /^\/api\/health$/, () => ({ app: 'birddog', version: VERSION, ...(liveReload ? { liveReload: true } : {}) })],
     ['GET', /^\/api\/me$/, (_m, _b, ctx) => ({ authEnabled: !!oidc, user: ctx.user })],
-    ['GET', /^\/api\/items$/, () => itemsPayload()],
+    ['GET', /^\/api\/items$/, async () => { await triage.sync(); return itemsPayload(); }],
     ['POST', /^\/api\/refresh$/, async () => itemsPayload(await refresh())],
     ['POST', /^\/api\/sources\/([^/]+)\/retry$/, async (m) => {
       const src = findSource(m[1]);
@@ -327,7 +327,7 @@ export async function createBirddog({
       await triage.snooze(findItem(m[1]), until); return { ok: true };
     }],
     ['POST', /^\/api\/items\/([^/]+)\/restore$/, async (m) => { await triage.restore(m[1]); return { ok: true }; }],
-    ['GET', /^\/api\/prefs$/, () => triage.prefs],
+    ['GET', /^\/api\/prefs$/, async () => { await triage.sync(); return triage.prefs; }],
     ['PUT', /^\/api\/prefs$/, async (_m, body) => {
       const rejected = await triage.setPrefs(body);
       if (rejected.length) throw new HttpError(400, `Invalid preference: ${rejected.join(', ')}`);
