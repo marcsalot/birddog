@@ -244,6 +244,23 @@ export function demoFetch(clock = () => Date.now()) {
   };
 }
 
+/** Thirteen made-up past days, so the overview's 14-day chart has a shape. Today comes from the live data. */
+export function demoHistory(now) {
+  const open = [27, 29, 28, 31, 30, 26, 24, 25, 27, 23, 22, 24, 21];
+  const hot = [5, 6, 4, 7, 6, 3, 2, 3, 5, 3, 2, 4, 3];
+  const done = [3, 2, 4, 1, 3, 6, 5, 2, 3, 5, 4, 2, 4];
+  const days = {};
+  for (let i = 13; i >= 1; i--) {
+    const d = new Date(now);
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const k = 13 - i;
+    days[key] = { open: open[k], now: hot[k], today: Math.round((open[k] - hot[k]) * 0.45), later: open[k] - hot[k] - Math.round((open[k] - hot[k]) * 0.45), done: done[k], snoozed: 0, at: d.toISOString() };
+  }
+  return days;
+}
+
 /** A secret store that lives in memory and starts with the demo's fake credentials. */
 export function demoSecrets() {
   const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant']]);
@@ -275,6 +292,7 @@ export async function createDemo() {
   });
   await writeJson(path.join(dir, 'connections.json'), { github: { method: 'gh-cli', login: ME, name: 'Sam Developer', connectedAt: new Date().toISOString() } });
   await writeJson(path.join(dir, 'state.json'), { version: 1, items: {}, prefs: { seenSetup: true } });
+  await writeJson(path.join(dir, 'history.json'), { days: demoHistory(Date.now()) });
   return {
     options: {
       dir,

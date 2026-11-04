@@ -384,6 +384,20 @@ Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom a
 
 Inside a group, items sort by rule order, then oldest first (the work that has waited longest is most at risk). A branch counts as either stale *or* unpushed, never both, and repos with no remote are never nagged about pushing.
 
+## Overview
+
+Birddog opens on an **Overview**: one look at what your day is like. The inbox is a click away (or `1`; `0` comes back).
+
+- **Load right now:** a dial for how many items need you now, labeled **Calm** (≤ 3), **Busy** (4–7) or **Swamped** (8+), with an icon and the word, never color alone.
+- **Open items**, compared with a week ago, plus how many you finished today.
+- **Longest-waiting PR:** the review request or PR of yours that has waited longest.
+- **Meetings today:** how many are left, how much time is still booked, and what's next.
+- **Last 14 days:** open items and Now items per day, from a small local history (`history.json`, one row per day, kept for 60 days).
+- **By source** (stacked by Now / Today / Later) and **by kind**.
+- **Source health**, with Retry on anything stale.
+
+The charts are plain SVG drawn by Birddog (no chart library). Hover, or move to a mark with the keyboard, to see its numbers; every chart also has **Show the numbers** with the same data as a table. Chart colors are a colorblind-checked set (orange = Now, blue = Today and open items, aqua = Later), stepped separately for light and dark, so they read the same in all three palettes.
+
 ## Ask Birddog (chat)
 
 Press **💬 Ask** (or `a`) and ask about your inbox in plain words: *What needs me now? What's blocking me? Anything due tomorrow? Which of my PRs need work?* Birddog answers from your own items and can mark things done or snooze them.
@@ -431,7 +445,8 @@ All of it lives in `~/.config/birddog/state.json`, along with your theme.
 | `z` | undo | `u` | restore |
 | `c` | copy suggested command | `o` | open link |
 | `r` | refresh | `/` or `⌘K` | command palette |
-| `1`–`6` | All / Now / Today / Later / Snoozed / Done | `?` | shortcuts |
+| `0` | Overview | `?` | shortcuts |
+| `1`–`6` | All / Now / Today / Later / Snoozed / Done | `a` | Ask Birddog |
 | `t` | light / dark | `p` | next theme |
 
 ## Themes
@@ -594,6 +609,7 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `POST` | `/api/items/:id/snooze` | `{ "until": "<ISO date>" \| "change" }` |
 | `POST` | `/api/items/:id/restore` | undo done/snooze |
 | `GET`/`PUT` | `/api/prefs` | theme, mode, hidden sources, `notifications` settings |
+| `GET` | `/api/history?days=14` | one row per day: open, now, today, later, done |
 | `GET` | `/api/chat/status` | whether Ask Birddog is on, and where the key comes from (never the key) |
 | `POST` / `DELETE` | `/api/chat/setup` | `{ "apiKey": "…", "consent": true }` turns it on; `DELETE` turns it off and forgets the key |
 | `POST` | `/api/chat` | `{ "sessionId"?, "message" }`: streams NDJSON events (`text`, `tool`, `confirm`, `error`, `done`) |
@@ -649,6 +665,8 @@ docker-compose.yml     the dashboard on a volume, plus a demo profile
 src/mcp.mjs            MCP server (JSON-RPC over stdio)
 src/notify.mjs         notifications: what's news, filters, quiet hours, system notifications
 src/chat.mjs           Ask Birddog: Claude Messages API over fetch, MCP tools, confirm-before-change
+src/history.mjs        the small per-day history behind the overview chart
+public/js/overview.js  the overview page: hand-rolled SVG charts and dials
 src/demo.mjs           demo mode: canned git items and fake GitHub / Jira / calendar APIs
 docs/                  demo GIF, screenshot, launch post
 test/fixtures/         sample Google- and Outlook-style .ics files

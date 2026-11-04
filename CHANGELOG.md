@@ -2,6 +2,23 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-11-04
+
+### Added
+- **Overview**, the new front page (`0`):
+  - a load dial (Calm / Busy / Swamped, with icon and word)
+  - open items against a week ago, and done today
+  - the longest-waiting PR
+  - meetings left today, with booked time and what's next
+  - a 14-day chart of open and Now items, with crosshair tooltips
+  - breakdowns by source and by kind
+  - source health with Retry
+- The charts are hand-rolled SVG with a colorblind-checked palette. Every chart has a text alternative and a "Show the numbers" table.
+- `history.json` and `/api/history`: one row per day for the chart, kept for 60 days. `--demo` comes with two weeks of made-up history.
+
+### Changed
+- Birddog opens on the Overview; the inbox is one click, or `1`, away.
+
 ## [1.3.0] - 2026-11-04
 
 ### Added
@@ -69,7 +86,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.3.0]: https://github.com/marcsalot/birddog/compare/c5a5fad...main
+[1.4.0]: https://github.com/marcsalot/birddog/compare/f1288c5...main
+[1.3.0]: https://github.com/marcsalot/birddog/compare/c5a5fad...f1288c5
 [1.2.0]: https://github.com/marcsalot/birddog/compare/74c3238...c5a5fad
 [1.1.0]: https://github.com/marcsalot/birddog/compare/8453eb7...74c3238
 [1.0.0]: https://github.com/marcsalot/birddog/compare/f19aa7a...8453eb7

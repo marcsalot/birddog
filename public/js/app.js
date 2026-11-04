@@ -6,6 +6,7 @@ import {
   PALETTE_NAMES, appearanceHTML, cyclePalette, initAppearance, setMode, setPalette, toggleTheme,
 } from './appearance.js';
 import { chatOpen, closeChat, initChat, onChatEvent, toggleChat } from './chat.js';
+import { bindOverview, overviewData, overviewHTML } from './overview.js';
 import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
 
@@ -25,7 +26,7 @@ const URG = {
   later: { label: 'Later', c: 'var(--later)' },
 };
 const VIEWS = [['all', 'All', '◎'], ['now', 'Now'], ['today', 'Today'], ['later', 'Later'], ['snoozed', 'Snoozed', '☾'], ['done', 'Done', '✓']];
-const HEADINGS = { all: 'Needs me', now: 'Now', today: 'Today', later: 'Later', snoozed: 'Snoozed', done: 'Done' };
+const HEADINGS = { overview: 'Overview', all: 'Needs me', now: 'Now', today: 'Today', later: 'Later', snoozed: 'Snoozed', done: 'Done' };
 const COMING = [];
 
 // ---------------------------------------------------------------------------
@@ -33,7 +34,8 @@ const COMING = [];
 
 const st = {
   loaded: false,
-  view: 'all',
+  view: 'overview', // the front page; the inbox is one click (or key 1) away
+  history: [],
   hidden: new Set(),
   selId: null,
   query: '',
@@ -57,6 +59,7 @@ function matches(i, q) {
 }
 
 function visible(view = st.view) {
+  if (view === 'overview') return [];
   return st.items.filter((i) => {
     if (st.hidden.has(i.source)) return false;
     if (view === 'done') return i.status === 'done';
@@ -84,7 +87,8 @@ const current = () => { const l = ordered(); return l[selIndex(l)]; };
 // Rendering
 
 function renderNav() {
-  $('#views').innerHTML = VIEWS.map(([k, label, icon], n) => {
+  const ov = `<button class="${st.view === 'overview' ? 'active' : ''}" data-view="overview" aria-current="${st.view === 'overview'}"><span style="width:8px;text-align:center" aria-hidden="true">◔</span>Overview<kbd class="hint">0</kbd><span class="count"></span></button>`;
+  $('#views').innerHTML = ov + VIEWS.map(([k, label, icon], n) => {
     const dot = URG[k] ? `<span class="dot" style="background:${URG[k].c}"></span>` : `<span style="width:8px;text-align:center" aria-hidden="true">${icon}</span>`;
     const count = visible(k).length;
     return `<button class="${st.view === k ? 'active' : ''}" data-view="${k}" aria-current="${st.view === k}">${dot}${label}<kbd class="hint">${n + 1}</kbd><span class="count">${count || ''}</span></button>`;
@@ -181,8 +185,16 @@ function emptyHTML() {
   return `<div class="empty"><div class="big">🌤</div><h2>Inbox zero</h2><div>${note}</div></div>`;
 }
 
+function renderOverview() {
+  const el = $('#list');
+  const data = overviewData({ items: st.items, sources: st.sources, history: st.history.length ? st.history : [{ date: new Date().toISOString().slice(0, 10), missing: true }] });
+  el.innerHTML = overviewHTML(data, { width: el.clientWidth });
+  bindOverview(el);
+}
+
 function render() {
   renderNav();
+  if (st.view === 'overview') return renderOverview();
   const list = ordered();
   const idx = selIndex(list);
   st.selId = list[idx]?.id ?? null;
@@ -227,7 +239,8 @@ function applyData(data) {
 
 async function load({ quiet = false } = {}) {
   try {
-    const data = await api.items();
+    const [data, hist] = await Promise.all([api.items(), api.history(14).catch(() => null)]);
+    if (hist) st.history = hist.days;
     applyData(data);
     render();
     renderUpdated();
@@ -440,6 +453,7 @@ function commands() {
   const sel = current();
   return [
     { sec: 'Go to' },
+    { label: 'Go to Overview', k: '0', run: () => setView('overview') },
     ...VIEWS.map(([v, l], n) => ({ label: `Go to ${l}`, k: String(n + 1), run: () => setView(v) })),
     { sec: 'Actions' },
     { label: 'Refresh all sources', k: 'r', run: refresh },
@@ -908,10 +922,11 @@ async function disconnectCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.view) return setView(d.view);
+  if (d.ovItem) { e.preventDefault(); setView('all'); const i = byId(d.ovItem); if (i) { st.selId = i.id; render(); openDrawer(i); } return; }
   if (d.src) { const next = new Set(st.hidden); next.has(d.src) ? next.delete(d.src) : next.add(d.src); return setHidden(next); }
   if (d.soon) return openSetup();
   if (t.id === 'clearQ') { st.query = ''; return render(); }
@@ -949,6 +964,8 @@ document.addEventListener('click', (e) => {
 });
 
 $('#openPalette').onclick = () => openPalette();
+let resizeTimer = null;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (st.view === 'overview') renderOverview(); }, 120); });
 $('#openSetup').onclick = () => openSetup();
 $('#refresh').onclick = refresh;
 $('#appearBtn').onclick = (e) => { e.stopPropagation(); appearOpen() ? closeAppear() : openAppear(); };
@@ -994,6 +1011,7 @@ document.addEventListener('keydown', (e) => {
     if (n >= 0 && n < choices.length) snooze(byId($('#snooze').dataset.id), choices[n]);
     return;
   }
+  if (st.view === 'overview' && ['j', 'k', 'ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); return setView('all'); }
   const list = ordered();
   const idx = selIndex(list);
   const sel = list[idx];
@@ -1016,6 +1034,7 @@ document.addEventListener('keydown', (e) => {
     case '/': e.preventDefault(); return openPalette();
     case '?': return openOverlay('#helpScrim');
     default: {
+      if (e.key === '0') return setView('overview');
       const v = VIEWS[+e.key - 1]?.[0];
       if (v) setView(v);
     }

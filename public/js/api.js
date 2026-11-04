@@ -35,6 +35,7 @@ export const api = {
   setup: () => call('GET', '/api/setup'),
   testSource: (id, settings) => call('POST', `/api/sources/${encodeURIComponent(id)}/test`, settings),
   saveSource: (id, settings) => call('PUT', `/api/sources/${encodeURIComponent(id)}`, settings),
+  history: (days = 14) => call('GET', `/api/history?days=${days}`),
   chatStatus: () => call('GET', '/api/chat/status'),
   chatSetup: (body) => call('POST', '/api/chat/setup', body),
   chatOff: () => call('DELETE', '/api/chat/setup', {}),

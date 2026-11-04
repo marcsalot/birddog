@@ -16,6 +16,7 @@ import { AuthError, checkAuthConfig, createOidc, isAllowed } from './auth/oidc.m
 import { createSessions } from './auth/session.mjs';
 import { ChatError, createChat } from './chat.mjs';
 import { Collector } from './collector.mjs';
+import { createHistory } from './history.mjs';
 import { createNotifier } from './notify.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
 import { RULES } from './rules.mjs';
@@ -203,6 +204,7 @@ export async function createBirddog({
     ...(notifySystem ? { system: notifySystem } : {}),
   });
   await notifier.load();
+  const history = createHistory({ dir, now });
 
   // ---- Single sign-on (optional) ----
   const auth = config.auth ?? {};
@@ -239,7 +241,9 @@ export async function createBirddog({
     const snap = await collector.refresh(opts);
     await triage.prune(snap.items);
     await triage.sync();
-    await notifier.observe({ items: triage.apply(snap.items), sources: snap.sources }).catch((e) => log.warn?.(`birddog: notifications: ${e.message}`));
+    const triaged = triage.apply(snap.items);
+    await notifier.observe({ items: triaged, sources: snap.sources }).catch((e) => log.warn?.(`birddog: notifications: ${e.message}`));
+    await history.record(triaged).catch((e) => log.warn?.(`birddog: history: ${e.message}`));
     return snap;
   };
 
@@ -389,7 +393,9 @@ export async function createBirddog({
       return setupPayload();
     }],
     ['POST', /^\/api\/items\/([^/]+)\/done$/, async (m) => {
-      await triage.done(findItem(m[1])); return { ok: true };
+      await triage.done(findItem(m[1]));
+      await history.record(triage.apply(collector.snapshot().items)).catch(() => {});
+      return { ok: true };
     }],
     ['POST', /^\/api\/items\/([^/]+)\/snooze$/, async (m, body) => {
       const until = body.until;
@@ -407,6 +413,10 @@ export async function createBirddog({
     }],
     ['GET', /^\/api\/setup$/, () => setupPayload()],
     ['GET', /^\/api\/chat\/status$/, () => chat.status()],
+    ['GET', /^\/api\/history$/, async (_m, _b, ctx) => {
+      const n = Math.min(60, Math.max(1, Number(ctx.query.get('days')) || 14));
+      return { days: await history.last(n) };
+    }],
     ['POST', /^\/api\/chat\/setup$/, chatRoute((_m, body) => chat.setup(body))],
     ['DELETE', /^\/api\/chat\/setup$/, chatRoute(() => chat.turnOff())],
     ['POST', /^\/api\/chat\/reset$/, (_m, body) => { chat.reset(body.sessionId); return { ok: true }; }],
@@ -523,7 +533,7 @@ export async function createBirddog({
       if (!m || req.method !== method) continue;
       const params = m.map((x, i) => (i ? decodeURIComponent(x) : x));
       const body = method === 'GET' ? {} : await readBody(req);
-      return send(res, 200, await fn(params, body, { user }));
+      return send(res, 200, await fn(params, body, { user, query: url.searchParams }));
     }
     throw new HttpError(404, 'Unknown API route');
   }

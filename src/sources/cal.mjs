@@ -153,6 +153,8 @@ export function meetingItems(cals, { now, email = '', warn = () => {} }) {
           rule: r.rule,
           fingerprint: [o.start, o.end, ev.summary, ev.location ?? ''].join('|'),
           startsAt: new Date(o.start).toISOString(),
+          endsAt: new Date(o.end).toISOString(),
+          allDay: o.allDay,
           fields: {
             When: timeRange(o),
             Where: where ?? 'not set',
