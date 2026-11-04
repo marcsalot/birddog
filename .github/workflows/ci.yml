@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    name: Tests on Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the tests inside the image
+        run: docker build --target test --progress=plain -t birddog:test .
+
+      - name: Build the runtime image
+        run: docker build -t birddog:ci .
+
+      - name: Smoke test the demo and the MCP server
+        run: |
+          docker run -d --name bd -p 127.0.0.1:4747:4747 birddog:ci --demo --port 4747
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4747/api/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:4747/api/items | grep -q '"github"'
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | docker run -i --rm birddog:ci mcp --demo | grep -q '"list_items"'
+          docker run --rm birddog:ci --version
+          docker rm -f bd

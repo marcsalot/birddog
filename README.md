@@ -9,7 +9,7 @@ npx bird-dog --demo     # look around with made-up data
 npx bird-dog --open     # the real thing, on http://127.0.0.1:4747
 ```
 
-You need Node 22 or newer. There's no account, no cloud and nothing else to install.
+You need Node 22 or newer. There's no account, no cloud and nothing else to install. Prefer containers? See [Run it in Docker](#run-it-in-docker).
 
 ## Why
 
@@ -42,6 +42,7 @@ When a source fails, its last good items stay in the list, marked stale, with a 
 - Tokens and private calendar links go to your **OS keychain** (macOS Keychain, or Secret Service on Linux), never into config files, never into API responses, and never to the browser. If no keychain is available, Birddog says so clearly before falling back to a file only you can read. See [Secrets](#secrets).
 - Birddog only talks to the services you connect, with `GET` requests, and to nothing else.
 - For a shared machine, you can put the dashboard behind your own OpenID Connect login (Google, Okta, Entra, …). See [Login](#login-for-the-dashboard-sso).
+- In [Docker](#run-it-in-docker), tokens come only from environment variables or Docker secrets and are never written to the volume. Your repos are mounted read-only, and the port is published to `127.0.0.1` only.
 
 ## Use it from Claude (MCP)
 
@@ -96,7 +97,7 @@ The tools return titles, "why" lines, links and fields, never tokens, secrets or
  secrets ─── OS keychain                  tokens and private links, never in files or responses
 ```
 
-Each source is one small ES module with `test()` and `collect()`. Adding one is about a page of code; see [Writing a source](#writing-a-source). The whole thing is about 5,500 lines of JavaScript with 159 `node:test` tests, and none of the tests touch the network.
+Each source is one small ES module with `test()` and `collect()`. Adding one is about a page of code; see [Writing a source](#writing-a-source). The whole thing is about 5,700 lines of JavaScript with 164 `node:test` tests, and none of the tests touch the network. CI runs them on Node 22 and 24 and inside the Docker image.
 
 ## Get started
 
@@ -119,7 +120,7 @@ birddog --open          start and open your browser
 birddog --demo          made-up data in a temporary folder; your real setup is never touched
 birddog mcp             MCP server on stdio (add --demo for made-up data)
 birddog --port 5000     use another port
-birddog --host 0.0.0.0  listen beyond localhost (only with login turned on)
+birddog --host 0.0.0.0  listen beyond localhost (only with login turned on; also BIRDDOG_HOST)
 birddog secret set jira-token   store a secret in your keychain (reads stdin; also cal-url, oidc-client-secret)
 birddog --help
 ```
@@ -129,6 +130,81 @@ If the port is busy, Birddog tries the next one. If Birddog is already running, 
 ### Demo mode
 
 `birddog --demo` starts Birddog with an imaginary company's repos, PRs, tickets and meetings. It uses a fresh temporary folder, an in-memory secret store and a fake network layer. Your repos, tokens and calendar are never read, nothing goes over the network, and everything is deleted when you stop it. The real GitHub, Jira and Calendar sources run against fake APIs, so the ranking and "why" lines are exactly what real data would produce. The GIF above was recorded this way.
+
+## Run it in Docker
+
+If you'd rather not install Node, or you want Birddog running all the time on a home server, use the image. It's built from this repo on `node:22-alpine` with `git` added, runs as a non-root user, and contains only what the npm package ships.
+
+```bash
+git clone https://github.com/marcsalot/birddog && cd birddog
+docker build -t birddog:local .
+docker run --rm -p 127.0.0.1:4848:4747 birddog:local --demo --port 4747   # made-up data: open http://127.0.0.1:4848
+```
+
+The real thing, with your config and triage state on a volume and your code mounted **read-only**:
+
+```bash
+docker run -d --name birddog --restart unless-stopped \
+  -p 127.0.0.1:4747:4747 \
+  -v birddog-data:/data \
+  -v ~/code:/repos:ro \
+  -e TZ=Europe/Berlin \
+  -e GITHUB_TOKEN \
+  birddog:local
+```
+
+Or with Compose, which does the same and also has a demo service:
+
+```bash
+GITHUB_TOKEN=$(gh auth token) docker compose up -d     # http://127.0.0.1:4747
+docker compose --profile demo up birddog-demo          # http://127.0.0.1:4848, no mounts, no tokens
+```
+
+> ⚠️ **Publish the port on `127.0.0.1` only**, as every example here does. Inside the container Birddog listens on `0.0.0.0`, because that's the only way Docker can forward to it, and it trusts Docker to keep the port on your loopback. `-p 4747:4747` or `-p 0.0.0.0:4747:4747` would let anyone on your network read your work inbox: PR titles, ticket names, meetings. To reach it from other machines, put it behind [login](#login-for-the-dashboard-sso) and a reverse proxy with HTTPS.
+
+**How the container differs from running it directly**
+
+| | Directly | In Docker |
+|---|---|---|
+| Listens on | `127.0.0.1` (change with `--host` or `BIRDDOG_HOST`) | `0.0.0.0` inside, published to host loopback |
+| Config and state | `~/.config/birddog` | the `/data` volume (`birddog-data`): survives restarts and rebuilds |
+| Your repos | any folder | whatever you mount, read-only; scan `/repos` (the default on first run) |
+| Secrets | OS keychain | **environment variables or Docker secret files only**: never written to `/data` |
+| GitHub sign-in | `gh` CLI or device flow | `GITHUB_TOKEN` |
+| Time zone | your machine's | set `TZ`, or meeting times show in UTC |
+
+`BIRDDOG_CONTAINER=1` (set in the image) switches all of this on. Birddog never guesses whether it runs in Docker.
+
+**Tokens in a container.** A container has no keychain, so Birddog reads secrets from the environment and refuses to keep them in a plain-text file on the volume. Setup shows where each one comes from (never its value) and what to set if it's missing:
+
+| Secret | Variable | Or a file (Docker secret) |
+|---|---|---|
+| GitHub token | `GITHUB_TOKEN` (or `GH_TOKEN`) | `GITHUB_TOKEN_FILE=/run/secrets/github` |
+| Jira API token | `BIRDDOG_JIRA_TOKEN` | `BIRDDOG_JIRA_TOKEN_FILE` |
+| Calendar iCal link | `BIRDDOG_CAL_URL` | `BIRDDOG_CAL_URL_FILE` |
+| OIDC client secret (login) | `BIRDDOG_OIDC_CLIENT_SECRET` | `BIRDDOG_OIDC_CLIENT_SECRET_FILE` |
+| Session signing key (login) | `BIRDDOG_SESSION_KEY` | `BIRDDOG_SESSION_KEY_FILE` |
+
+The Jira site and email, the repo folders and everything else are set in setup as usual and saved on the volume. Pass tokens with `-e NAME` (the value comes from your shell, not the command line), with an `--env-file` you keep out of git, or as files under `/run/secrets`; `docker-compose.yml` shows the secrets version. To try the env-variable mode outside Docker, set `BIRDDOG_SECRETS=env`.
+
+**MCP through Docker.** Stdio works through `docker run -i`. Share the dashboard's volume so both see the same items and triage:
+
+```bash
+claude mcp add birddog -- docker run -i --rm -v birddog-data:/data -v ~/code:/repos:ro birddog:local mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "birddog": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "birddog-data:/data", "-v", "/Users/you/code:/repos:ro", "birddog:local", "mcp"]
+    }
+  }
+}
+```
+
+Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashboard container last collected. If that's older than two refresh intervals, it refreshes itself, and then it needs the same tokens (add `-e GITHUB_TOKEN`, or `-v ~/.secrets/github:/run/secrets/github:ro -e GITHUB_TOKEN_FILE=/run/secrets/github`). Claude Desktop needs the full path to `docker` if it isn't on its `PATH`.
 
 ## What it finds (local git)
 
@@ -360,7 +436,7 @@ Every secret Birddog holds (the GitHub token from device sign-in, the Jira API t
 - **Any value works.** Values go to the `security` tool over stdin, hex-encoded, so they never appear in `ps` and no character can break the command.
 - **No keychain?** On other systems, or Linux without `secret-tool` (install `libsecret-tools` and a keyring such as GNOME Keyring), Birddog falls back to `secrets.json` in the config folder, readable only by you (mode 600) but **not encrypted**. The startup banner and the setup screen say so in plain words.
 
-Force a backend with `BIRDDOG_SECRETS=keychain|secret-service|file`. Store or remove one by hand with `birddog secret set|delete <name>` (`jira-token`, `cal-url`, `oidc-client-secret`), piping the value in.
+Force a backend with `BIRDDOG_SECRETS=keychain|secret-service|file|env`. `env` is read-only: it takes secrets from environment variables and `*_FILE` files, as in [Docker](#run-it-in-docker). Store or remove one by hand with `birddog secret set|delete <name>` (`jira-token`, `cal-url`, `oidc-client-secret`), piping the value in.
 
 ## Configuration
 
@@ -491,6 +567,9 @@ src/sources/jira.mjs   Jira Cloud source (assigned tickets, blocked work, deadli
 src/sources/cal.mjs    Calendar source (meetings from an iCal link or .ics file)
 src/sources/ical.mjs   iCalendar reader: parsing, time zones, recurring events
 src/sources/http.mjs   GET-only helpers shared by the web sources
+Dockerfile             multi-stage image: test → package (npm pack) → runtime
+docker-compose.yml     the dashboard on a volume, plus a demo profile
+.github/workflows/     CI: tests on Node 22 and 24, and inside the image
 src/mcp.mjs            MCP server (JSON-RPC over stdio)
 src/demo.mjs           demo mode: canned git items and fake GitHub / Jira / calendar APIs
 docs/                  demo GIF, screenshot, launch post
@@ -505,6 +584,7 @@ test/                  node:test suites
 2. ✅ GitHub and Jira Cloud sources
 3. ✅ Setup wizard, calendar (iCal) source, hardened keychain secrets, stale-source retry and backoff
 4. ✅ MCP server, demo mode, `npx bird-dog` release
+5. ✅ Docker image, Compose file, CI that runs the tests in the image
 
 Ideas for later: GitLab and Linear sources, a "focus" view that hides Later, desktop notifications for Now.
 

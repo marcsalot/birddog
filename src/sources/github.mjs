@@ -26,6 +26,7 @@ const FAILED = new Set(['failure', 'timed_out', 'action_required', 'startup_fail
 const PRIORITY = /^(p[01]|priority[\s:/_-]*(0|1|high|critical|urgent)|sev(erity)?[\s:/_-]*[01]|critical|urgent|blocker|high[\s_-]priority)$/i;
 
 export const NOT_SIGNED_IN = 'Sign in to GitHub in setup to see review requests, your PRs, mentions and issues.';
+const NO_ENV_TOKEN = (v) => `Set ${v} (or ${v}_FILE) for this container to see review requests, your PRs, mentions and issues.`;
 
 // ---------------------------------------------------------------------------
 // API client
@@ -140,7 +141,10 @@ async function signIn(ctx) {
   if (!ctx.github) throw new Error(NOT_SIGNED_IN);
   let token;
   try { token = await ctx.github.token(); } catch (err) { throw new Error(`${err.message} Or sign in to GitHub again in setup.`); }
-  if (!token) throw new Error(NOT_SIGNED_IN);
+  if (!token) {
+    const from = (await Promise.resolve(ctx.github.status?.()).catch(() => null))?.tokenFrom;
+    throw new Error(from?.variable ? NO_ENV_TOKEN(from.variable) : NOT_SIGNED_IN);
+  }
   return token;
 }
 

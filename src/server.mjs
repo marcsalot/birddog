@@ -125,10 +125,12 @@ async function serveStatic(req, res, pathname) {
  * @param {Function} [opts.fetchImpl]  fetch used for OIDC and GitHub (tests swap it)
  * @param {Function} [opts.cliToken]   how to ask the gh CLI for a token (tests swap it)
  * @param {boolean} [opts.liveReload]  development: tell open pages to reload when public/ changes
+ * @param {boolean} [opts.allowRemote] container mode: may listen on 0.0.0.0 without login, because
+ *                                     Docker publishes the port to the host's loopback only
  */
 export async function createBirddog({
   dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console, secrets, fetchImpl = fetch, cliToken,
-  liveReload = false,
+  liveReload = false, allowRemote = false,
 }) {
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
@@ -145,6 +147,10 @@ export async function createBirddog({
       if (!cfg) continue;
       for (const [field, secretName] of Object.entries(src.secretFields ?? {})) {
         if (typeof cfg[field] !== 'string' || !cfg[field].trim()) continue;
+        if (secrets.readOnly) {
+          log.warn?.(`birddog: sources.${src.id}.${field} is in config.json in plain text. Remove it and set ${secrets.describe?.(secretName)?.variable ?? 'the matching environment variable'} instead.`);
+          continue;
+        }
         await secrets.set(secretName, cfg[field].trim());
         const { [field]: _gone, ...rest } = next.sources[src.id];
         next.sources[src.id] = rest;
@@ -186,7 +192,8 @@ export async function createBirddog({
     let key = await secrets.get('session-key');
     if (!key) {
       key = crypto.randomBytes(48).toString('base64url');
-      await secrets.set('session-key', key);
+      if (secrets.readOnly) log.warn?.('birddog: no BIRDDOG_SESSION_KEY set, so sign-ins last only until Birddog restarts.');
+      else await secrets.set('session-key', key);
     }
     const clientSecret = process.env.BIRDDOG_OIDC_CLIENT_SECRET || auth.clientSecret || (await secrets.get('oidc-client-secret')) || undefined;
     sessions = createSessions({ key, ttlMs: (Number(auth.sessionDays) || 7) * DAY, secure: auth.publicUrl?.startsWith('https:'), now });
@@ -249,6 +256,11 @@ export async function createBirddog({
       configFile: loaded.file,
       secretStore: secrets.kind,
       secretWarning: secrets.warning ?? null,
+      container: !!allowRemote,
+      // Read-only stores (environment variables, in Docker): where each secret comes from, never its value.
+      secretsFrom: secrets.readOnly && secrets.describe
+        ? Object.fromEntries(['github-token', ...sources.flatMap((s) => Object.values(s.secretFields ?? {}))].map((n) => [n, secrets.describe(n)]))
+        : null,
       sources: await Promise.all(sources.map(async (s) => {
         const status = snap.sources.find((x) => x.id === s.id);
         return {
@@ -472,7 +484,7 @@ export async function createBirddog({
     refresh,
     /** Listen (127.0.0.1 by default). Resolves with the bound port. */
     start(port = 0, host = '127.0.0.1') {
-      if (!LOOPBACK.has(host) && !oidc) {
+      if (!LOOPBACK.has(host) && !oidc && !allowRemote) {
         return Promise.reject(new Error(`Refusing to listen on ${host} without login. Turn on "auth" in config.json first (see README), or drop --host.`));
       }
       return new Promise((resolve, reject) => {

@@ -518,11 +518,21 @@ function gitCardHTML(src) {
   const roots = src.settings?.roots ?? [];
   const editing = ui.editing || status === 'stale';
   const body = editing
-    ? `<label for="in-${src.id}">Folders to scan, one per line</label><textarea id="in-${src.id}" data-in="${src.id}" spellcheck="false">${esc(ui.draft ?? roots.join('\n'))}</textarea>${msg}
+    ? `${st.setup?.container ? '<div class="msg">In Docker these are paths inside the container. Mount your code read-only, e.g. <code>-v ~/code:/repos:ro</code>, and scan <code>/repos</code>.</div>' : ''}<label for="in-${src.id}">Folders to scan, one per line</label><textarea id="in-${src.id}" data-in="${src.id}" spellcheck="false">${esc(ui.draft ?? roots.join('\n'))}</textarea>${msg}
        <div class="row-btns"><button class="btn primary" data-save="${src.id}" ${ui.busy ? 'disabled' : ''}>Save &amp; scan <kbd>⌘↵</kbd></button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test</button>${status === 'ok' ? `<button class="btn" data-cancel="${src.id}">Cancel</button>` : ''}</div>`
     : `<div class="msg">Scanning <b>${esc(roots.join(', ') || 'nothing')}</b>${summary}</div>${msg}
        <div class="row-btns"><button class="btn" data-edit="${src.id}">Change folders</button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button></div>`;
   return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>${body}</div>`;
+}
+
+/** In Docker, secrets come from environment variables. Returns { variable, from } for a secret, or null outside Docker. */
+const envSecret = (name) => st.setup?.secretsFrom?.[name] ?? null;
+function envSecretHTML(name, label) {
+  const e = envSecret(name);
+  if (!e) return '';
+  return e.from
+    ? `<div class="msg good">✓ ${esc(label)} comes from <code>${esc(e.from)}</code>. Birddog never stores it.</div>`
+    : `<div class="msg">${esc(label)}: set <code>${esc(e.variable)}</code> (or <code>${esc(e.variable)}_FILE</code> for a Docker secret) in the container's environment and restart it.</div>`;
 }
 
 /** GitHub: the sign-in card. Signing in is all the setup there is. */
@@ -530,12 +540,19 @@ function githubCardHTML(src) {
   const conn = st.setup.connections?.github ?? {};
   const ui = st.cards.github ?? {};
   const dev = conn.device;
+  if (envSecret('github-token') && !conn.connected) {
+    return `${cardTop('github', src.name, 'Not signed in')}<div class="msg">${esc(src.description)}</div>
+      ${envSecretHTML('github-token', 'The GitHub token')}
+      <div class="msg">Use a token that can read your repos and notifications, e.g. the output of <code>gh auth token</code> on your machine. Fine-grained tokens work too, but cannot read mentions.</div></div>`;
+  }
   if (conn.connected) {
     const { cls, label, msg, summary } = cardState(src, ui);
-    const how = conn.method === 'gh-cli' ? 'using your <code>gh</code> login (Birddog stores no token)' : `token kept in ${esc(st.setup.secretStore)}`;
+    const how = conn.method === 'gh-cli' ? 'using your <code>gh</code> login (Birddog stores no token)'
+      : conn.method === 'env' ? `using <code>${esc(conn.tokenFrom?.from ?? 'GITHUB_TOKEN')}</code> (Birddog stores no token)`
+        : `token kept in ${esc(st.setup.secretStore)}`;
     return `${cardTop('github', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
       <div class="msg">Signed in as <b>@${esc(conn.login)}</b>, ${how}${summary.replace(/^ · @[^ ]+/, '')}</div>${msg}
-      <div class="row-btns"><button class="btn" data-test="github" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-gh="disconnect" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
+      <div class="row-btns"><button class="btn" data-test="github" ${ui.busy ? 'disabled' : ''}>Test again</button>${conn.method === 'env' ? '' : `<button class="btn" data-gh="disconnect" ${ui.busy ? 'disabled' : ''}>Disconnect</button>`}</div></div>`;
   }
   if (dev?.status === 'waiting') {
     return `${cardTop('github', src.name, 'Waiting for GitHub…')}<div class="msg">Enter this code on GitHub:</div><div class="code">${esc(dev.userCode)}</div>
@@ -561,7 +578,7 @@ function jiraCardHTML(src) {
   const { status, cls, label, msg, summary } = cardState(src, ui);
   if (connected && !ui.editing && status !== 'stale') {
     return `${cardTop('jira', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
-      <div class="msg">Signed in to <b>${esc(new URL(s.site).host)}</b> as <b>${esc(s.email)}</b>, token kept in ${esc(st.setup.secretStore)}${summary.replace(/^ · [^ ]+/, '')}</div>${msg}
+      <div class="msg">Signed in to <b>${esc(new URL(s.site).host)}</b> as <b>${esc(s.email)}</b>, ${envSecret('jira-token') ? `token from <code>${esc(envSecret('jira-token').from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`}${summary.replace(/^ · [^ ]+/, '')}</div>${msg}
       <div class="row-btns"><button class="btn" data-edit="jira">Change</button><button class="btn" data-test="jira" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-disconnect="jira" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
   }
   const d = ui.draft ?? { site: s.site ? new URL(s.site).host : '', email: s.email ?? '', token: '' };
@@ -572,9 +589,9 @@ function jiraCardHTML(src) {
     <div class="fields">
       <label><span>Site</span><input data-f="jira.site" value="${esc(d.site)}" placeholder="acme.atlassian.net" autocomplete="off" spellcheck="false"></label>
       <label><span>Email</span><input data-f="jira.email" type="email" value="${esc(d.email)}" placeholder="you@acme.com" autocomplete="off" spellcheck="false"></label>
-      <label class="full"><span>API token · <a href="${JIRA_TOKEN_URL}" target="_blank" rel="noopener noreferrer">create one on Atlassian ↗</a></span><input data-f="jira.token" type="password" value="${esc(d.token)}" placeholder="${hasToken ? `Saved in ${esc(st.setup.secretStore)} · leave blank to keep it` : 'Paste your API token'}" autocomplete="off"></label>
+      ${envSecret('jira-token') ? '' : `<label class="full"><span>API token · <a href="${JIRA_TOKEN_URL}" target="_blank" rel="noopener noreferrer">create one on Atlassian ↗</a></span><input data-f="jira.token" type="password" value="${esc(d.token)}" placeholder="${hasToken ? `Saved in ${esc(st.setup.secretStore)} · leave blank to keep it` : 'Paste your API token'}" autocomplete="off"></label>`}
     </div>
-    <div class="msg">The token is stored in ${esc(st.setup.secretStore)}, never in config.json. Birddog only reads from Jira.</div>${msg}
+    ${envSecret('jira-token') ? envSecretHTML('jira-token', 'The API token') : `<div class="msg">The token is stored in ${esc(st.setup.secretStore)}, never in config.json. Birddog only reads from Jira.</div>`}${msg}
     <div class="row-btns"><button class="btn primary" data-connect="jira" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? '<button class="btn" data-cancel="jira">Cancel</button>' : ''}${hasToken ? `<button class="btn" data-disconnect="jira" ${off}>Disconnect</button>` : ''}</div></div>`;
 }
 
@@ -644,7 +661,7 @@ function calCardHTML(src) {
   const { status, cls, label, msg, summary } = cardState(src, ui);
   const store = esc(st.setup.secretStore);
   if (connected && !ui.editing && status !== 'stale') {
-    const what = [hasUrl && `an iCal link kept in ${store}`, s.file && `<b>${esc(s.file)}</b>`].filter(Boolean).join(' and ');
+    const what = [hasUrl && (envSecret('cal-url') ? `the iCal link from <code>${esc(envSecret('cal-url').from)}</code>` : `an iCal link kept in ${store}`), s.file && `<b>${esc(s.file)}</b>`].filter(Boolean).join(' and ');
     return `${cardTop('cal', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
       <div class="msg">Reading ${what}${summary.replace(/^ · [^·]+/, '')}</div>${msg}
       <div class="row-btns"><button class="btn" data-edit="cal">Change</button><button class="btn" data-test="cal" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-disconnect="cal" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
@@ -654,7 +671,7 @@ function calCardHTML(src) {
   const state = connected ? label : ui.busy ? 'Working…' : 'Not connected';
   return `${cardTop('cal', src.name, state, connected ? cls : ui.msg && !ui.msgGood ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
     <div class="fields">
-      <label class="full"><span>iCal link</span><input data-f="cal.url" type="password" value="${esc(d.url)}" placeholder="${hasUrl ? `Saved in ${store} · leave blank to keep it` : 'https://calendar.google.com/calendar/ical/…/basic.ics'}" autocomplete="off" spellcheck="false"></label>
+      ${envSecret('cal-url') ? '' : `<label class="full"><span>iCal link</span><input data-f="cal.url" type="password" value="${esc(d.url)}" placeholder="${hasUrl ? `Saved in ${store} · leave blank to keep it` : 'https://calendar.google.com/calendar/ical/…/basic.ics'}" autocomplete="off" spellcheck="false"></label>`}
       <label><span>…or a local .ics file</span><input data-f="cal.file" value="${esc(d.file)}" placeholder="~/Downloads/work.ics" autocomplete="off" spellcheck="false"></label>
       <label><span>Your email <i>(optional)</i></span><input data-f="cal.email" type="email" value="${esc(d.email)}" placeholder="hides meetings you declined" autocomplete="off" spellcheck="false"></label>
     </div>
@@ -662,7 +679,7 @@ function calCardHTML(src) {
       <ul><li><b>Google Calendar:</b> Settings → your calendar → Integrate calendar → <i>Secret address in iCal format</i>.</li>
       <li><b>Outlook / Microsoft 365:</b> Settings → Calendar → Shared calendars → Publish a calendar → copy the <i>ICS</i> link.</li>
       <li><b>iCloud:</b> Calendar → share a calendar → <i>Public Calendar</i> → copy the link (<code>webcal://</code> is fine).</li></ul></details>
-    <div class="msg">The link works like a password, so it is stored in ${store}, never in config.json. Birddog only reads the calendar.</div>${msg}
+    ${envSecret('cal-url') ? `${envSecretHTML('cal-url', 'The iCal link')}<div class="msg">A file path here means a path inside the container: mount the file read-only, e.g. <code>-v ~/work.ics:/data/work.ics:ro</code>.</div>` : `<div class="msg">The link works like a password, so it is stored in ${store}, never in config.json. Birddog only reads the calendar.</div>`}${msg}
     <div class="row-btns"><button class="btn primary" data-connect="cal" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? '<button class="btn" data-cancel="cal">Cancel</button>' : ''}${hasUrl || (src.enabled && s.file) ? `<button class="btn" data-disconnect="cal" ${off}>Disconnect</button>` : ''}</div></div>`;
 }
 
@@ -681,10 +698,14 @@ const cardFor = (src) => (src.enabled === false && (src.id === 'git' || src.id =
 
 const WIZARD = [
   { id: 'welcome', title: 'Welcome to Birddog 🐾', intro: 'Birddog looks through your work and points at what needs you next. Connect the places your work lives; each one is tested as soon as you reach it. Skip anything you don’t use. You can change all of it later from <b>Connect a source</b>.' },
-  { id: 'git', title: 'Your local repos', intro: 'Which folders hold your code? Birddog finds uncommitted work, unpushed commits and branches to tidy. It never changes your repos.' },
-  { id: 'github', title: 'GitHub', intro: 'Review requests, your PRs that need work, mentions and assigned issues. The quickest way in is your existing <code>gh</code> login.' },
-  { id: 'jira', title: 'Jira Cloud', intro: 'The tickets assigned to you, ranked by due date, sprint end, blockers and priority. You need your site, your email and an API token.' },
-  { id: 'cal', title: 'Calendar', intro: 'Your next meetings, so a 10:00 standup never sneaks up on you. Paste an iCal link from Google, Outlook or iCloud, or pick an .ics file.' },
+  { id: 'git', title: 'Your local repos', intro: 'Which folders hold your code? Birddog finds uncommitted work, unpushed commits and branches to tidy. It never changes your repos.',
+    dockerIntro: 'Birddog sees the folders you mounted into the container, read-only (usually <code>/repos</code>). It finds uncommitted work, unpushed commits and branches to tidy, and never changes them.' },
+  { id: 'github', title: 'GitHub', intro: 'Review requests, your PRs that need work, mentions and assigned issues. The quickest way in is your existing <code>gh</code> login.',
+    dockerIntro: 'Review requests, your PRs that need work, mentions and assigned issues. In Docker, Birddog uses the token you pass as <code>GITHUB_TOKEN</code>.' },
+  { id: 'jira', title: 'Jira Cloud', intro: 'The tickets assigned to you, ranked by due date, sprint end, blockers and priority. You need your site, your email and an API token.',
+    dockerIntro: 'The tickets assigned to you, ranked by due date, sprint end, blockers and priority. Enter your site and email here; the API token comes from <code>BIRDDOG_JIRA_TOKEN</code>.' },
+  { id: 'cal', title: 'Calendar', intro: 'Your next meetings, so a 10:00 standup never sneaks up on you. Paste an iCal link from Google, Outlook or iCloud, or pick an .ics file.',
+    dockerIntro: 'Your next meetings, so a 10:00 standup never sneaks up on you. The private iCal link comes from <code>BIRDDOG_CAL_URL</code>; set <code>TZ</code> so times show in your zone.' },
   { id: 'done', title: 'You’re all set', intro: 'Here’s what Birddog is watching. Press <kbd>r</kbd> any time to refresh, or <kbd>⌘K</kbd> → “Run the setup wizard” to come back here.' },
 ];
 const SOURCE_STEPS = WIZARD.filter((w) => w.id !== 'welcome' && w.id !== 'done').length;
@@ -708,12 +729,14 @@ function wizardHTML() {
   const step = WIZARD[st.wizard.step];
   const n = st.wizard.step; // 1..SOURCE_STEPS for source steps
   const dots = WIZARD.map((w, i) => `<span class="dot ${i === n ? 'on' : i < n ? 'past' : ''}" title="${esc(w.title)}"></span>`).join('');
-  $('#setupHead').innerHTML = `<div class="wiz-dots" aria-hidden="true">${dots}</div><h2 id="setupTitle">${step.title}</h2><p>${step.intro}</p>`;
+  const intro = st.setup?.container && step.dockerIntro ? step.dockerIntro : step.intro;
+  $('#setupHead').innerHTML = `<div class="wiz-dots" aria-hidden="true">${dots}</div><h2 id="setupTitle">${step.title}</h2><p>${intro}</p>`;
   const warn = st.setup?.secretWarning ? `<div class="card wide warnbox"><div class="msg">⚠ ${esc(st.setup.secretWarning)}</div></div>` : '';
   let body;
   if (!st.setup) body = '<div class="card wide"><div class="msg">Loading…</div></div>';
   else if (step.id === 'welcome') {
-    body = `${warn}<div class="card wide wiz-list">${st.setup.sources.map((src) => `<div class="wiz-row"><div class="badge ${srcInfo(src.id).cls ?? ''}" style="--c:${srcInfo(src.id).c}">${srcInfo(src.id).short}</div><div><b>${esc(src.name)}</b><div class="msg">${esc(src.description)}</div></div></div>`).join('')}</div>`;
+    const docker = st.setup.container ? `<div class="card wide warnbox"><div class="msg">🐳 <b>Running in Docker.</b> Tokens come from environment variables or Docker secrets (<code>GITHUB_TOKEN</code>, <code>BIRDDOG_JIRA_TOKEN</code>, <code>BIRDDOG_CAL_URL</code>, or their <code>_FILE</code> versions), never from this screen, and Birddog never writes them to disk. Your code is read from <code>/repos</code>; mount it read-only.</div></div>` : '';
+    body = `${warn}${docker}<div class="card wide wiz-list">${st.setup.sources.map((src) => `<div class="wiz-row"><div class="badge ${srcInfo(src.id).cls ?? ''}" style="--c:${srcInfo(src.id).c}">${srcInfo(src.id).short}</div><div><b>${esc(src.name)}</b><div class="msg">${esc(src.description)}</div></div></div>`).join('')}</div>`;
   } else if (step.id === 'done') {
     body = `<div class="card wide wiz-list">${st.setup.sources.map((src) => {
       const s = stateOf(src);
@@ -865,7 +888,8 @@ async function disconnectCard(id) {
   renderCards();
   try {
     st.setup = await api.disconnectSource(id);
-    st.cards[id] = { msg: 'Disconnected. The token was removed.', msgGood: true };
+    const e = envSecret(id === 'jira' ? 'jira-token' : 'cal-url');
+    st.cards[id] = { msg: e?.from ? `Switched off. The secret still comes from ${e.from}; remove it there.` : 'Disconnected. The token was removed.', msgGood: true };
     await load();
   } catch (err) {
     st.cards[id] = { msg: err.message, msgGood: false };

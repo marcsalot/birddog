@@ -26,7 +26,8 @@ const HELP = `
   Options
     -o, --open              open the dashboard in your browser
     -p, --port <number>     port to listen on (default ${DEFAULT_PORT}, or "port" in config.json)
-        --host <address>    address to listen on (default 127.0.0.1; anything else needs login turned on)
+        --host <address>    address to listen on (default 127.0.0.1, or BIRDDOG_HOST; anything else needs
+                            login turned on, except in the Docker image, which publishes to loopback)
         --demo              use made-up demo data in a temporary folder (also works with "mcp")
         --dev               reload open pages when the UI changes (used by npm run dev:watch)
     -v, --version           print the version
@@ -134,13 +135,15 @@ async function main() {
       process.exit(2);
     }
   }
-  const host = args.host ?? '127.0.0.1';
+  // BIRDDOG_HOST is how the Docker image listens on 0.0.0.0; outside a container the default stays 127.0.0.1.
+  const host = args.host ?? process.env.BIRDDOG_HOST ?? '127.0.0.1';
+  const container = process.env.BIRDDOG_CONTAINER === '1';
 
   const demo = args.demo ? await createDemo() : null;
   const dir = demo?.options.dir ?? configDir();
   let app;
   try {
-    app = await createBirddog({ dir, cwd: process.cwd(), ...(demo?.options ?? {}), ...(args.dev ? { liveReload: true } : {}) });
+    app = await createBirddog({ dir, cwd: process.cwd(), ...(demo?.options ?? {}), ...(args.dev ? { liveReload: true } : {}), allowRemote: container });
   } catch (err) {
     console.error(`birddog: ${err.message}`);
     process.exit(1);
@@ -190,8 +193,8 @@ async function main() {
 
      config   ${tildify(app.configFile)}${app.firstRun ? '  (created just now)' : ''}
      scanning ${roots.join(', ') || 'nothing yet'}
-     login    ${app.authEnabled ? `on · ${new URL(auth.issuer).host} · allowed: ${who}${app.authFile ? ' (from auth.json)' : ''}` : 'off (only this machine can reach Birddog)'}
-     secrets  ${app.secrets.kind}${app.secrets.warning ? `\n              ⚠ ${app.secrets.warning}` : ''}
+     login    ${app.authEnabled ? `on · ${new URL(auth.issuer).host} · allowed: ${who}${app.authFile ? ' (from auth.json)' : ''}` : container ? 'off (anyone who can reach the published port can read your inbox, so publish it on 127.0.0.1 only)' : 'off (only this machine can reach Birddog)'}
+     ${container ? `docker   publish with -p 127.0.0.1:4747:4747 (loopback only); repos go in /repos, tokens in env vars\n     ` : ''}secrets  ${app.secrets.kind}${app.secrets.warning ? `\n              ⚠ ${app.secrets.warning}` : ''}
 
   Press Ctrl+C to stop.
 `);

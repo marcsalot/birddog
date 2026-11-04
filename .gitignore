@@ -3,3 +3,5 @@ node_modules/
 *.log
 .birddog-dev/
 .claude/
+secrets/
+.env

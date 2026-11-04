@@ -95,16 +95,27 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
     }
   }
 
+  // In a container the token comes from GITHUB_TOKEN (a read-only secret store).
+  let envLogin = null;
+  const envToken = async () => (secrets.readOnly ? secrets.get(SECRET) : null);
+  async function envConnection() {
+    const token = await envToken();
+    if (!token) return null;
+    if (!envLogin) envLogin = await whoami(token).then((m) => m.login, () => null);
+    return { method: 'env', login: envLogin, connectedAt: null };
+  }
+
   return {
     /** What setup shows on the GitHub card. */
     async status() {
       const s = settings();
-      const conn = (await readJson(file, {})).github ?? null;
+      const conn = (await readJson(file, {})).github ?? await envConnection();
       return {
         connected: !!conn,
         login: conn?.login ?? null,
         method: conn?.method ?? null,
         connectedAt: conn?.connectedAt ?? null,
+        tokenFrom: secrets.readOnly ? (secrets.describe?.(SECRET) ?? null) : null,
         deviceFlowAvailable: !!s.clientId,
         host: host(),
         secretStore: secrets.kind,
@@ -146,7 +157,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
     /** A token for API calls (used by the GitHub source). */
     async token() {
       const conn = (await readJson(file, {})).github;
-      if (!conn) return null;
+      if (!conn) return envToken();
       return conn.method === 'gh-cli' ? cliToken(host()) : secrets.get(SECRET);
     },
 

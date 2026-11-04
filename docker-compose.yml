@@ -1,0 +1,50 @@
+# Birddog with Docker Compose.
+#
+#   docker compose up -d                  your real inbox on http://127.0.0.1:4747
+#   docker compose --profile demo up      made-up data on http://127.0.0.1:4848 (no mounts, no tokens)
+#
+# Ports are published to the host's loopback (127.0.0.1) only. Don't change that to
+# 0.0.0.0 or drop the address: anyone on your network could then read your work inbox.
+
+services:
+  birddog:
+    build: .
+    image: birddog:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BIRDDOG_PORT:-4747}:4747"
+    volumes:
+      # Config, done/snooze state and the item cache survive restarts and rebuilds.
+      - birddog-data:/data
+      # Your code, read-only. In setup, scan /repos (the default on first run).
+      - ${BIRDDOG_REPOS:-~/code}:/repos:ro
+    environment:
+      TZ: ${TZ:-UTC}            # so meeting times show in your zone, e.g. TZ=Europe/Berlin
+      # Tokens come from here (or from files, see `secrets:` below). Leave unset what you don't use.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      BIRDDOG_JIRA_TOKEN: ${BIRDDOG_JIRA_TOKEN:-}
+      BIRDDOG_CAL_URL: ${BIRDDOG_CAL_URL:-}
+      # Docker secrets instead of plain env vars: uncomment, and the matching `secrets:` entries.
+      # BIRDDOG_JIRA_TOKEN_FILE: /run/secrets/jira_token
+      # BIRDDOG_CAL_URL_FILE: /run/secrets/cal_url
+    # secrets: [jira_token, cal_url]
+
+  birddog-demo:
+    profiles: [demo]
+    build: .
+    image: birddog:local
+    command: ["--demo", "--port", "4747"]
+    environment:
+      TZ: ${TZ:-UTC}
+    ports:
+      - "127.0.0.1:${BIRDDOG_DEMO_PORT:-4848}:4747"
+
+volumes:
+  birddog-data:
+    name: birddog-data   # a fixed name, so `docker run … birddog mcp` can share it
+
+# secrets:
+#   jira_token:
+#     file: ./secrets/jira_token.txt
+#   cal_url:
+#     file: ./secrets/cal_url.txt
