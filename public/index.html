@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Birddog</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" id="favicon">
+<link rel="stylesheet" href="/css/birddog.css">
+<script src="/js/boot.js"></script>
+<script type="module" src="/js/app.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="g-sunset" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5f6d"/><stop offset="1" stop-color="#ffb347"/></linearGradient>
+  <symbol id="pin" viewBox="0 0 64 64">
+    <path d="M32 5 C20.4 5 12 13.8 12 25 C12 39.5 32 59 32 59 C32 59 52 39.5 52 25 C52 13.8 43.6 5 32 5 Z" style="fill:var(--pin)"/>
+    <g style="fill:var(--paw)"><ellipse cx="32" cy="30" rx="7.2" ry="6.2"/><circle cx="23.4" cy="22.6" r="3.2"/><circle cx="28.6" cy="16.6" r="3.3"/><circle cx="35.4" cy="16.6" r="3.3"/><circle cx="40.6" cy="22.6" r="3.2"/></g>
+  </symbol>
+</defs></svg>
+
+<div class="app">
+  <aside>
+    <div class="brand"><div class="logo"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#pin"/></svg></div><span>bird<b>dog</b></span></div>
+    <div>
+      <div class="nav-label">Inbox</div>
+      <nav class="nav" id="views" aria-label="Views"></nav>
+    </div>
+    <div>
+      <div class="nav-label">Sources</div>
+      <nav class="nav" id="sources" aria-label="Sources"></nav>
+    </div>
+    <div class="sidebar-foot">
+      <button id="openSetup">＋ Connect a source</button>
+      <div>Press <kbd>?</kbd> for shortcuts</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <button class="search" id="openPalette" aria-label="Search or run a command"><span aria-hidden="true">🔍</span><span>Search or run a command…</span><kbd>⌘K</kbd></button>
+      <span class="updated" id="updated" aria-live="polite"></span>
+      <button class="icon-btn" id="refresh" title="Refresh (r)" aria-label="Refresh"><span>⟳</span></button>
+      <button class="appear-btn" id="appearBtn" title="Appearance" aria-haspopup="dialog"><i></i><span>Appearance</span></button>
+    </div>
+    <div class="content" id="content"><div class="wrap" id="list" aria-live="polite"></div></div>
+  </main>
+</div>
+
+<div class="keybar" aria-hidden="true"><span><kbd>j</kbd> <kbd>k</kbd> move</span><span><kbd>↵</kbd> details</span><span><kbd>x</kbd> done</span><span><kbd>s</kbd> snooze</span><span><kbd>z</kbd> undo</span><span><kbd>c</kbd> copy command</span><span><kbd>⌘K</kbd> commands</span></div>
+
+<aside class="drawer" id="drawer" aria-label="Item details"></aside>
+<div class="snooze" id="snooze" role="menu"></div>
+
+<div class="scrim" id="paletteScrim"><div class="modal palette" role="dialog" aria-label="Command palette"><input id="pInput" placeholder="Type a command or search items…" autocomplete="off" spellcheck="false"><ul id="pList" role="listbox"></ul></div></div>
+
+<div class="scrim" id="helpScrim"><div class="modal shortcuts" role="dialog" aria-label="Keyboard shortcuts"><h3>Keyboard shortcuts</h3><div class="grid">
+  <div>Move down / up <span><kbd>j</kbd> <kbd>k</kbd></span></div><div>Open details <kbd>↵</kbd></div>
+  <div>Mark done <kbd>x</kbd></div><div>Snooze <kbd>s</kbd></div>
+  <div>Undo <kbd>z</kbd></div><div>Command palette <kbd>⌘K</kbd></div>
+  <div>Copy next-step command <kbd>c</kbd></div><div>Open link <kbd>o</kbd></div>
+  <div>Search <kbd>/</kbd></div><div>Refresh <kbd>r</kbd></div>
+  <div>Toggle light / dark <kbd>t</kbd></div><div>Next theme <kbd>p</kbd></div>
+  <div>Switch view <span><kbd>1</kbd>–<kbd>6</kbd></span></div><div>Close <kbd>esc</kbd></div>
+  <div>Restore (Done / Snoozed) <kbd>u</kbd></div><div>This sheet <kbd>?</kbd></div>
+</div></div></div>
+
+<div class="scrim" id="setupScrim"><div class="modal setup" role="dialog" aria-labelledby="setupTitle">
+  <header><h2 id="setupTitle">Connect your sources</h2><p>Everything stays on this machine. Birddog only reads; it never changes your repos.</p></header>
+  <div class="cards" id="cards"></div>
+  <footer><span class="progress" id="setupProgress"></span><span style="flex:1"></span><button class="btn" data-close>Skip for now</button><button class="btn primary" data-close>Go to my inbox →</button></footer>
+</div></div>
+
+<div class="appear" id="appear" role="dialog" aria-label="Appearance"></div>
+<div class="toast" id="toast" role="status"><span id="toastMsg"></span><button id="undoBtn">Undo <kbd>z</kbd></button></div>
+</body>
+</html>

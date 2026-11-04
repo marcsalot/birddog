@@ -1,0 +1,34 @@
+{
+  "name": "bird-dog",
+  "version": "0.1.0",
+  "description": "A local-first \"what needs me next?\" dashboard for developers. Birddog finds what matters and points at it.",
+  "type": "module",
+  "bin": {
+    "birddog": "bin/birddog.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bin/birddog.mjs",
+    "dev": "node bin/birddog.mjs --open",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "keywords": [
+    "dashboard",
+    "developer-tools",
+    "git",
+    "inbox",
+    "local-first",
+    "productivity"
+  ],
+  "author": "Marcus Ferrell",
+  "license": "MIT"
+}

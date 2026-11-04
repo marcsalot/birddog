@@ -1,0 +1,33 @@
+// Thin wrapper over Birddog's local JSON API.
+
+async function call(method, url, body) {
+  const init = { method, headers: {} };
+  if (body !== undefined) {
+    init.headers['content-type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+  let res;
+  try {
+    res = await fetch(url, init);
+  } catch {
+    throw new Error('Birddog server is not reachable. Is it still running?');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+const item = (id, action) => `/api/items/${encodeURIComponent(id)}/${action}`;
+
+export const api = {
+  items: () => call('GET', '/api/items'),
+  refresh: () => call('POST', '/api/refresh', {}),
+  done: (id) => call('POST', item(id, 'done'), {}),
+  snooze: (id, until) => call('POST', item(id, 'snooze'), { until }),
+  restore: (id) => call('POST', item(id, 'restore'), {}),
+  prefs: () => call('GET', '/api/prefs'),
+  savePrefs: (patch) => call('PUT', '/api/prefs', patch),
+  setup: () => call('GET', '/api/setup'),
+  testSource: (id, settings) => call('POST', `/api/sources/${encodeURIComponent(id)}/test`, settings),
+  saveSource: (id, settings) => call('PUT', `/api/sources/${encodeURIComponent(id)}`, settings),
+};
