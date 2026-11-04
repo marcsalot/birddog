@@ -336,6 +336,7 @@ export async function createBirddog({
     secrets,
     get config() { return config; },
     configFile: loaded.file,
+    authFile: loaded.authFile,
     firstRun: loaded.created,
     authEnabled: !!oidc,
     refresh,

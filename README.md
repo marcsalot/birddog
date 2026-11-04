@@ -111,11 +111,21 @@ GitHub items arrive in the next release, but you can connect now from **Connect 
 
 Off by default: on `127.0.0.1` only you can reach Birddog. Turn it on when you run Birddog somewhere shared, such as a home server or a VM behind a reverse proxy. It works with any OpenID Connect provider: Google, Okta, Microsoft Entra ID, Auth0, Keycloak, Authentik, …
 
+**Try it first without a provider:**
+
+```bash
+npm run dev:login
+```
+
+This starts a mock sign-in provider and a Birddog with login on at `http://127.0.0.1:4748`, using its own `.birddog-dev/` folder (your real config is untouched). Pick `you@example.com` to get in, `stranger@example.org` to see a refusal, or Cancel. Edit `.birddog-dev/auth.json` to change who is allowed.
+
+**For real:**
+
 1. Register a **web application** with your provider. Redirect URI: `http://127.0.0.1:4747/auth/callback` (or `https://your-host/auth/callback` when you set `publicUrl`).
-2. Add an `auth` block to config.json:
+2. Put your login settings in `auth.json` next to config.json (or in an `auth` block inside config.json; `auth.json` wins if both exist, and deleting it turns login off):
 
    ```json
-   "auth": {
+   {
      "enabled": true,
      "issuer": "https://accounts.google.com",
      "clientId": "1234-abc.apps.googleusercontent.com",

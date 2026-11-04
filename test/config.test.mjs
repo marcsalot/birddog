@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
-import { configDir, expandHome, loadConfig, tildify } from '../src/config.mjs';
+import { configDir, expandHome, loadConfig, saveConfig, tildify } from '../src/config.mjs';
 import { tmpDir } from './helpers.mjs';
 
 describe('config', () => {
@@ -31,6 +31,30 @@ describe('config', () => {
     assert.deepEqual(second.config.sources.git.roots, ['/x']);
     assert.equal(second.config.sources.git.staleDays, 30, 'defaults fill in missing keys');
     assert.equal(second.config.port, 4747);
+  });
+
+  it('reads login settings from auth.json and never copies them into config.json', async () => {
+    const dir = await tmpDir();
+    await fs.writeFile(path.join(dir, 'config.json'), JSON.stringify({ sources: { git: { roots: ['/x'] } } }));
+    await fs.writeFile(path.join(dir, 'auth.json'), JSON.stringify({ enabled: true, issuer: 'https://idp.test', clientId: 'c', allowedEmails: ['a@b.c'] }));
+    const { config, authFile } = await loadConfig(dir);
+    assert.equal(authFile, path.join(dir, 'auth.json'));
+    assert.equal(config.auth.enabled, true);
+    assert.equal(config.auth.scopes, 'openid email profile', 'defaults fill in missing auth keys');
+
+    await saveConfig(dir, { ...config, sources: { git: { roots: ['/y'] } } });
+    const onDisk = JSON.parse(await fs.readFile(path.join(dir, 'config.json'), 'utf8'));
+    assert.deepEqual(onDisk.sources.git.roots, ['/y']);
+    assert.equal(onDisk.auth, undefined);
+
+    await fs.rm(path.join(dir, 'auth.json'));
+    assert.equal((await loadConfig(dir)).config.auth.enabled, false, 'deleting auth.json turns login off');
+  });
+
+  it('rejects an auth.json that is not an object', async () => {
+    const dir = await tmpDir();
+    await fs.writeFile(path.join(dir, 'auth.json'), '[]');
+    await assert.rejects(loadConfig(dir, { cwd: dir }), /must contain a JSON object/);
   });
 
   it('moves a broken config aside instead of crashing', async () => {

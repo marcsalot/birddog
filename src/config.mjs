@@ -94,18 +94,46 @@ function merge(defaults, value) {
   return out;
 }
 
+/**
+ * Login settings may live in their own file, auth.json, next to config.json.
+ * When it exists it replaces the "auth" block of config.json, so you can turn
+ * login on or off (or switch providers) by adding or removing one file.
+ */
+async function readAuthFile(dir) {
+  const file = path.join(dir, 'auth.json');
+  const auth = await readJson(file, null);
+  if (auth !== null && (typeof auth !== 'object' || Array.isArray(auth))) {
+    throw new Error(`${tildify(file)} must contain a JSON object like {"enabled": true, "issuer": "…"}`);
+  }
+  return auth && { auth, file };
+}
+
 export async function loadConfig(dir = configDir(), { cwd } = {}) {
   const file = path.join(dir, 'config.json');
   const raw = await readJson(file, null);
+  const authFile = await readAuthFile(dir);
+  let config;
+  let created = false;
   if (raw === null) {
-    const config = defaultConfig();
+    config = defaultConfig();
     config.sources.git.roots = await detectRoots(cwd);
     await writeJson(file, config);
-    return { config, file, created: true };
+    created = true;
+  } else {
+    config = merge(defaultConfig(), raw);
   }
-  return { config: merge(defaultConfig(), raw), file, created: false };
+  if (authFile) config = { ...config, auth: merge(defaultConfig().auth, authFile.auth) };
+  return { config, file, created, authFile: authFile?.file ?? null };
 }
 
 export async function saveConfig(dir, config) {
-  await writeJson(path.join(dir, 'config.json'), config);
+  const file = path.join(dir, 'config.json');
+  let out = config;
+  if (await readAuthFile(dir)) {
+    // Login settings came from auth.json: leave config.json's own auth block as it was.
+    const { auth: _fromAuthFile, ...rest } = config;
+    const onDisk = (await readJson(file, {})).auth;
+    out = onDisk === undefined ? rest : { ...rest, auth: onDisk };
+  }
+  await writeJson(file, out);
 }

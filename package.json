@@ -19,7 +19,8 @@
   "scripts": {
     "start": "node bin/birddog.mjs",
     "dev": "node bin/birddog.mjs --open",
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "node --test \"test/*.test.mjs\"",
+    "dev:login": "node dev/login.mjs --open"
   },
   "keywords": [
     "dashboard",
