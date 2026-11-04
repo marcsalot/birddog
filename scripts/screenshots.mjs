@@ -85,10 +85,11 @@ try {
 
     await page.keyboard.press('Escape');
     await page.keyboard.press('a');
-    await page.waitForSelector('#chatPanel.open');
+    await page.waitForSelector('#chatPanel.open #chatForm, #chatPanel.open [data-chat="enable"]');
     if (await page.$('#chatConsent')) {
       await page.check('#chatConsent');
       await page.click('[data-chat="enable"]');
+      await page.waitForSelector('#chatForm');
     }
     await page.click('[data-chat="new"]');
     await page.click('[data-chat-ask="What needs me now?"]');

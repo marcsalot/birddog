@@ -88,11 +88,11 @@ const current = () => { const l = ordered(); return l[selIndex(l)]; };
 // Rendering
 
 function renderNav() {
-  const ov = `<button class="${st.view === 'overview' ? 'active' : ''}" data-view="overview" aria-current="${st.view === 'overview'}"><span style="width:8px;text-align:center" aria-hidden="true">◔</span>Overview<kbd class="hint">0</kbd><span class="count"></span></button>`;
+  const ov = `<button class="${st.view === 'overview' ? 'active' : ''}" data-view="overview" aria-current="${st.view === 'overview'}" title="Overview (0)" aria-label="Overview"><span class="ico" aria-hidden="true">◔</span><span class="rl">Overview</span><kbd class="hint">0</kbd><span class="count"></span></button>`;
   $('#views').innerHTML = ov + VIEWS.map(([k, label, icon], n) => {
-    const dot = URG[k] ? `<span class="dot" style="background:${URG[k].c}"></span>` : `<span style="width:8px;text-align:center" aria-hidden="true">${icon}</span>`;
+    const mark = URG[k] ? `<span class="ico" aria-hidden="true"><span class="dot" style="background:${URG[k].c}"></span></span>` : `<span class="ico" aria-hidden="true">${icon}</span>`;
     const count = visible(k).length;
-    return `<button class="${st.view === k ? 'active' : ''}" data-view="${k}" aria-current="${st.view === k}">${dot}${label}<kbd class="hint">${n + 1}</kbd><span class="count">${count || ''}</span></button>`;
+    return `<button class="${st.view === k ? 'active' : ''}" data-view="${k}" aria-current="${st.view === k}" title="${label} (${n + 1})" aria-label="${label}${count ? `, ${count}` : ''}">${mark}<span class="rl">${label}</span><kbd class="hint">${n + 1}</kbd><span class="count">${count || ''}</span></button>`;
   }).join('');
 
   const real = st.sources.map((s) => {
@@ -101,7 +101,7 @@ function renderNav() {
     const status = s.status === 'stale' ? `<span class="src-status warn" title="${esc(staleTitle(s))}">! stale</span>`
       : s.status === 'pending' ? '<span class="src-status">…</span>'
         : `<span class="src-status">${s.count || ''}</span>`;
-    return `<button class="src-toggle ${on ? 'on' : ''}" data-src="${esc(s.id)}" style="--c:${info.c}" aria-pressed="${on}" title="${on ? 'Hide' : 'Show'} ${esc(s.name)} items"><span class="check">${on ? '✓' : ''}</span>${esc(s.name)}${status}</button>`;
+    return `<button class="src-toggle ${on ? 'on' : ''} ${s.status === 'stale' ? 'is-stale' : ''}" data-src="${esc(s.id)}" style="--c:${info.c}" aria-pressed="${on}" title="${on ? 'Hide' : 'Show'} ${esc(s.name)} items${s.status === 'stale' ? ' (stale)' : ''}" aria-label="${esc(s.name)}${s.status === 'stale' ? ', stale' : ''}"><span class="check" aria-hidden="true">${on ? '✓' : ''}</span><span class="rl">${esc(s.name)}</span>${status}</button>`;
   });
   const soon = COMING.filter(([id]) => !st.sources.some((s) => s.id === id))
     .map(([id, name]) => `<button class="src-toggle soon" data-soon="${id}" title="Coming soon"><span class="check"></span>${name}<span class="src-status">soon</span></button>`);
@@ -421,7 +421,37 @@ const snoozeOpen = () => $('#snooze').classList.contains('open');
 // ---------------------------------------------------------------------------
 // Views, sources, overlays
 
-function setView(v) { st.view = v; st.selId = null; closeDrawer(); render(); }
+function setView(v) { st.view = v; st.selId = null; closeDrawer(); closeMobileRail(); render(); }
+
+// ---------------------------------------------------------------------------
+// Main menu rail: collapsible on desktop (icons only), a drawer on phones.
+
+const mobile = () => matchMedia('(max-width: 760px)').matches;
+function setRail(open, { save = true } = {}) {
+  document.body.classList.toggle('rail-collapsed', !open);
+  const t = $('#railToggle');
+  t.setAttribute('aria-expanded', String(open));
+  t.title = open ? 'Collapse the menu (m)' : 'Expand the menu (m)';
+  t.setAttribute('aria-label', open ? 'Collapse the menu' : 'Expand the menu');
+  if (save) savePrefs({ railOpen: open });
+  window.dispatchEvent(new Event('resize'));
+}
+function openMobileRail() {
+  document.body.classList.add('rail-mobile-open');
+  $('#railScrim').hidden = false;
+  $('#menuBtn').setAttribute('aria-expanded', 'true');
+  $('#rail').querySelector('button')?.focus();
+}
+function closeMobileRail() {
+  if (!document.body.classList.contains('rail-mobile-open')) return;
+  document.body.classList.remove('rail-mobile-open');
+  $('#railScrim').hidden = true;
+  $('#menuBtn').setAttribute('aria-expanded', 'false');
+}
+function toggleRail() {
+  if (mobile()) return document.body.classList.contains('rail-mobile-open') ? closeMobileRail() : openMobileRail();
+  return setRail(document.body.classList.contains('rail-collapsed'));
+}
 
 function setHidden(next) {
   st.hidden = new Set(next);
@@ -464,6 +494,7 @@ function commands() {
     { label: 'Notifications…', run: () => toggleNotifyPanel() },
     { label: 'Ask Birddog…', k: 'a', run: () => toggleChat() },
     { label: guideOpen() ? 'Hide the guide' : 'Open the guide', k: 'g', run: () => toggleGuide() },
+    { label: document.body.classList.contains('rail-collapsed') ? 'Expand the menu' : 'Collapse the menu', k: 'm', run: () => toggleRail() },
     ...[['start', 'Getting started'], ['sources', 'Sources'], ['notifications', 'Notifications'], ['chat', 'Ask Birddog'], ['docker', 'Docker'], ['mcp', 'MCP']].map(([id, t]) => ({ label: `Guide: ${t}`, run: () => openGuide(id) })),
     ...Object.entries(PALETTE_NAMES).map(([p, n]) => ({ label: `Theme: ${n}`, run: () => setPalette(p) })),
     { label: 'Mode: follow system', run: () => setMode('system') },
@@ -969,11 +1000,14 @@ document.addEventListener('click', (e) => {
 $('#openPalette').onclick = () => openPalette();
 let resizeTimer = null;
 window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (st.view === 'overview') renderOverview(); }, 120); });
-$('#openSetup').onclick = () => openSetup();
+$('#openSetup').onclick = () => { closeMobileRail(); openSetup(); };
 $('#refresh').onclick = refresh;
 $('#appearBtn').onclick = (e) => { e.stopPropagation(); appearOpen() ? closeAppear() : openAppear(); };
-$('#chatBtn').onclick = () => toggleChat();
-$('#guideBtn').onclick = () => toggleGuide();
+$('#chatBtn').onclick = () => { closeMobileRail(); toggleChat(); };
+$('#railToggle').onclick = () => toggleRail();
+$('#menuBtn').onclick = () => openMobileRail();
+$('#railScrim').onclick = () => closeMobileRail();
+$('#guideBtn').onclick = () => { closeMobileRail(); toggleGuide(); };
 for (const type of ['click', 'input', 'keydown']) $('#guideRail').addEventListener(type, (e) => { if (onGuideEvent(e)) e.stopPropagation(); });
 for (const type of ['click', 'change', 'submit', 'keydown']) $('#chatPanel').addEventListener(type, (e) => { e.stopPropagation(); onChatEvent(e); });
 $('#notifyBtn').onclick = (e) => { e.stopPropagation(); closeAppear(); toggleNotifyPanel(); };
@@ -998,6 +1032,7 @@ document.addEventListener('keydown', (e) => {
     if (appearOpen()) return closeAppear();
     if (notifyPanelOpen()) return closeNotifyPanel();
     if (chatOpen()) return closeChat();
+    if (document.body.classList.contains('rail-mobile-open')) return closeMobileRail();
     if (overlay() || snoozeOpen()) return closeAll();
     if (drawerOpen()) return closeDrawer();
     if (st.query) { st.query = ''; render(); }
@@ -1033,6 +1068,7 @@ document.addEventListener('keydown', (e) => {
     case 'o': return openLink(sel);
     case 'a': e.preventDefault(); return toggleChat();
     case 'g': e.preventDefault(); return toggleGuide();
+    case 'm': e.preventDefault(); return toggleRail();
     case 'r': return refresh();
     // No toast here: it would replace a pending "Undo" toast, and the change is visible anyway.
     case 't': toggleTheme(); return;
@@ -1085,6 +1121,7 @@ async function boot() {
   initAppearance({ prefs, save: savePrefs, changed: () => { if (appearOpen()) renderAppear(); loadShots(); } });
   initGuide({ open: !!prefs.guideOpen, save: (open) => savePrefs({ guideOpen: open }), theme: () => document.documentElement.dataset.theme });
   st.hidden = new Set(prefs.hiddenSources ?? []);
+  setRail(prefs.railOpen !== false, { save: false });
   render();
   await load();
   initChat({ api, toast, onChanged: () => load({ quiet: true }) });

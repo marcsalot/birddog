@@ -18,6 +18,7 @@ export function initChat(options) { ctx = options; }
 export async function openChat() {
   $('#chatPanel').classList.add('open');
   document.body.classList.add('chat-open');
+  if (!status) $('#chatPanel').innerHTML = '<header><div class="chat-title"><b>Ask Birddog</b></div><button class="icon-btn" data-chat="close" aria-label="Close chat">✕</button></header><div class="chat-body"><div class="msg-note">Loading…</div></div>';
   try { status = await ctx.api.chatStatus(); } catch (err) { status = { enabled: false, error: err.message }; }
   render();
   $('#chatInput')?.focus();

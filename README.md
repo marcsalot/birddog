@@ -384,6 +384,17 @@ Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom a
 
 Inside a group, items sort by rule order, then oldest first (the work that has waited longest is most at risk). A branch counts as either stale *or* unpushed, never both, and repos with no remote are never nagged about pushing.
 
+## Main menu
+
+The menu on the left holds everything:
+
+- **Overview**
+- the **inbox** views (All, Now, Today, Later, Snoozed, Done)
+- your **sources** (click one to hide or show its items)
+- **Ask Birddog**, the **Guide**, and **Sources & settings**
+
+Collapse it to icons with « or `m`. Counts stay visible as small badges (Now in red), and every icon keeps its name as a tooltip and for screen readers. Birddog remembers which way you left it. On a phone it becomes a drawer behind ☰. It fits beside the guide rail: with both open, the page in the middle keeps at least ~640px on wide screens, and on narrower ones the guide floats over the page instead.
+
 ## User guide
 
 Press 📖 or `g` for the **guide**, a searchable rail on the right: getting started, sources, triage, shortcuts, notifications, chat, Docker and MCP. On wide screens it docks beside the page; on narrower ones it floats over it. It remembers whether you left it open, and `⌘K` → *Guide: …* jumps to a section.
@@ -452,7 +463,7 @@ All of it lives in `~/.config/birddog/state.json`, along with your theme.
 | `c` | copy suggested command | `o` | open link |
 | `r` | refresh | `/` or `⌘K` | command palette |
 | `0` | Overview | `?` | shortcuts |
-| `g` | guide | | |
+| `g` | guide | `m` | collapse / expand the menu |
 | `1`–`6` | All / Now / Today / Later / Snoozed / Done | `a` | Ask Birddog |
 | `t` | light / dark | `p` | next theme |
 
@@ -644,6 +655,13 @@ npm test          # node:test, no dependencies, no network; builds throwaway git
 npm run dev       # start and open the browser
 npm run dev:watch # live reload: restarts on src/ changes, reloads open pages on src/ or public/ changes
 npm run screenshots  # guide screenshots in light and dark, from --demo (needs `npm install` for Playwright)
+```
+
+To use your working copy as Claude Code's MCP server while you develop (`npx` runs the published release instead):
+
+```bash
+claude mcp add --scope user birddog -- "$(command -v node)" "$PWD/bin/birddog.mjs" mcp
+claude mcp list    # birddog … ✓ Connected
 ```
 
 `dev:watch` uses Node's built-in `--watch`, so it needs nothing extra. It doesn't open a browser, because it would open a new tab on every restart; open `http://127.0.0.1:4747` yourself once.

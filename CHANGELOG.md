@@ -2,6 +2,19 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-11-04
+
+### Added
+- **Collapsible main menu**: Overview, the inbox views, sources, Ask Birddog, the guide, and Sources & settings, all in the left rail.
+  - It collapses to icons with count badges (« or `m`), and every icon keeps its label as a tooltip and accessible name.
+  - It remembers its state.
+  - On phones it's a drawer behind ☰.
+  - It works alongside the guide rail: the guide docks next to a collapsed menu from 1060px wide.
+
+### Changed
+- Ask Birddog and the guide moved from the top bar into the menu.
+- The chat panel shows "Loading…" instead of briefly flashing its setup screen.
+
 ## [1.5.0] - 2026-11-04
 
 ### Added
@@ -95,7 +108,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.5.0]: https://github.com/marcsalot/birddog/compare/35cffb9...main
+[1.6.0]: https://github.com/marcsalot/birddog/compare/0b78f3b...main
+[1.5.0]: https://github.com/marcsalot/birddog/compare/35cffb9...0b78f3b
 [1.4.0]: https://github.com/marcsalot/birddog/compare/f1288c5...35cffb9
 [1.3.0]: https://github.com/marcsalot/birddog/compare/c5a5fad...f1288c5
 [1.2.0]: https://github.com/marcsalot/birddog/compare/74c3238...c5a5fad
