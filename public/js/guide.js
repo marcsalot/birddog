@@ -28,6 +28,18 @@ export const SECTIONS = [
       <p>Tokens and private links go to your OS keychain, never to config.json. If a source fails, its last good items stay, marked <b>stale</b>, with a <b>Retry</b> button.</p>`,
   },
   {
+    id: 'logins', title: 'Sign-ins (Google, Microsoft, Atlassian, iCloud)', words: 'oauth login sign in google microsoft outlook office 365 atlassian jira icloud apple caldav app-specific password client id register',
+    html: `<p>Instead of pasting tokens, you can sign in. Each provider needs <b>your own app registration</b> (free, about five minutes). Birddog never creates apps or accounts for you, and never sees your password. Put the client ID in config.json under <code>oauth.&lt;provider&gt;.clientId</code> (or <code>BIRDDOG_&lt;PROVIDER&gt;_CLIENT_ID</code>) and restart.</p>
+      <ul>
+        <li><b>Google Calendar</b>: Google Cloud Console → APIs &amp; Services → enable the <i>Google Calendar API</i> → Credentials → <i>OAuth client ID</i>, type <b>Desktop app</b>. If you get a client secret, save it with <code>birddog secret set google-client-secret</code>.</li>
+        <li><b>Microsoft 365 / Outlook</b>: Microsoft Entra → App registrations → New registration. Add the platform <b>Mobile and desktop applications</b> with the redirect URI <code>http://127.0.0.1/auth/oauth/microsoft/callback</code> (the port doesn't matter). Allow public client flows. Add the delegated permission <i>Calendars.Read</i>.</li>
+        <li><b>Atlassian (Jira)</b>: developer.atlassian.com → Console → create an <b>OAuth 2.0 integration</b>. Add the Jira API scopes <i>read:jira-work</i> and <i>read:jira-user</i>, and the callback URL <code>http://127.0.0.1:4747/auth/oauth/atlassian/callback</code> (with your port). Atlassian needs the client secret too: <code>birddog secret set atlassian-client-secret</code>.</li>
+        <li><b>iCloud</b>: Apple has no sign-in flow for calendars. Make an <b>app-specific password</b> at appleid.apple.com → Sign-In and Security → App-Specific Passwords, then choose <i>iCloud</i> on the Calendar card.</li>
+      </ul>
+      <p>Tokens go to your keychain and are renewed automatically. <b>Disconnect</b> forgets them, and revokes them too where the provider allows it (Google). Sign-ins aren't available in Docker, because there's no keychain for the tokens; use API tokens or iCal links there.</p>
+      <p><b>Sign in with Apple</b> for the dashboard itself is an optional login, like Google or Okta login. It needs a paid Apple Developer account, a Services ID and a public https address; see the README.</p>`,
+  },
+  {
     id: 'triage', title: 'Done, snooze and undo', words: 'triage done snooze undo restore hide comes back change',
     html: `${shot('inbox', 'The inbox with an item open: why it is here, the rule, and the next step')}
       <ul>

@@ -12,6 +12,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createGithubAuth } from './auth/github.mjs';
+import { appleClientSecret, createOAuth, OAuthError, PROVIDERS as OAUTH_PROVIDERS } from './auth/oauth.mjs';
+import { atlassianSite, googleAccount, graphAccount } from './sources/calendar-apis.mjs';
 import { AuthError, checkAuthConfig, createOidc, isAllowed } from './auth/oidc.mjs';
 import { createSessions } from './auth/session.mjs';
 import { ChatError, createChat } from './chat.mjs';
@@ -81,7 +83,7 @@ function notifyKinds(sources) {
 const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /** A tiny standalone page for sign-in problems (the app's JS is not loaded here). */
-function authPage(res, status, title, message, { action = 'Try again' } = {}) {
+function authPage(res, status, title, message, { action = 'Try again', href = '/auth/login' } = {}) {
   res.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
@@ -91,11 +93,24 @@ function authPage(res, status, title, message, { action = 'Try again' } = {}) {
   res.end(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Birddog · ${escHtml(title)}</title><link rel="icon" href="/favicon.svg"></head>
 <body style="font:15px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;padding:16px">
 <main style="max-width:440px;text-align:center"><img src="/favicon.svg" alt="" width="48" height="48"><h1 style="font-size:22px;margin:12px 0 6px">${escHtml(title)}</h1><p style="opacity:.75">${escHtml(message)}</p>
-<p><a href="/auth/login" style="display:inline-block;margin-top:8px;padding:8px 16px;border-radius:9px;background:#f5b700;color:#17171a;font-weight:600;text-decoration:none">${escHtml(action)}</a></p></main></body></html>`);
+<p><a href="${escHtml(href)}" style="display:inline-block;margin-top:8px;padding:8px 16px;border-radius:9px;background:#f5b700;color:#17171a;font-weight:600;text-decoration:none">${escHtml(action)}</a></p></main></body></html>`);
 }
 
 function safeReturnTo(v) {
   return typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !v.startsWith('/\\') && !v.startsWith('/auth/') ? v : '/';
+}
+
+/** An application/x-www-form-urlencoded body (only Sign in with Apple's form_post uses this). */
+async function readForm(req) {
+  if (!/^application\/x-www-form-urlencoded\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Expected a form post');
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY) throw new HttpError(413, 'Request body too large');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 async function readBody(req) {
@@ -194,7 +209,8 @@ export async function createBirddog({
     },
   });
   // What every source gets in ctx, besides now/warn/summary.
-  const context = { fetch: fetchImpl, github, secret: (name) => secrets.get(name) };
+  const oauth = createOAuth({ dir, secrets, getConfig: () => config, fetchImpl, now });
+  const context = { fetch: fetchImpl, github, oauth, secret: (name) => secrets.get(name) };
   const collector = new Collector({ sources, dir, getConfig: () => config, now, log, context });
   const triage = new Triage({ dir, now });
   await Promise.all([collector.load(), triage.load()]);
@@ -220,9 +236,20 @@ export async function createBirddog({
       if (secrets.readOnly) log.warn?.('birddog: no BIRDDOG_SESSION_KEY set, so sign-ins last only until Birddog restarts.');
       else await secrets.set('session-key', key);
     }
-    const clientSecret = process.env.BIRDDOG_OIDC_CLIENT_SECRET || auth.clientSecret || (await secrets.get('oidc-client-secret')) || undefined;
     sessions = createSessions({ key, ttlMs: (Number(auth.sessionDays) || 7) * DAY, secure: auth.publicUrl?.startsWith('https:'), now });
-    oidc = createOidc({ issuer: auth.issuer, clientId: auth.clientId, clientSecret, scopes: auth.scopes, fetchImpl, now });
+    if (auth.provider === 'apple') {
+      // Sign in with Apple: the client secret is a JWT we sign with your key, for each sign-in.
+      const privateKey = process.env.BIRDDOG_APPLE_PRIVATE_KEY || (await secrets.get('apple-private-key'));
+      if (!privateKey) throw new Error('Sign in with Apple needs your key: pipe the .p8 file into "birddog secret set apple-private-key" (or set BIRDDOG_APPLE_PRIVATE_KEY).');
+      oidc = createOidc({
+        issuer: auth.issuer || 'https://appleid.apple.com', clientId: auth.clientId, fetchImpl, now,
+        scopes: 'openid email name', responseMode: 'form_post',
+        clientSecret: () => appleClientSecret({ teamId: auth.appleTeamId, keyId: auth.appleKeyId, clientId: auth.clientId, privateKey, now: now?.() ?? Date.now() }),
+      });
+    } else {
+      const clientSecret = process.env.BIRDDOG_OIDC_CLIENT_SECRET || auth.clientSecret || (await secrets.get('oidc-client-secret')) || undefined;
+      oidc = createOidc({ issuer: auth.issuer, clientId: auth.clientId, clientSecret, scopes: auth.scopes, fetchImpl, now });
+    }
   }
   const hostAllowed = (host) => LOCAL_HOST.test(host) || (!!publicHost && host.toLowerCase() === publicHost);
   const baseUrl = (req) => (auth.publicUrl ? auth.publicUrl.replace(/\/+$/, '') : `http://${req.headers.host}`);
@@ -353,6 +380,34 @@ export async function createBirddog({
     try { return await fn(...a); } catch (e) { throw e instanceof ChatError ? new HttpError(e.status, e.message) : e; }
   };
 
+  // ---- "Sign in with …" for sources (OAuth 2.0 + PKCE, loopback redirect) ----
+  const redirectFor = (req, p) => `${baseUrl(req)}/auth/oauth/${p}/callback`;
+  const IDENTIFY = {
+    google: (p, token) => googleAccount({ fetchImpl, token }),
+    microsoft: (p, token) => graphAccount({ fetchImpl, token }),
+    atlassian: (p, token) => atlassianSite({ fetchImpl, token }),
+  };
+  /** After a sign-in, point the matching source at it and switch it on. */
+  function useProvider(p, info) {
+    const patch = p === 'atlassian'
+      ? { jira: { ...(config.sources?.jira ?? {}), enabled: true, auth: 'oauth', ...(info.site ? { site: info.site } : {}) } }
+      : { cal: { ...(config.sources?.cal ?? {}), enabled: true, provider: p } };
+    config = { ...config, sources: { ...config.sources, ...patch } };
+    return saveConfig(dir, config);
+  }
+  async function oauthCallback(req, res, p, params) {
+    if (!OAUTH_PROVIDERS[p]) throw new HttpError(404, 'Not found');
+    try {
+      const info = await oauth.callback(p, params, IDENTIFY[p]);
+      await useProvider(p, info);
+      refresh?.({ only: p === 'atlassian' ? 'jira' : 'cal' }).catch(() => {});
+      return redirect(res, `/?connected=${encodeURIComponent(p)}`);
+    } catch (err) {
+      if (err instanceof OAuthError) return authPage(res, err.status, 'Sign-in did not work', err.message, { action: 'Back to Birddog', href: '/?setup=1' });
+      throw err;
+    }
+  }
+
   // ---- Live reload (development only) ----
   // Open pages listen on /api/dev/events. A change in public/ sends "reload";
   // a server restart (node --watch) drops the stream, and the page reloads when it reconnects.
@@ -413,6 +468,26 @@ export async function createBirddog({
     }],
     ['GET', /^\/api\/setup$/, () => setupPayload()],
     ['GET', /^\/api\/chat\/status$/, () => chat.status()],
+    ['GET', /^\/api\/oauth$/, async (_m, _b, ctx) => ({
+      providers: await Promise.all(oauth.providers.map(async (p) => ({ ...(await oauth.status(p)), redirectUri: `${ctx.base}/auth/oauth/${p}/callback` }))),
+    })],
+    ['POST', /^\/api\/oauth\/([a-z]+)\/start$/, async (m, _b, ctx) => {
+      try { return await oauth.start(m[1], `${ctx.base}/auth/oauth/${m[1]}/callback`); } catch (e) { throw e instanceof OAuthError ? new HttpError(e.status, e.message) : e; }
+    }],
+    ['DELETE', /^\/api\/oauth\/([a-z]+)$/, async (m) => {
+      const p = m[1];
+      if (!OAUTH_PROVIDERS[p]) throw new HttpError(404, 'Not found');
+      const r = await oauth.disconnect(p);
+      // A source that was using this sign-in is switched off (its other settings stay).
+      const src = p === 'atlassian' ? 'jira' : 'cal';
+      const cfg = config.sources?.[src] ?? {};
+      if ((src === 'jira' && cfg.auth === 'oauth') || (src === 'cal' && cfg.provider === p)) {
+        config = { ...config, sources: { ...config.sources, [src]: { ...cfg, enabled: false, ...(src === 'jira' ? { auth: 'token' } : { provider: 'ics' }) } } };
+        await saveConfig(dir, config);
+        await refresh({ only: src }).catch(() => {});
+      }
+      return { ...r, status: await oauth.status(p) };
+    }],
     ['GET', /^\/api\/history$/, async (_m, _b, ctx) => {
       const n = Math.min(60, Math.max(1, Number(ctx.query.get('days')) || 14));
       return { days: await history.last(n) };
@@ -472,6 +547,20 @@ export async function createBirddog({
       await readBody(req);
       return send(res, 200, { ok: true }, sessions ? { 'set-cookie': sessions.clear() } : {});
     }
+    const oauthCb = /^\/auth\/oauth\/([a-z]+)\/callback$/.exec(url.pathname);
+    if (oauthCb && req.method === 'GET') return oauthCallback(req, res, oauthCb[1], Object.fromEntries(url.searchParams));
+    // Sign in with Apple posts its answer back as a form (response_mode=form_post).
+    if (url.pathname === '/auth/callback' && req.method === 'POST' && oidc && auth.provider === 'apple') {
+      const params = Object.fromEntries(new URLSearchParams(await readForm(req)));
+      try {
+        const { user, returnTo } = await oidc.callback(params);
+        if (!isAllowed(auth, user)) return authPage(res, 403, 'Not on the list', `You signed in as ${user.email ?? 'an account with no email'}, but that account is not allowed to use this Birddog.`);
+        return redirect(res, safeReturnTo(returnTo), { 'set-cookie': sessions.issue(user) });
+      } catch (err) {
+        if (err instanceof AuthError) return authPage(res, err.status, 'Sign-in did not work', err.message);
+        throw err;
+      }
+    }
     if (req.method !== 'GET') throw new HttpError(405, 'Method not allowed');
     if (url.pathname === '/auth/signed-out') {
       return authPage(res, 200, 'Signed out', 'You are signed out of Birddog on this browser.', { action: 'Sign in again' });
@@ -501,7 +590,10 @@ export async function createBirddog({
     const host = req.headers.host ?? '';
     if (!hostAllowed(host)) throw new HttpError(403, 'Birddog only answers on localhost (or auth.publicUrl)');
     const origin = req.headers.origin;
-    if (origin && origin !== 'null') {
+    // The one cross-site request Birddog accepts: Apple posting a sign-in result back
+    // (checked further by state, PKCE and the signed ID token).
+    const appleCallback = auth.provider === 'apple' && req.method === 'POST' && origin === 'https://appleid.apple.com' && req.url.split('?')[0] === '/auth/callback';
+    if (origin && origin !== 'null' && !appleCallback) {
       let ok = false;
       try { const o = new URL(origin).host; ok = o.toLowerCase() === host.toLowerCase() && hostAllowed(o); } catch { /* bad origin */ }
       if (!ok) throw new HttpError(403, 'Cross-origin requests are not allowed');
@@ -533,7 +625,7 @@ export async function createBirddog({
       if (!m || req.method !== method) continue;
       const params = m.map((x, i) => (i ? decodeURIComponent(x) : x));
       const body = method === 'GET' ? {} : await readBody(req);
-      return send(res, 200, await fn(params, body, { user, query: url.searchParams }));
+      return send(res, 200, await fn(params, body, { user, query: url.searchParams, base: baseUrl(req) }));
     }
     throw new HttpError(404, 'Unknown API route');
   }

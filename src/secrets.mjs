@@ -108,6 +108,10 @@ export const ENV_SECRETS = Object.freeze({
   'oidc-client-secret': ['BIRDDOG_OIDC_CLIENT_SECRET'],
   'session-key': ['BIRDDOG_SESSION_KEY'],
   'anthropic-api-key': ['ANTHROPIC_API_KEY', 'BIRDDOG_ANTHROPIC_API_KEY'],
+  'caldav-password': ['BIRDDOG_CALDAV_PASSWORD'],
+  'google-client-secret': ['BIRDDOG_GOOGLE_CLIENT_SECRET'],
+  'atlassian-client-secret': ['BIRDDOG_ATLASSIAN_CLIENT_SECRET'],
+  'apple-private-key': ['BIRDDOG_APPLE_PRIVATE_KEY'],
 });
 
 export class ReadOnlySecretsError extends Error {}

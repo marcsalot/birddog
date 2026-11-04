@@ -9,7 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('user guide', () => {
   it('covers the topics the app has', () => {
-    assert.deepEqual(SECTIONS.map((s) => s.id), ['start', 'sources', 'triage', 'shortcuts', 'notifications', 'chat', 'docker', 'mcp']);
+    assert.deepEqual(SECTIONS.map((s) => s.id), ['start', 'sources', 'logins', 'triage', 'shortcuts', 'notifications', 'chat', 'docker', 'mcp']);
   });
 
   it('search matches words anywhere in a section, all words required', () => {

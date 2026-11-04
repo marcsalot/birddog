@@ -2,6 +2,18 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-11-04
+
+### Added
+- **Sign in with Google** and **Sign in with Microsoft** for the Calendar: Google Calendar API and Microsoft Graph, read-only.
+- **Sign in with Atlassian** for Jira Cloud: OAuth 2.0 (3LO) through `api.atlassian.com`.
+- All three use the authorization code flow with PKCE and a loopback redirect. Tokens and refresh tokens are kept in the keychain and renewed automatically (rotated refresh tokens are kept). Disconnect forgets them, revokes at Google, and switches off the source that used them.
+- Each provider uses your own app registration, read from config or env. There's a "register your app" guide for each.
+- **iCloud calendars** over CalDAV with an app-specific password. Discovery follows only iCloud's own redirects, and the password never goes anywhere else.
+- **Sign in with Apple** as an optional dashboard login: an ES256 client-secret JWT signed per sign-in, and a `form_post` callback accepted only from appleid.apple.com.
+- The GitHub device flow now has step-by-step instructions, a countdown, and a new-code button.
+- A guide section on sign-ins.
+
 ## [1.6.0] - 2026-11-04
 
 ### Added
@@ -108,7 +120,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.6.0]: https://github.com/marcsalot/birddog/compare/0b78f3b...main
+[1.7.0]: https://github.com/marcsalot/birddog/compare/45bcfde...main
+[1.6.0]: https://github.com/marcsalot/birddog/compare/0b78f3b...45bcfde
 [1.5.0]: https://github.com/marcsalot/birddog/compare/35cffb9...0b78f3b
 [1.4.0]: https://github.com/marcsalot/birddog/compare/f1288c5...35cffb9
 [1.3.0]: https://github.com/marcsalot/birddog/compare/c5a5fad...f1288c5

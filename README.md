@@ -67,7 +67,7 @@ birddog mcp             MCP server on stdio (add --demo for made-up data)
 birddog notify          desktop notifications without the dashboard (--on, --test)
 birddog --port 5000     use another port
 birddog --host 0.0.0.0  listen beyond localhost (only with login turned on; also BIRDDOG_HOST)
-birddog secret set jira-token   store a secret in your keychain (reads stdin; also cal-url, oidc-client-secret)
+birddog secret set jira-token   store a secret in your keychain (reads stdin; also cal-url, caldav-password, anthropic-api-key, google-client-secret, atlassian-client-secret, apple-private-key, oidc-client-secret)
 birddog --version
 birddog --help
 ```
@@ -333,6 +333,50 @@ That link works like a password (anyone who has it can read your calendar), so B
 
 The reader is built in (no dependencies) and handles what real feeds contain: folded lines and escapes, UTC, `TZID` and floating times, Windows zone names from Outlook, all-day and multi-day events, `DURATION`, recurring events (`RRULE` with `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, `INTERVAL`, `COUNT`, `UNTIL`, `BYDAY` such as `2TU` or `-1FR`, `BYMONTHDAY`, `BYMONTH`), `EXDATE`, `RDATE`, and single instances that were moved or cancelled (`RECURRENCE-ID`). Recurring events keep their wall-clock time across daylight saving changes. A zone it doesn't know falls back to the zone's standard offset, with a warning in setup. Not supported: `BYSETPOS`, `HOURLY`/`MINUTELY` rules and `BYWEEKNO` (such events show their first occurrence only).
 
+## Sign in instead of pasting tokens
+
+Where the provider allows it, the setup cards offer a real sign-in. It uses the OAuth 2.0 authorization code flow with **PKCE**, with the redirect coming back to this Birddog on `127.0.0.1`:
+
+| Card | Button | What Birddog gets |
+|---|---|---|
+| GitHub | **Sign in with GitHub** (device flow) or **Use my gh CLI login** | read access to repos, PRs, issues, notifications |
+| Jira Cloud | **Sign in with Atlassian** (OAuth 2.0 "3LO") | `read:jira-work`, `read:jira-user` |
+| Calendar | **Sign in with Google** | `calendar.readonly` |
+| Calendar | **Sign in with Microsoft** | `Calendars.Read`, `User.Read` |
+| Calendar | **iCloud** (CalDAV with an app-specific password) | your iCloud calendars, read-only |
+
+**Every provider needs your own app registration.** Birddog ships no shared client ID and never creates apps or accounts for you. Registering is free and takes a few minutes. Put the client ID in config.json, or in an environment variable, and restart:
+
+```json
+{ "oauth": { "google": { "clientId": "1234-abc.apps.googleusercontent.com" },
+             "microsoft": { "clientId": "00000000-0000-0000-0000-000000000000", "tenant": "common" },
+             "atlassian": { "clientId": "AbCdEf123" } } }
+```
+
+(`BIRDDOG_GOOGLE_CLIENT_ID`, `BIRDDOG_MICROSOFT_CLIENT_ID`, `BIRDDOG_ATLASSIAN_CLIENT_ID` work too.) Tokens and refresh tokens go to your keychain as `oauth-<provider>`, never to a file. They are renewed automatically before they expire (Atlassian and Microsoft rotate refresh tokens; Birddog keeps the new one). **Disconnect** forgets them, revokes them at Google, and switches off the source that used them. Microsoft and Atlassian have no per-token revoke, so to remove Birddog's access entirely, use account.microsoft.com → *Privacy → App access*, or id.atlassian.com → *Connected apps*.
+
+**Register your app**
+
+- **Google Calendar.** In the [Google Cloud console](https://console.cloud.google.com/apis/credentials):
+  1. Create a project, and enable the **Google Calendar API**.
+  2. Set up the OAuth consent screen. Keep it in *Testing* and add yourself as a test user.
+  3. Go to **Create credentials → OAuth client ID → Desktop app**. Desktop clients accept loopback redirects, so there's nothing else to register.
+  4. If Google shows a client secret (it isn't confidential for desktop apps), save it with `pbpaste | birddog secret set google-client-secret`.
+- **Microsoft 365 / Outlook.** In [Microsoft Entra → App registrations → New registration](https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade):
+  1. Choose the account types you need. *Personal + work* means tenant `common`.
+  2. Under **Authentication**, add the platform **Mobile and desktop applications** and allow public client flows.
+  3. Add the redirect URI `http://127.0.0.1/auth/oauth/microsoft/callback`. Microsoft ignores the port for loopback URIs; if the portal refuses `http://127.0.0.1`, add it in the app manifest under `replyUrlsWithType`.
+  4. Under **API permissions**, add the delegated `Calendars.Read`. There's no client secret: it's a public client.
+- **Atlassian (Jira Cloud).** In the [developer console](https://developer.atlassian.com/console/myapps/):
+  1. Create an **OAuth 2.0 integration**.
+  2. Under *Permissions*, add the **Jira API** scopes `read:jira-work` and `read:jira-user`.
+  3. Under *Authorization*, set the callback URL to `http://127.0.0.1:4747/auth/oauth/atlassian/callback`, using your Birddog port.
+  4. Atlassian's token exchange needs the client secret, so store it with `pbpaste | birddog secret set atlassian-client-secret`.
+  5. After you sign in, Birddog finds your Jira site and calls it through `api.atlassian.com`. Links still open on your own site.
+- **iCloud.** Apple has no OAuth for calendars. Go to [appleid.apple.com](https://appleid.apple.com/account/manage) → **Sign-In and Security → App-Specific Passwords** and make a password just for Birddog. On the Calendar card, choose **iCloud** and enter your Apple ID and that password; it goes to your keychain as `caldav-password`. Never use your real Apple ID password. Birddog reads your calendars over CalDAV (`caldav.icloud.com`, read-only `PROPFIND`/`REPORT`), and never sends the password anywhere but iCloud.
+
+Sign-ins aren't available in Docker, because there's no keychain there to hold the tokens. Use API tokens and iCal links (`BIRDDOG_JIRA_TOKEN`, `BIRDDOG_CAL_URL`) instead.
+
 ## When a source breaks
 
 Birddog never empties your inbox because one source failed. If GitHub is down, your token expired or a calendar link moved:
@@ -521,6 +565,16 @@ This starts a mock sign-in provider and a Birddog with login on at `http://127.0
 
    (or set `BIRDDOG_OIDC_CLIENT_SECRET`). Then restart Birddog. With login on you may also listen beyond localhost, e.g. `birddog --host 0.0.0.0`.
 
+**Sign in with Apple** works too, as an optional provider for this login. It needs a **paid Apple Developer account**, a **Services ID** with Sign in with Apple enabled, a **registered domain**, and `publicUrl` on https (Apple doesn't accept localhost or http return URLs):
+
+```json
+{ "enabled": true, "provider": "apple", "clientId": "com.example.birddog.web",
+  "appleTeamId": "ABCDE12345", "appleKeyId": "XYZ9876543",
+  "publicUrl": "https://birddog.example.com", "allowedEmails": ["you@icloud.com"] }
+```
+
+Store the Sign in with Apple key with `cat AuthKey_XYZ9876543.p8 | birddog secret set apple-private-key`. Birddog signs a fresh, 10-minute ES256 client secret for each sign-in, asks for `response_mode=form_post` (Apple requires it when it sends the email), and accepts Apple's form post back only from `https://appleid.apple.com`, checked by state, PKCE and the signed ID token. Register `https://birddog.example.com/auth/callback` as the Services ID's return URL.
+
 How it behaves:
 
 - Pages redirect to your provider, and API calls without a session get `401`. After sign-in you land back where you were.
@@ -627,6 +681,9 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `POST` | `/api/items/:id/snooze` | `{ "until": "<ISO date>" \| "change" }` |
 | `POST` | `/api/items/:id/restore` | undo done/snooze |
 | `GET`/`PUT` | `/api/prefs` | theme, mode, hidden sources, `notifications` settings |
+| `GET` | `/api/oauth` | sign-in providers: set up?, signed in as whom, the redirect URI to register (never tokens) |
+| `POST` | `/api/oauth/:provider/start` | the provider URL to send the browser to (`google`, `microsoft`, `atlassian`) |
+| `DELETE` | `/api/oauth/:provider` | sign out: forget (and where possible revoke) the tokens |
 | `GET` | `/api/history?days=14` | one row per day: open, now, today, later, done |
 | `GET` | `/api/chat/status` | whether Ask Birddog is on, and where the key comes from (never the key) |
 | `POST` / `DELETE` | `/api/chat/setup` | `{ "apiKey": "…", "consent": true }` turns it on; `DELETE` turns it off and forgets the key |
@@ -679,6 +736,8 @@ src/secrets.mjs        OS keychain / Secret Service / file secret store
 src/auth/oidc.mjs      OpenID Connect sign-in (PKCE, ID token checks)
 src/auth/session.mjs   signed session cookies
 src/auth/github.mjs    GitHub device flow and gh CLI sign-in
+src/auth/oauth.mjs     sign-in for sources: Google, Microsoft, Atlassian (PKCE, refresh, revoke); Apple client secret
+src/sources/calendar-apis.mjs  Google Calendar API, Microsoft Graph, CalDAV (iCloud)
 src/sources/git.mjs    local git source
 src/sources/github.mjs GitHub source (review requests, your PRs, mentions, issues)
 src/sources/jira.mjs   Jira Cloud source (assigned tickets, blocked work, deadlines)

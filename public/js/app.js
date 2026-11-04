@@ -609,9 +609,16 @@ function githubCardHTML(src) {
       <div class="row-btns"><button class="btn" data-test="github" ${ui.busy ? 'disabled' : ''}>Test again</button>${conn.method === 'env' ? '' : `<button class="btn" data-gh="disconnect" ${ui.busy ? 'disabled' : ''}>Disconnect</button>`}</div></div>`;
   }
   if (dev?.status === 'waiting') {
-    return `${cardTop('github', src.name, 'Waiting for GitHub…')}<div class="msg">Enter this code on GitHub:</div><div class="code">${esc(dev.userCode)}</div>
-      <div class="row-btns"><button class="btn primary" data-gh="open">Copy code &amp; open GitHub ↗</button><button class="btn" data-gh="disconnect">Cancel</button></div>
-      <div class="msg">This card updates by itself once you approve.</div></div>`;
+    const left = Math.max(0, Math.round((dev.expiresAt - Date.now()) / 1000));
+    const mmss = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    let host = 'github.com';
+    try { host = new URL(dev.verificationUri).host; } catch { /* keep default */ }
+    return `${cardTop('github', src.name, 'Waiting for GitHub…')}<ol class="gh-steps">
+        <li>Copy this code: <span class="code">${esc(dev.userCode)}</span></li>
+        <li>Open <b>${esc(host)}/login/device</b>, paste it and approve Birddog.</li>
+        <li>Come back here. This card updates by itself.</li></ol>
+      <div class="row-btns"><button class="btn primary" data-gh="open">Copy code &amp; open GitHub ↗</button><button class="btn" data-gh="device">New code</button><button class="btn" data-gh="disconnect">Cancel</button></div>
+      <div class="msg">${left ? `The code expires in <b>${mmss}</b>.` : 'The code expired. Get a new one.'} Birddog asks only for read access to repositories and organizations.</div></div>`;
   }
   const err = ui.msg ?? (dev && dev.status !== 'done' ? dev.error : null);
   const device = conn.deviceFlowAvailable;
@@ -624,12 +631,32 @@ function githubCardHTML(src) {
 const JIRA_TOKEN_URL = 'https://id.atlassian.com/manage-profile/security/api-tokens';
 
 /** Jira: site, email and an API token. The token goes to the keychain, never config.json. */
+/** A provider's sign-in state from /api/oauth (never tokens). */
+const oauthState = (p) => st.setup?.oauth?.find((x) => x.id === p) ?? null;
+/** "Sign in with …" if the user has set up their app's client ID; otherwise a pointer to how. */
+function oauthButton(p, label, { primary = true } = {}) {
+  const o = oauthState(p);
+  if (!o) return '';
+  if (!o.canStore) return `<span class="msg">${esc(label)} isn't available in Docker (no keychain for its tokens).</span>`;
+  if (!o.configured || (o.needsSecret && !o.hasSecret)) {
+    return `<button class="btn" data-guide-link="logins" title="Needs your own app registration">${esc(label)}: set up ↗</button>`;
+  }
+  return `<button class="btn ${primary ? 'primary' : ''}" data-oauth="${esc(p)}">${esc(label)}</button>`;
+}
+
 function jiraCardHTML(src) {
   const ui = st.cards.jira ?? {};
   const s = src.settings ?? {};
   const hasToken = !!src.secrets?.token;
-  const connected = src.enabled && s.site && hasToken;
+  const at = oauthState('atlassian');
+  const viaOauth = s.auth === 'oauth' && at?.connected;
+  const connected = src.enabled && (viaOauth || (s.site && hasToken));
   const { status, cls, label, msg, summary } = cardState(src, ui);
+  if (viaOauth && src.enabled && !ui.editing) {
+    return `${cardTop('jira', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <div class="msg">Signed in with Atlassian to <b>${esc(at.site ? new URL(at.site).host : 'your site')}</b>${at.account ? ` (${esc(at.account)})` : ''}. Tokens kept in ${esc(st.setup.secretStore)} and renewed automatically${summary.replace(/^ · [^ ]+/, '')}</div>${msg}
+      <div class="row-btns"><button class="btn" data-test="jira" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-oauth-off="atlassian" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
+  }
   if (connected && !ui.editing && status !== 'stale') {
     return `${cardTop('jira', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
       <div class="msg">Signed in to <b>${esc(new URL(s.site).host)}</b> as <b>${esc(s.email)}</b>, ${envSecret('jira-token') ? `token from <code>${esc(envSecret('jira-token').from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`}${summary.replace(/^ · [^ ]+/, '')}</div>${msg}
@@ -640,6 +667,7 @@ function jiraCardHTML(src) {
   const stateCls = connected ? cls : ui.msg && !ui.msgGood ? 'err' : '';
   const off = ui.busy ? 'disabled' : '';
   return `${cardTop('jira', src.name, state, stateCls)}<div class="msg">${esc(src.description)}</div>
+    <div class="oauth-row">${oauthButton('atlassian', 'Sign in with Atlassian')}<span class="msg">or use an API token:</span></div>
     <div class="fields">
       <label><span>Site</span><input data-f="jira.site" value="${esc(d.site)}" placeholder="acme.atlassian.net" autocomplete="off" spellcheck="false"></label>
       <label><span>Email</span><input data-f="jira.email" type="email" value="${esc(d.email)}" placeholder="you@acme.com" autocomplete="off" spellcheck="false"></label>
@@ -711,9 +739,36 @@ function calCardHTML(src) {
   const ui = st.cards.cal ?? {};
   const s = src.settings ?? {};
   const hasUrl = !!src.secrets?.url;
-  const connected = src.enabled && (hasUrl || !!s.file);
+  const provider = s.provider || 'ics';
   const { status, cls, label, msg, summary } = cardState(src, ui);
   const store = esc(st.setup.secretStore);
+  const signedIn = (provider === 'google' || provider === 'microsoft') && oauthState(provider)?.connected;
+  if (src.enabled && signedIn && !ui.editing) {
+    const o = oauthState(provider);
+    return `${cardTop('cal', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <div class="msg">Signed in to <b>${esc(o.name)}</b>${o.account ? ` as <b>${esc(o.account)}</b>` : ''}, read-only. Tokens kept in ${store} and renewed automatically.</div>${msg}
+      <div class="row-btns"><button class="btn" data-test="cal" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-edit="cal">Use another calendar</button><button class="btn" data-oauth-off="${provider}" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
+  }
+  if (src.enabled && provider === 'caldav' && s.caldavUser && src.secrets?.caldavPassword && !ui.editing && status !== 'stale') {
+    return `${cardTop('cal', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <div class="msg">Reading <b>iCloud</b> calendars as <b>${esc(s.caldavUser)}</b>, app-specific password kept in ${store}${summary.replace(/^ · [^·]+/, '')}</div>${msg}
+      <div class="row-btns"><button class="btn" data-edit="cal">Change</button><button class="btn" data-test="cal" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-disconnect="cal" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
+  }
+  const mode = ui.mode ?? (provider === 'caldav' ? 'caldav' : 'ics');
+  const picker = `<div class="oauth-row">${oauthButton('google', 'Sign in with Google', { primary: false })}${oauthButton('microsoft', 'Sign in with Microsoft', { primary: false })}
+    <button class="btn ${mode === 'caldav' ? 'on' : ''}" data-calmode="caldav">iCloud</button><button class="btn ${mode === 'ics' ? 'on' : ''}" data-calmode="ics">iCal link or file</button></div>`;
+  if (mode === 'caldav') {
+    const d = ui.draft ?? { caldavUser: s.caldavUser ?? '', caldavPassword: '' };
+    return `${cardTop('cal', src.name, ui.busy ? 'Working…' : 'Not connected', ui.msg && !ui.msgGood ? 'err' : '')}<div class="msg">${esc(src.description)}</div>${picker}
+      <input type="hidden" data-f="cal.provider" value="caldav">
+      <div class="fields">
+        <label><span>Apple ID</span><input data-f="cal.caldavUser" type="email" value="${esc(d.caldavUser)}" placeholder="you@icloud.com" autocomplete="off" spellcheck="false"></label>
+        <label><span>App-specific password · <a href="https://appleid.apple.com/account/manage" target="_blank" rel="noopener noreferrer">make one ↗</a></span><input data-f="cal.caldavPassword" type="password" value="" placeholder="${src.secrets?.caldavPassword ? `Saved in ${store} · leave blank to keep it` : 'xxxx-xxxx-xxxx-xxxx'}" autocomplete="off"></label>
+      </div>
+      <div class="msg">Apple has no sign-in flow for calendars, so iCloud uses CalDAV with an <b>app-specific password</b>: at appleid.apple.com → Sign-In and Security → App-Specific Passwords. Never your real Apple ID password. It's kept in ${store}.</div>${msg}
+      <div class="row-btns"><button class="btn primary" data-connect="cal" ${ui.busy ? 'disabled' : ''}>Test &amp; connect <kbd>↵</kbd></button></div></div>`;
+  }
+  const connected = src.enabled && provider === 'ics' && (hasUrl || !!s.file);
   if (connected && !ui.editing && status !== 'stale') {
     const what = [hasUrl && (envSecret('cal-url') ? `the iCal link from <code>${esc(envSecret('cal-url').from)}</code>` : `an iCal link kept in ${store}`), s.file && `<b>${esc(s.file)}</b>`].filter(Boolean).join(' and ');
     return `${cardTop('cal', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
@@ -723,7 +778,8 @@ function calCardHTML(src) {
   const d = ui.draft ?? { url: '', file: s.file ?? '', email: s.email ?? '' };
   const off = ui.busy ? 'disabled' : '';
   const state = connected ? label : ui.busy ? 'Working…' : 'Not connected';
-  return `${cardTop('cal', src.name, state, connected ? cls : ui.msg && !ui.msgGood ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
+  return `${cardTop('cal', src.name, state, connected ? cls : ui.msg && !ui.msgGood ? 'err' : '')}<div class="msg">${esc(src.description)}</div>${picker}
+    <input type="hidden" data-f="cal.provider" value="ics">
     <div class="fields">
       ${envSecret('cal-url') ? '' : `<label class="full"><span>iCal link</span><input data-f="cal.url" type="password" value="${esc(d.url)}" placeholder="${hasUrl ? `Saved in ${store} · leave blank to keep it` : 'https://calendar.google.com/calendar/ical/…/basic.ics'}" autocomplete="off" spellcheck="false"></label>`}
       <label><span>…or a local .ics file</span><input data-f="cal.file" value="${esc(d.file)}" placeholder="~/Downloads/work.ics" autocomplete="off" spellcheck="false"></label>
@@ -856,7 +912,8 @@ async function openSetup({ wizard = false } = {}) {
   st.wizard = wizard ? { step: 0 } : null;
   renderCards();
   try {
-    st.setup = await api.setup();
+    const [setup, oauth] = await Promise.all([api.setup(), api.oauth().catch(() => ({ providers: [] }))]);
+    st.setup = { ...setup, oauth: oauth.providers };
     renderCards();
   } catch (err) {
     $('#cards').innerHTML = `<div class="card wide err"><div class="msg">${esc(err.message)}</div></div>`;
@@ -864,6 +921,25 @@ async function openSetup({ wizard = false } = {}) {
   savePrefs({ seenSetup: true });
 }
 const openWizard = () => openSetup({ wizard: true });
+
+/** "Sign in with …": the browser goes to the provider and comes back to /auth/oauth/<p>/callback. */
+async function oauthSignIn(p) {
+  try {
+    const { url } = await api.oauthStart(p);
+    location.assign(url);
+  } catch (err) { toast(`⚠ ${esc(err.message)}`); }
+}
+async function oauthSignOut(p) {
+  try {
+    const r = await api.oauthOff(p);
+    toast(r.revoked ? '✓ Signed out and revoked at the provider.' : `Signed out. Birddog forgot the tokens${r.manage ? '; to remove its access entirely, see your account\'s app settings' : ''}.`);
+    const [setup, oauth] = await Promise.all([api.setup(), api.oauth()]);
+    st.setup = { ...setup, oauth: oauth.providers };
+    st.cards = {};
+    renderCards();
+    await load({ quiet: true });
+  } catch (err) { toast(`⚠ ${esc(err.message)}`); }
+}
 
 async function enableAction(id) {
   st.cards[id] = { busy: true };
@@ -956,7 +1032,7 @@ async function disconnectCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.view) return setView(d.view);
@@ -986,6 +1062,10 @@ document.addEventListener('click', (e) => {
   if (d.test) return testCard(d.test);
   if (d.save) return saveCard(d.save);
   if (d.connect) return connectCard(d.connect);
+  if (d.oauth) return oauthSignIn(d.oauth);
+  if (d.oauthOff) return oauthSignOut(d.oauthOff);
+  if (d.calmode) { st.cards.cal = { ...(st.cards.cal ?? {}), mode: d.calmode, editing: true, draft: undefined, msg: null }; return renderCards(); }
+  if (d.guideLink) { closeAll(); return openGuide(d.guideLink); }
   if (d.retry) return retrySource(d.retry);
   if (d.enable) return enableAction(d.enable);
   if (d.wiz) return d.wiz === 'start' ? openWizard() : wizardAction(d.wiz);
@@ -1132,7 +1212,13 @@ async function boot() {
   });
   setInterval(() => { if (!st.refreshing) load({ quiet: true }); }, 60_000);
   setInterval(renderUpdated, 30_000);
-  if (!prefs.seenSetup) setTimeout(openWizard, 400);
+  const qs = new URLSearchParams(location.search);
+  if (qs.has('connected') || qs.has('setup')) {
+    const p = qs.get('connected');
+    history.replaceState(null, '', location.pathname);
+    if (p) toast(`✓ Signed in to ${esc({ google: 'Google', microsoft: 'Microsoft', atlassian: 'Atlassian' }[p] ?? p)}`);
+    setTimeout(() => openSetup(), 200);
+  } else if (!prefs.seenSetup) setTimeout(openWizard, 400);
   liveReload();
 }
 

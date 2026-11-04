@@ -17,13 +17,14 @@ import { expandHome, tildify } from '../config.mjs';
 import { createItem } from '../items.mjs';
 import { plural, rank } from '../rules.mjs';
 import { getText } from './http.mjs';
+import { caldavClient, googleOccurrences, graphOccurrences } from './calendar-apis.mjs';
 import { expand, parseCalendar } from './ical.mjs';
 
 export const id = 'cal';
 export const name = 'Calendar';
 export const description = 'Upcoming meetings from any iCal link or .ics file, so nothing sneaks up on you.';
 export const enabledByDefault = false;
-export const secretFields = Object.freeze({ url: 'cal-url' });
+export const secretFields = Object.freeze({ url: 'cal-url', caldavPassword: 'caldav-password' });
 
 const MEETING_HOSTS = /(^|\.)(zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com|gotomeeting\.com|chime\.aws|around\.co)$/i;
 const LINK = /https?:\/\/[^\s<>"'()[\]]+/gi;
@@ -50,13 +51,35 @@ export function validateSecrets(values) {
   return out;
 }
 
+export const PROVIDERS = ['ics', 'google', 'microsoft', 'caldav'];
+
 export function normalizeSettings(input = {}) {
   const out = {};
-  const file = String(input.file ?? '').trim();
-  out.file = file ? tildify(expandHome(file)) : '';
-  const email = String(input.email ?? '').trim().toLowerCase();
-  if (email && !/^[^\s@]+@[^\s@]+$/.test(email)) throw new TypeError('That email address does not look right');
-  out.email = email;
+  if (input.provider !== undefined) {
+    if (!PROVIDERS.includes(input.provider)) throw new TypeError(`provider must be one of ${PROVIDERS.join(', ')}`);
+    out.provider = input.provider;
+  }
+  if (input.caldavUser !== undefined) {
+    const u = String(input.caldavUser).trim();
+    if (u && !/^[^\s@]+@[^\s@]+$/.test(u)) throw new TypeError('Enter your Apple ID email address');
+    out.caldavUser = u;
+  }
+  if (input.caldavUrl !== undefined && String(input.caldavUrl).trim()) {
+    let u;
+    try { u = new URL(String(input.caldavUrl).trim()); } catch { throw new TypeError('That CalDAV address is not a link'); }
+    if (u.protocol !== 'https:') throw new TypeError('The CalDAV address must start with https://');
+    out.caldavUrl = u.toString();
+  }
+  // Only what the form sent changes, so switching to iCloud keeps a saved .ics path.
+  if (input.file !== undefined || !Object.keys(input).length) {
+    const file = String(input.file ?? '').trim();
+    out.file = file ? tildify(expandHome(file)) : '';
+  }
+  if (input.email !== undefined || !Object.keys(input).length) {
+    const email = String(input.email ?? '').trim().toLowerCase();
+    if (email && !/^[^\s@]+@[^\s@]+$/.test(email)) throw new TypeError('That email address does not look right');
+    out.email = email;
+  }
   return out;
 }
 
@@ -113,61 +136,111 @@ const timeRange = (o) => {
   return `${day}, ${t(o.start)}–${t(o.end)}`;
 };
 
-/** Turn calendar text into meeting items for today and tomorrow. Exported for tests. */
-export function meetingItems(cals, { now, email = '', warn = () => {} }) {
+/** The window Birddog looks at: from now to the end of tomorrow. */
+export function meetingWindow(now) {
   const today = localDay(now);
-  const tomorrow = addDays(today, 1);
-  const window = { from: now, to: addDays(today, 2) };
-  const items = new Map();
+  return { from: now, to: addDays(today, 2) };
+}
+
+/** iCalendar text → plain occurrences (see calendar-apis.mjs for the shape). */
+export function icsOccurrences(cals, { now, email = '', warn = () => {} }) {
+  const out = [];
   for (const cal of cals) {
     const { events, warnings } = parseCalendar(cal.text);
     warnings.forEach((w) => warn(`${cal.label}: ${w}`));
-    for (const o of expand(events, window)) {
+    for (const o of expand(events, meetingWindow(now))) {
       const ev = o.event;
-      if (o.end <= now && !(o.start === o.end && o.start >= now)) continue; // over
-      if (email && ev.attendees.some((a) => a.email === email && a.partstat === 'DECLINED')) continue;
-      const link = meetingLink(ev);
-      const where = whereOf(ev, link);
-      const signal = {
-        allDay: o.allDay,
-        start: o.start,
-        end: o.end,
-        startsIn: o.start - now,
-        endsIn: o.end - now,
-        today: o.allDay ? o.start <= now && o.end > now && o.start < tomorrow : o.start < tomorrow,
-        where,
-      };
-      if (!signal.today && o.start >= addDays(today, 2)) continue;
-      const r = rank('meeting', signal);
-      const itemId = `cal:${hash(cal.label, ev.uid ?? ev.summary, String(o.start))}`;
-      items.set(itemId, createItem({
-        id: itemId,
-        source: id,
-        kind: 'meeting',
-        title: `${o.allDay ? 'All day' : new Date(o.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${ev.summary}`,
-        url: link,
-        why: r.why,
-        urgency: r.urgency,
-        updatedAt: o.start,
-        meta: {
-          rule: r.rule,
-          fingerprint: [o.start, o.end, ev.summary, ev.location ?? ''].join('|'),
-          startsAt: new Date(o.start).toISOString(),
-          endsAt: new Date(o.end).toISOString(),
-          allDay: o.allDay,
-          fields: {
-            When: timeRange(o),
-            Where: where ?? 'not set',
-            Join: link ? new URL(link).hostname : 'no link',
-            Organizer: ev.organizer ?? 'unknown',
-            Repeats: o.recurring ? 'yes' : 'no',
-            Calendar: cal.label,
-          },
-        },
-      }));
+      out.push({
+        uid: ev.uid ?? ev.summary, summary: ev.summary, location: ev.location, description: ev.description, url: ev.url, joinUrl: null,
+        organizer: ev.organizer, declined: !!email && ev.attendees.some((a) => a.email === email && a.partstat === 'DECLINED'),
+        start: o.start, end: o.end, allDay: o.allDay, recurring: o.recurring, label: cal.label,
+      });
     }
   }
+  return out;
+}
+
+/** Occurrences (from any back end) → meeting items for today and tomorrow. */
+export function itemsFromOccurrences(occs, { now, label: defaultLabel = 'Calendar' }) {
+  const today = localDay(now);
+  const tomorrow = addDays(today, 1);
+  const items = new Map();
+  for (const o of occs) {
+    if (o.end <= now && !(o.start === o.end && o.start >= now)) continue; // over
+    if (o.declined) continue;
+    const link = o.joinUrl && /^https?:\/\//i.test(o.joinUrl) ? o.joinUrl : meetingLink(o);
+    const where = whereOf(o, link);
+    const signal = {
+      allDay: o.allDay, start: o.start, end: o.end, startsIn: o.start - now, endsIn: o.end - now,
+      today: o.allDay ? o.start <= now && o.end > now && o.start < tomorrow : o.start < tomorrow,
+      where,
+    };
+    if (!signal.today && o.start >= addDays(today, 2)) continue;
+    const r = rank('meeting', signal);
+    const cal = o.label ?? defaultLabel;
+    const itemId = `cal:${hash(cal, o.uid ?? o.summary, String(o.start))}`;
+    items.set(itemId, createItem({
+      id: itemId,
+      source: id,
+      kind: 'meeting',
+      title: `${o.allDay ? 'All day' : new Date(o.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${o.summary}`,
+      url: link,
+      why: r.why,
+      urgency: r.urgency,
+      updatedAt: o.start,
+      meta: {
+        rule: r.rule,
+        fingerprint: [o.start, o.end, o.summary, o.location ?? ''].join('|'),
+        startsAt: new Date(o.start).toISOString(),
+        endsAt: new Date(o.end).toISOString(),
+        allDay: o.allDay,
+        fields: {
+          When: timeRange(o),
+          Where: where ?? 'not set',
+          Join: link ? new URL(link).hostname : 'no link',
+          Organizer: o.organizer ?? 'unknown',
+          Repeats: o.recurring ? 'yes' : 'no',
+          Calendar: cal,
+        },
+      },
+    }));
+  }
   return [...items.values()];
+}
+
+/** Turn calendar text into meeting items for today and tomorrow. Exported for tests. */
+export function meetingItems(cals, { now, email = '', warn = () => {} }) {
+  return itemsFromOccurrences(icsOccurrences(cals, { now, email, warn }), { now });
+}
+
+/** Read the calendar, whichever back end is configured. Returns { label, occs, events }. */
+async function readSource(config, ctx) {
+  const now = ctx.now ?? Date.now();
+  const fetchImpl = ctx.fetch ?? fetch;
+  const win = meetingWindow(now);
+  const provider = config.provider || 'ics';
+  if (provider === 'google' || provider === 'microsoft') {
+    if (!ctx.oauth) throw new Error(`Sign in to ${provider === 'google' ? 'Google' : 'Microsoft'} in setup.`);
+    const token = await ctx.oauth.accessToken(provider);
+    const occs = provider === 'google'
+      ? await googleOccurrences({ fetchImpl, token, from: now - 86_400_000, to: win.to })
+      : await graphOccurrences({ fetchImpl, token, from: now - 86_400_000, to: win.to });
+    const conn = await ctx.oauth.connection?.(provider).catch(() => null);
+    const label = conn?.account ? `${provider === 'google' ? 'Google' : 'Outlook'} · ${conn.account}` : provider === 'google' ? 'Google Calendar' : 'Outlook';
+    return { label, occs: occs.map((o) => ({ ...o, label })), events: occs.length };
+  }
+  if (provider === 'caldav') {
+    const password = await ctx.secret?.(secretFields.caldavPassword);
+    if (!config.caldavUser || !password) throw new Error('Add your Apple ID and an app-specific password in setup (iCloud).');
+    const client = caldavClient({ fetchImpl, baseUrl: config.caldavUrl || 'https://caldav.icloud.com/', username: config.caldavUser, password });
+    const cals = await client.calendars({ from: now - 86_400_000, to: win.to });
+    const occs = icsOccurrences(cals, { now, email: config.email, warn: ctx.warn });
+    return { label: client.label, occs, events: occs.length };
+  }
+  const cals = await readCalendars(config, ctx);
+  let events = 0;
+  for (const c of cals) events += parseCalendar(c.text).events.length;
+  return { label: cals.map((c) => c.label).join(' + '), occs: icsOccurrences(cals, { now, email: config.email, warn: ctx.warn }), events };
 }
 
 // ---------------------------------------------------------------------------
@@ -175,17 +248,11 @@ export function meetingItems(cals, { now, email = '', warn = () => {} }) {
 
 export async function test(config = {}, ctx = {}) {
   try {
-    const cals = await readCalendars(config, ctx);
     const now = ctx.now ?? Date.now();
-    let events = 0;
-    let warnings = [];
-    for (const c of cals) { const p = parseCalendar(c.text); events += p.events.length; warnings = warnings.concat(p.warnings); }
-    if (!events) return { ok: false, message: `${cals.map((c) => c.label).join(' and ')}: no events found. Is this an iCal (.ics) link?` };
-    const soon = meetingItems(cals, { now, email: config.email }).length;
-    return {
-      ok: true,
-      message: `Read ${plural(events, 'event')} from ${cals.map((c) => c.label).join(' and ')} · ${plural(soon, 'meeting')} today or tomorrow${warnings.length ? ` (${warnings[0]})` : ''}`,
-    };
+    const src = await readSource(config, ctx);
+    if (!src.events && (config.provider || 'ics') === 'ics') return { ok: false, message: `${src.label}: no events found. Is this an iCal (.ics) link?` };
+    const soon = itemsFromOccurrences(src.occs, { now, label: src.label }).length;
+    return { ok: true, message: `Read ${plural(src.events, 'event')} from ${src.label} · ${plural(soon, 'meeting')} today or tomorrow` };
   } catch (err) {
     return { ok: false, message: err.message };
   }
@@ -193,10 +260,9 @@ export async function test(config = {}, ctx = {}) {
 
 export async function collect(config = {}, ctx = {}) {
   const now = ctx.now ?? Date.now();
-  const cals = await readCalendars(config, ctx);
-  const items = meetingItems(cals, { now, email: config.email, warn: ctx.warn });
+  const src = await readSource(config, ctx);
+  const items = itemsFromOccurrences(src.occs, { now, label: src.label });
   const todayCount = items.filter((i) => i.urgency !== 'later' || i.meta.rule.id === 'meeting-all-day').length;
-  ctx.summary?.(`${cals.map((c) => c.label).join(' + ')} · ${todayCount} today · ${items.length - todayCount} tomorrow`);
+  ctx.summary?.(`${src.label} · ${todayCount} today · ${items.length - todayCount} tomorrow`);
   return items;
 }
-

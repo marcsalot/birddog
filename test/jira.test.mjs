@@ -69,7 +69,7 @@ describe('Jira source', () => {
     assert.throws(() => jira.normalizeSite('http://acme.atlassian.net'), /https/);
     assert.throws(() => jira.normalizeSite(''), /Enter your Jira site/);
     assert.throws(() => jira.normalizeSettings({ site: 'acme', email: 'nope' }), /email/);
-    assert.deepEqual(jira.normalizeSettings({ site: 'acme', email: ' me@acme.com ', token: 'x' }), { site: 'https://acme.atlassian.net', email: 'me@acme.com' });
+    assert.deepEqual(jira.normalizeSettings({ site: 'acme', email: ' me@acme.com ', token: 'x' }), { site: 'https://acme.atlassian.net', email: 'me@acme.com', auth: 'token' });
     assert.equal(jira.enabledByDefault, false);
     assert.deepEqual({ ...jira.secretFields }, { token: 'jira-token' });
   });

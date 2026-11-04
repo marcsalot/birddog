@@ -484,3 +484,7 @@ body.rail-collapsed .rail .me{justify-content:center;padding:6px 0}
   body.rail-collapsed.guide-open .guide{position:static;width:auto;box-shadow:none;z-index:auto}
 }
 #guideBtn[aria-expanded="true"],#chatBtn.on{color:var(--accent)}
+.oauth-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.oauth-row .btn.on{border-color:var(--accent);color:var(--accent)}
+.gh-steps{margin:0;padding-left:20px;display:grid;gap:6px;font-size:13px}
+.gh-steps .code{display:inline-block;font-size:16px;padding:4px 8px;margin-left:4px}

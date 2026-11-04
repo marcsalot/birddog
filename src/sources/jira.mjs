@@ -49,36 +49,50 @@ export function normalizeSite(input) {
 }
 
 export function normalizeSettings(input = {}) {
+  if (input.auth === 'oauth') return { auth: 'oauth' };
   const site = normalizeSite(input.site);
   const email = String(input.email ?? '').trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new TypeError('Enter the email address you use to sign in to Atlassian');
-  return { site, email };
+  return { site, email, auth: 'token' };
 }
 
 // ---------------------------------------------------------------------------
 // API client
 
 async function jiraClient(config, ctx) {
-  if (!config.site || !config.email) throw new Error('Connect Jira in setup: add your site, email and an API token.');
-  const site = normalizeSite(config.site);
-  const token = await ctx.secret?.(secretFields.token);
-  if (!token) throw new Error('No Jira API token saved yet. Add one in setup.');
   const fetchImpl = ctx.fetch ?? fetch;
+  let site; let apiBase; let headers;
+  if (config.auth === 'oauth') {
+    // "Sign in with Atlassian": a Bearer token for api.atlassian.com/ex/jira/<cloudId>.
+    if (!ctx.oauth) throw new Error('Sign in to Atlassian in setup.');
+    const conn = await ctx.oauth.connection('atlassian');
+    if (!conn?.cloudId) throw new Error('Sign in to Atlassian in setup.');
+    const token = await ctx.oauth.accessToken('atlassian');
+    site = normalizeSite(conn.site ?? config.site);
+    apiBase = `https://api.atlassian.com/ex/jira/${encodeURIComponent(conn.cloudId)}`;
+    headers = { authorization: `Bearer ${token}`, accept: 'application/json', 'user-agent': 'birddog' };
+  } else {
+    if (!config.site || !config.email) throw new Error('Connect Jira in setup: add your site, email and an API token.');
+    site = normalizeSite(config.site);
+    const token = await ctx.secret?.(secretFields.token);
+    if (!token) throw new Error('No Jira API token saved yet. Add one in setup.');
+    apiBase = site;
+    headers = {
+      authorization: `Basic ${Buffer.from(`${config.email}:${token}`).toString('base64')}`,
+      accept: 'application/json',
+      'user-agent': 'birddog',
+    };
+  }
   const host = new URL(site).host;
-  const headers = {
-    authorization: `Basic ${Buffer.from(`${config.email}:${token}`).toString('base64')}`,
-    accept: 'application/json',
-    'user-agent': 'birddog',
-  };
   return {
     site,
     host,
     async get(p) {
       try {
-        return (await getJson(fetchImpl, `${site}${p}`, { headers, label: host })).body;
+        return (await getJson(fetchImpl, `${apiBase}${p}`, { headers, label: host })).body;
       } catch (err) {
         if (!(err instanceof HttpError) || !err.status) throw err;
-        if (err.status === 401) throw new HttpError(`${host} rejected the email or API token. Create a new token and update it in setup.`, err);
+        if (err.status === 401) throw new HttpError(config.auth === 'oauth' ? `${host} rejected the Atlassian sign-in. Sign in again in setup.` : `${host} rejected the email or API token. Create a new token and update it in setup.`, err);
         if (err.status === 403) throw new HttpError(`${host} refused access (HTTP 403). Check that ${config.email} can use Jira there.`, err);
         if (err.status === 404) throw new HttpError(`No Jira Cloud API at ${host}. Check the site address.`, err);
         if (err.status === 429) throw new HttpError(`${host} is rate limiting Birddog. It will try again on the next refresh.`, err);

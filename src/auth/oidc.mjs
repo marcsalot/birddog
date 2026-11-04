@@ -39,12 +39,17 @@ async function getJson(fetchImpl, url, init) {
 export function checkAuthConfig(auth = {}) {
   if (!auth.enabled) return [];
   const problems = [];
-  if (!auth.issuer || !/^https?:\/\//.test(auth.issuer)) problems.push('auth.issuer must be your provider URL, e.g. https://accounts.google.com');
+  if (auth.provider !== 'apple' && (!auth.issuer || !/^https?:\/\//.test(auth.issuer))) problems.push('auth.issuer must be your provider URL, e.g. https://accounts.google.com');
   if (!auth.clientId) problems.push('auth.clientId is required');
   if (!auth.allowedEmails?.length && !auth.allowedDomains?.length) {
     problems.push('auth.allowedEmails or auth.allowedDomains must say who may sign in (otherwise any account at your provider could)');
   }
   if (auth.publicUrl && !/^https?:\/\/[^/]+\/?$/.test(auth.publicUrl)) problems.push('auth.publicUrl must look like https://birddog.example.com (no path)');
+  if (auth.provider === 'apple') {
+    if (!auth.appleTeamId) problems.push('auth.appleTeamId is required for Sign in with Apple (your 10-character Team ID)');
+    if (!auth.appleKeyId) problems.push('auth.appleKeyId is required for Sign in with Apple (the Key ID of your Sign in with Apple key)');
+    if (!/^https:\/\//.test(auth.publicUrl ?? '')) problems.push('Sign in with Apple needs auth.publicUrl on https (Apple does not allow localhost or http return URLs)');
+  }
   return problems;
 }
 
@@ -57,7 +62,12 @@ export function isAllowed(auth, user) {
   return (auth.allowedDomains ?? []).some((d) => d.toLowerCase().replace(/^@/, '') === domain);
 }
 
-export function createOidc({ issuer, clientId, clientSecret, scopes = 'openid email profile', fetchImpl = fetch, now = () => Date.now() }) {
+/**
+ * clientSecret may be a function that returns a fresh secret per request (Sign in
+ * with Apple signs a short-lived JWT). responseMode "form_post" makes the provider
+ * POST the result back (Apple requires it when asking for the email).
+ */
+export function createOidc({ issuer, clientId, clientSecret, scopes = 'openid email profile', responseMode, fetchImpl = fetch, now = () => Date.now() }) {
   let discovery = null;
   let jwks = null;
   const pending = new Map(); // state → { verifier, nonce, returnTo, redirectUri, exp }
@@ -132,6 +142,7 @@ export function createOidc({ issuer, clientId, clientSecret, scopes = 'openid em
       url.search = new URLSearchParams({
         response_type: 'code', client_id: clientId, redirect_uri: redirectUri, scope: scopes,
         state, nonce, code_challenge: challenge, code_challenge_method: 'S256',
+        ...(responseMode ? { response_mode: responseMode } : {}),
       }).toString();
       return url.toString();
     },
@@ -149,18 +160,19 @@ export function createOidc({ issuer, clientId, clientSecret, scopes = 'openid em
         client_id: clientId, code_verifier: p.verifier,
       });
       const headers = { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' };
-      if (clientSecret) {
+      const secret = typeof clientSecret === 'function' ? await clientSecret() : clientSecret;
+      if (secret) {
         const methods = d.token_endpoint_auth_methods_supported ?? ['client_secret_basic'];
         if (methods.includes('client_secret_basic') || !methods.includes('client_secret_post')) {
-          headers.authorization = `Basic ${Buffer.from(`${encodeURIComponent(clientId)}:${encodeURIComponent(clientSecret)}`).toString('base64')}`;
+          headers.authorization = `Basic ${Buffer.from(`${encodeURIComponent(clientId)}:${encodeURIComponent(secret)}`).toString('base64')}`;
         } else {
-          body.set('client_secret', clientSecret);
+          body.set('client_secret', secret);
         }
       }
       const tokens = await getJson(fetchImpl, d.token_endpoint, { method: 'POST', headers, body });
       if (!tokens.id_token) throw new AuthError('Provider did not return an ID token (is "openid" in the scopes?)', 502);
       const claims = await verifyIdToken(tokens.id_token, { nonce: p.nonce });
-      if (claims.email_verified === false) throw new AuthError(`${claims.email} is not verified at your provider`, 403);
+      if (claims.email_verified === false || claims.email_verified === 'false') throw new AuthError(`${claims.email} is not verified at your provider`, 403);
       return {
         user: { sub: claims.sub, email: claims.email ?? null, name: claims.name ?? claims.preferred_username ?? null },
         returnTo: p.returnTo,

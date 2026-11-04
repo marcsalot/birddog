@@ -102,7 +102,7 @@ describe('GitHub and Jira through the API', () => {
     assert.equal(j.enabled, true);
     assert.deepEqual(j.secrets, { token: true });
     assert.equal(j.status.status, 'ok');
-    assert.deepEqual(j.settings, { site: 'https://acme.atlassian.net', email: 'me@acme.com', enabled: true });
+    assert.deepEqual(j.settings, { site: 'https://acme.atlassian.net', email: 'me@acme.com', auth: 'token', enabled: true });
     assert.equal(await secrets.get('jira-token'), 'atl-good');
     const raw = await fs.readFile(path.join(dir, 'config.json'), 'utf8');
     assert.doesNotMatch(raw, /atl-good/);
@@ -127,7 +127,7 @@ describe('GitHub and Jira through the API', () => {
     assert.equal(saved.status, 200);
     const c = saved.json.sources.find((s) => s.id === 'cal');
     assert.equal(c.status.status, 'ok');
-    assert.deepEqual(c.secrets, { url: true });
+    assert.deepEqual(c.secrets, { url: true, caldavPassword: false });
     assert.doesNotMatch(JSON.stringify(saved.json), /private-abc/);
     assert.equal(await secrets.get('cal-url'), 'https://cal.example.com/private-abc/basic.ics');
     assert.doesNotMatch(await fs.readFile(path.join(dir, 'config.json'), 'utf8'), /private-abc/);
