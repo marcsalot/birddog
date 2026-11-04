@@ -34,10 +34,8 @@
     <div class="rail-foot">
       <nav class="nav" aria-label="Tools">
         <button id="chatBtn" title="Ask Birddog (a)" aria-label="Ask Birddog"><span class="ico" aria-hidden="true">💬</span><span class="rl">Ask Birddog</span><kbd class="hint">a</kbd></button>
-        <button id="guideBtn" title="Guide (g)" aria-label="Guide" aria-controls="guideRail" aria-expanded="false"><span class="ico" aria-hidden="true">📖</span><span class="rl">Guide</span><kbd class="hint">g</kbd></button>
         <button id="openSetup" title="Sources and settings" aria-label="Sources and settings"><span class="ico" aria-hidden="true">⚙</span><span class="rl">Sources &amp; settings</span></button>
       </nav>
-      <div class="me" id="me" hidden></div>
       <div class="rl rail-hint">Press <kbd>?</kbd> for shortcuts · <kbd>m</kbd> menu</div>
     </div>
   </aside>
@@ -50,7 +48,9 @@
       <span class="updated" id="updated" aria-live="polite"></span>
       <button class="icon-btn" id="refresh" title="Refresh (r)" aria-label="Refresh"><span>⟳</span></button>
       <button class="icon-btn notify-btn" id="notifyBtn" title="Notifications" aria-label="Notifications" aria-haspopup="dialog">🔕</button>
+      <button class="icon-btn" id="guideBtn" title="Guide (g)" aria-label="Guide (g)" aria-controls="guideRail" aria-expanded="false"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H10c1.1 0 2 .9 2 2v14c0-1.1-.9-2-2-2H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H14c-1.1 0-2 .9-2 2v14c0-1.1.9-2 2-2h4.5c.8 0 1.5-.7 1.5-1.5z"/></svg></button>
       <button class="appear-btn" id="appearBtn" title="Appearance" aria-haspopup="dialog"><i></i><span>Appearance</span></button>
+      <button class="avatar-btn" id="meBtn" title="Account" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenu"><span class="avatar" id="meAvatar" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M4.5 20c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></svg></span></button>
     </div>
     <div class="content" id="content"><div class="wrap" id="list" aria-live="polite"></div></div>
   </main>
@@ -86,6 +86,7 @@
 </div></div>
 
 <div class="appear" id="appear" role="dialog" aria-label="Appearance"></div>
+<div class="acct" id="acctMenu" role="menu" aria-label="Account" hidden></div>
 <div class="appear notify-panel" id="notifyPanel" role="dialog" aria-label="Notifications"></div>
 <div class="toast" id="toast" role="status"><span id="toastMsg"></span><button id="undoBtn">Undo <kbd>z</kbd></button></div>
 </body>

@@ -473,7 +473,9 @@ Collapse it to icons with « or `m`. Counts stay visible as small badges (Now in
 
 ## User guide
 
-Press 📖 or `g` for the **guide**, a searchable rail on the right: getting started, sources, triage, shortcuts, notifications, chat, Docker and MCP. On wide screens it docks beside the page; on narrower ones it floats over it. It remembers whether you left it open, and `⌘K` → *Guide: …* jumps to a section.
+Press the book icon at the top right, or `g`, for the **guide**, a searchable rail on the right: getting started, sources, triage, shortcuts, notifications, chat, Docker and MCP. On wide screens it docks beside the page; on narrower ones it floats over it. It remembers whether you left it open, and `⌘K` → *Guide: …* jumps to a section.
+
+The avatar at the far right of the top bar opens the **account menu**: who you're signed in as (with login on) or "just you, on this computer", Sources & settings, Appearance, keyboard shortcuts, and Sign out when login is on.
 
 Its screenshots come from `npm run screenshots`, a [Playwright](https://playwright.dev) script that starts Birddog in `--demo` mode (made-up data only) and captures light and dark versions into `public/guide/`. Playwright is a **devDependency**; the published package still has no runtime dependencies. It needs a Chromium: `npx playwright install chromium`, or point `BIRDDOG_CHROMIUM` at one.
 

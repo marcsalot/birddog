@@ -556,3 +556,21 @@ body.guide-open.guide-wide .keybar{display:none}
 .src-search input{flex:1;min-width:0;border:0;background:none;padding:9px 0;outline:none;font:inherit;color:var(--text)}
 .src-count{color:var(--muted);font-size:12px;white-space:nowrap}
 #cards [hidden]{display:none !important}
+
+/* Top bar: guide and account */
+.ui-ico{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round}
+#guideBtn{color:var(--text)}
+#guideBtn[aria-expanded="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.avatar-btn{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--panel);padding:2px;display:grid;place-items:center;flex:none;cursor:pointer}
+.avatar-btn:hover,.avatar-btn[aria-expanded="true"]{border-color:var(--accent)}
+.avatar-btn .avatar,.acct .avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--brand-bg);color:var(--on-brand);font-weight:700;font-size:13px}
+.avatar-btn .avatar svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.acct{position:fixed;top:60px;right:16px;width:280px;max-width:calc(100vw - 24px);z-index:27;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:6px;animation:rise .14s ease}
+.acct[hidden]{display:none}
+.acct-who{display:flex;gap:10px;align-items:center;padding:10px 10px 12px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.acct-who b{display:block;font-size:14px}
+.acct-who small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.acct-items button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:9px 10px;border:0;border-radius:8px;background:none;color:var(--text);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.acct-items button:hover,.acct-items button:focus-visible{background:var(--panel-2);outline:none}
+.acct-items kbd{font-size:11px}
+@media (max-width:520px){.search kbd{display:none}.search{min-width:0;overflow:hidden}.search span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}

@@ -473,6 +473,7 @@ function setHidden(next) {
 
 function openOverlay(sel) { closeAll(); $(sel).classList.add('open'); }
 function closeAll() {
+  closeAcct();
   if (st.firstRun) { st.firstRun = null; savePrefs({ seenSetup: true }); load({ quiet: true }); }
   st.wizard = null;
   st.only = null;
@@ -1249,10 +1250,20 @@ $('#chatBtn').onclick = () => { closeMobileRail(); toggleChat(); };
 $('#railToggle').onclick = () => toggleRail();
 $('#menuBtn').onclick = () => openMobileRail();
 $('#railScrim').onclick = () => closeMobileRail();
-$('#guideBtn').onclick = () => { closeMobileRail(); toggleGuide(); };
+$('#guideBtn').onclick = () => toggleGuide();
+$('#meBtn').onclick = (e) => { e.stopPropagation(); acctOpen() ? closeAcct() : openAcct(); };
+$('#acctMenu').addEventListener('click', (e) => { const b = e.target.closest('[data-acct]'); if (b) { e.stopPropagation(); acctAction(b.dataset.acct); } });
+$('#acctMenu').addEventListener('keydown', (e) => {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault(); e.stopPropagation();
+  const items = [...document.querySelectorAll('#acctMenu [role=menuitem]')];
+  const i = items.indexOf(document.activeElement);
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+  items[next]?.focus();
+});
 for (const type of ['click', 'input', 'keydown', 'pointerdown', 'dblclick']) $('#guideRail').addEventListener(type, (e) => { if (onGuideEvent(e)) e.stopPropagation(); });
 for (const type of ['click', 'change', 'submit', 'keydown']) $('#chatPanel').addEventListener(type, (e) => { e.stopPropagation(); onChatEvent(e); });
-$('#notifyBtn').onclick = (e) => { e.stopPropagation(); closeAppear(); toggleNotifyPanel(); };
+$('#notifyBtn').onclick = (e) => { e.stopPropagation(); closeAppear(); closeAcct(); toggleNotifyPanel(); };
 $('#notifyPanel').addEventListener('change', (e) => { onNotifyPanelEvent(e); });
 $('#notifyPanel').addEventListener('click', (e) => { e.stopPropagation(); onNotifyPanelEvent(e); });
 $('#undoBtn').onclick = runUndo;
@@ -1266,6 +1277,7 @@ $('#appear').onclick = (e) => {
 };
 document.addEventListener('mousedown', (e) => {
   if (appearOpen() && !e.target.closest('#appear,#appearBtn')) closeAppear();
+  if (acctOpen() && !e.target.closest('#acctMenu,#meBtn')) closeAcct();
   if (notifyPanelOpen() && !e.target.closest('#notifyPanel,#notifyBtn')) closeNotifyPanel();
 });
 
@@ -1273,6 +1285,7 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return overlay() ? closeAll() : openPalette(); }
   if (e.key === 'Escape') {
     if (e.target.id === 'srcSearch' && e.target.value) { e.preventDefault(); e.target.value = ''; st.srcQuery = ''; return filterCards(); }
+    if (acctOpen()) return closeAcct({ focus: true });
     if (appearOpen()) return closeAppear();
     if (notifyPanelOpen()) return closeNotifyPanel();
     if (chatOpen()) return closeChat();
@@ -1332,13 +1345,48 @@ document.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------------------
 // Signed-in user (only when login is turned on)
 
+// ---------------------------------------------------------------------------
+// Account menu (the avatar, top right)
+
 function renderMe(me) {
   st.me = me;
-  const el = $('#me');
-  if (!me?.authEnabled || !me.user) { el.hidden = true; return; }
-  const label = me.user.email ?? me.user.name ?? 'signed in';
-  el.innerHTML = `<span class="avatar" aria-hidden="true">${esc(label[0].toUpperCase())}</span><span class="who" title="${esc(label)}">${esc(label)}</span><button data-logout title="Sign out">Sign out</button>`;
-  el.hidden = false;
+  const user = me?.authEnabled ? me.user : null;
+  const label = user ? (user.email ?? user.name ?? 'signed in') : null;
+  const btn = $('#meBtn');
+  if (label) $('#meAvatar').textContent = label[0].toUpperCase();
+  btn.title = label ? `Account: ${label}` : 'Account';
+  btn.setAttribute('aria-label', label ? `Account menu, signed in as ${label}` : 'Account menu');
+  if (acctOpen()) renderAcct();
+}
+
+const acctOpen = () => !$('#acctMenu').hidden;
+function renderAcct() {
+  const user = st.me?.authEnabled ? st.me.user : null;
+  const who = user
+    ? `<div class="acct-who"><span class="avatar" aria-hidden="true">${esc((user.email ?? user.name ?? '?')[0].toUpperCase())}</span><div><b>${esc(user.name ?? user.email ?? 'Signed in')}</b>${user.email && user.name ? `<small>${esc(user.email)}</small>` : ''}</div></div>`
+    : '<div class="acct-who"><div><b>Just you, on this computer</b><small>No sign-in: Birddog only listens on this machine.</small></div></div>';
+  const item = (a, label, k = '') => `<button role="menuitem" data-acct="${a}">${label}${k ? `<kbd>${k}</kbd>` : ''}</button>`;
+  $('#acctMenu').innerHTML = `${who}<div class="acct-items">${item('setup', 'Sources &amp; settings')}${item('appear', 'Appearance…', 'p')}${item('keys', 'Keyboard shortcuts', '?')}${user ? item('logout', 'Sign out') : ''}</div>`;
+}
+function openAcct() {
+  closeAppear(); closeNotifyPanel();
+  renderAcct();
+  $('#acctMenu').hidden = false;
+  $('#meBtn').setAttribute('aria-expanded', 'true');
+  $('#acctMenu [role=menuitem]')?.focus();
+}
+function closeAcct({ focus = false } = {}) {
+  if (!acctOpen()) return;
+  $('#acctMenu').hidden = true;
+  $('#meBtn').setAttribute('aria-expanded', 'false');
+  if (focus) $('#meBtn').focus();
+}
+function acctAction(a) {
+  closeAcct();
+  if (a === 'setup') return openSetup();
+  if (a === 'appear') return openAppear();
+  if (a === 'keys') return openOverlay('#helpScrim');
+  if (a === 'logout') return signOut();
 }
 
 async function signOut() {
