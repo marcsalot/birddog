@@ -34,7 +34,7 @@
 // Values start empty until the owner registers the apps (see docs/register-apps.md).
 
 export const BUILT_IN = Object.freeze({
-  github: Object.freeze({ clientId: '', host: 'https://github.com' }),
+  github: Object.freeze({ clientId: 'Ov23liwWb176mY399VPJ', host: 'https://github.com' }), // OAuth App "Birddog" (marcsalot), device flow on, no secret; token expiry off (no refresh handling yet)
   gitlab: Object.freeze({ clientId: '', host: 'https://gitlab.com' }),
   microsoft: Object.freeze({ clientId: '' }),
   google: Object.freeze({

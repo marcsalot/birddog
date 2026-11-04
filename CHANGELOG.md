@@ -10,6 +10,11 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 ### Changed
 - Bigger icons in the main menu, especially when it's collapsed to icons (the collapsed menu is a little wider to fit them).
 
+## [Unreleased]
+
+### Added
+- Built-in GitHub app: **Sign in with GitHub** (device flow) now works on github.com with no setup. The client ID is `Ov23liwWb176mY399VPJ` (OAuth App "Birddog"); `BIRDDOG_GITHUB_CLIENT_ID` and `sources.github.clientId` still override it.
+
 ## [1.11.0] - 2026-11-04
 
 ### Added
