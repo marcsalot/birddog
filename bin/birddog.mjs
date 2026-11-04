@@ -24,7 +24,7 @@ const HELP = `
     birddog notify --on     …and switch notifications on first
     birddog notify --test   show one test notification and exit
 
-    birddog secret set <name>      store a secret in your OS keychain (value read from stdin)
+    birddog secret set <name>      store a secret in your OS keychain (asks for it, hidden; or pipe it in)
     birddog secret delete <name>   remove it
 
   Options
@@ -64,7 +64,42 @@ async function readStdin() {
   return Buffer.concat(chunks).toString('utf8').trim();
 }
 
-async function secretCommand([action, name]) {
+/**
+ * Read a secret at a terminal prompt without echoing it. The value never touches argv, so it
+ * can't land in shell history or show up in `ps`.
+ */
+function readHidden(prompt) {
+  return new Promise((resolve) => {
+    const { stdin } = process;
+    let value = '';
+    const finish = (result) => {
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.off('data', onData);
+      process.stderr.write('\n');
+      resolve(result);
+    };
+    const onData = (chunk) => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n' || ch === '\u0004') return finish(value.trim());
+        if (ch === '\u0003') return finish(null); // Ctrl+C
+        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
+        else if (ch >= ' ') value += ch;
+      }
+    };
+    process.stderr.write(prompt);
+    stdin.setEncoding('utf8');
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.on('data', onData);
+  });
+}
+
+async function secretCommand([action, name, ...extra]) {
+  if (extra.length) {
+    console.error(`birddog: don't put the secret on the command line, where it lands in your shell history. Run "birddog secret set ${name}" and paste it at the prompt, or pipe it in.`);
+    process.exit(2);
+  }
   if (!['set', 'delete'].includes(action) || !SECRET_NAMES.has(name)) {
     console.error(`birddog: usage: birddog secret set|delete ${[...SECRET_NAMES].join('|')}`);
     process.exit(2);
@@ -75,12 +110,10 @@ async function secretCommand([action, name]) {
     console.log(`  Removed ${name} from ${store.kind}.`);
     return;
   }
-  if (process.stdin.isTTY) {
-    console.error(`  Pipe the value in so it never lands in your shell history, e.g.\n\n    pbpaste | birddog secret set ${name}\n`);
-    process.exit(2);
-  }
-  const value = await readStdin();
-  if (!value) { console.error('birddog: no value on stdin'); process.exit(2); }
+  // From a hidden prompt at a terminal, or from stdin when piped; never from argv.
+  const value = process.stdin.isTTY ? await readHidden(`  Paste ${name} (it won't be shown), then press Enter: `) : await readStdin();
+  if (value === null) { console.error('  Cancelled.'); process.exit(130); }
+  if (!value) { console.error(`birddog: no value given${process.stdin.isTTY ? '' : ' on stdin'}`); process.exit(2); }
   await store.set(name, value);
   console.log(`  Saved ${name} to ${store.kind}.`);
 }

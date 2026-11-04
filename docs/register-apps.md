@@ -8,8 +8,9 @@ to bringing your own app, see the README).
 Every app below is a **public client**: a program on the user's own computer that can't keep a
 secret. So:
 
-- Never create or paste a client secret, except Google's desktop one (Google says it isn't
-  confidential for that client type).
+- Never put a client secret in the repo, Birddog's config defaults or its docs. Google's desktop
+  client is the only one that has a secret Birddog needs, and that one is handed out privately
+  (see Google below).
 - Client IDs are not secrets. They get committed to the public repo, which is expected.
 - Name every app **Birddog**, and use the same homepage and privacy policy everywhere:
   - **Homepage:** `https://github.com/marcsalot/birddog`, or your own site (Google verification
@@ -27,7 +28,7 @@ Or send them to whoever is making the change.
 | GitHub | device flow | Client ID |
 | GitLab | auth code + PKCE | Application ID |
 | Microsoft | auth code + PKCE, public client | Application (client) ID |
-| Google | auth code + PKCE, desktop app | Client ID **and** client secret |
+| Google | auth code + PKCE, desktop app | Client ID only (the secret is handed out privately) |
 | Linear | auth code + PKCE | Client ID |
 | PagerDuty | Classic User OAuth + PKCE | Client ID |
 | Atlassian, Slack | none: no built-in app | nothing (see the end) |
@@ -115,11 +116,35 @@ domain, plus a Microsoft Partner Network ID. Personal accounts work without it.
 4. **Clients → Create client → Application type: Desktop app**, named `Birddog`.
    - There's nothing to register for redirects: desktop clients accept loopback redirects on
      **any port** (`http://127.0.0.1:<port>/…`).
-5. **Paste back:** both values into `BUILT_IN.google`:
-   - the **Client ID** (`….apps.googleusercontent.com`)
-   - the **Client secret** (`GOCSPX-…`). For desktop clients Google says the secret isn't
-     confidential, so it may ship in the code. Birddog still never sends it to the browser, an API
-     response or a log.
+5. **Paste back:** only the **Client ID** (`….apps.googleusercontent.com`) into
+   `BUILT_IN.google.clientId`.
+6. **Keep the client secret out of Birddog.** Google's token exchange for desktop clients needs it,
+   but it doesn't go in the code, config defaults or docs. Keep it in the Google Cloud console
+   (or your password manager) and give it privately to each person who should be able to sign in.
+
+### Giving someone the Google secret
+
+Without the secret, the Calendar card doesn't show a broken button. It shows one step: get the
+secret from whoever runs the Birddog Google project, then store it locally. Send them the value
+privately (a password manager share, not chat or email in plain text), and they run **one** of:
+
+- **Keychain (usual):**
+  ```
+  birddog secret set google-client-secret
+  ```
+  Birddog asks for the value at a hidden prompt, or reads it from stdin
+  (`pbpaste | birddog secret set google-client-secret`). It never takes the value as a
+  command-line argument, so it can't end up in shell history or `ps`.
+- **Environment:** `BIRDDOG_GOOGLE_CLIENT_SECRET`, or `BIRDDOG_GOOGLE_CLIENT_SECRET_FILE` pointing
+  at a file that holds it (for example a Docker secret at `/run/secrets/google_client_secret`).
+  Restart Birddog after setting either.
+
+Note for Docker: sign-ins aren't available in the container at all, because there's no keychain
+to keep the tokens in. The variables are read there, but people running Birddog in Docker should
+use the calendar's iCal link instead.
+
+The person must also be on the test-user list while the app is in Testing (below). Birddog never
+sends the secret to the browser, an API response or a log.
 
 Set `BUILT_IN.google.status` to match the app's publishing status. It drives the notice next to
 the button:
@@ -136,9 +161,8 @@ the button:
   sensitive scopes like `calendar.readonly`.
 - **`'verified'`**: no notice.
 
-If `clientSecret` is left empty, the card says the secret isn't configured, and sign-in with the
-built-in client takes the secret from `birddog secret set google-client-secret` or
-`BIRDDOG_GOOGLE_CLIENT_SECRET` instead.
+Until a person has stored the secret, their Calendar card shows the step from "Giving someone
+the Google secret" above instead of the button.
 
 To lift both:
 1. Submit the app for **verification**: Google Auth Platform → Verification Center.

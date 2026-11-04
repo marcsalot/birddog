@@ -671,6 +671,16 @@ const READS = {
 };
 const signInReady = (o) => !!o && o.canStore && o.configured && !(o.needsSecret && !o.hasSecret);
 
+/** The one step left when Birddog's built-in app needs a secret that doesn't ship with it (Google). */
+function secretStepHTML(o) {
+  const p = o.id;
+  const v = `BIRDDOG_${p.toUpperCase()}_CLIENT_SECRET`;
+  const who = o.name.split(' ')[0];
+  return `<div class="signin-note" role="note"><b>${esc(who)} sign-in: one more step.</b> Birddog's ${esc(who)} app secret doesn't ship with Birddog. Ask whoever runs the Birddog ${esc(who)} project for it, then run
+    <code>birddog secret set ${esc(p)}-client-secret</code> and paste it at the prompt (it isn't shown, and it's kept in ${esc(st.setup?.secretStore ?? 'your keychain')}). Or set <code>${esc(v)}</code> or <code>${esc(v)}_FILE</code> and restart Birddog. Then reload this page.
+    ${p === 'google' ? `<div class="row-btns"><button class="btn small" data-calmode="ics">Use an iCal link instead</button><span class="msg">Works right away, no sign-in.</span></div>` : ''}</div>`;
+}
+
 const ICAL_BTN = `<div class="row-btns"><button class="btn small" data-calmode="ics">Use an iCal link instead</button><span class="msg">No Google sign-in needed.</span></div>`;
 
 /**
@@ -698,10 +708,10 @@ function signInRow(p, { label, fallback = 'use a token below', compact = false }
     return `<div class="signin-row on"><span>✓ Signed in to ${esc(o.name)}${o.account ? ` as <b>${esc(o.account)}</b>` : ''}</span><button class="btn small" data-oauth="${esc(p)}">Sign in again</button><button class="btn small" data-oauth-off="${esc(p)}">Disconnect</button></div>`;
   }
   if (!signInReady(o)) {
+    if (o.builtIn && o.secretMissing) return secretStepHTML(o);
     if (compact) return '';
     const who = o.name.replace(/ \(.*\)$/, ''); // "Atlassian (Jira Cloud)" → "Atlassian"
     const why = o.noBuiltIn ? `${esc(who)} sign-in needs a secret that a downloadable app can't keep, so the quickest way in is to ${esc(fallback)}.`
-      : o.builtIn && o.secretMissing ? `${esc(who)} sign-in isn't finished in this copy of Birddog: the built-in app's client secret isn't configured yet, so ${esc(fallback)}. (Maintainers: <code>birddog secret set ${esc(p)}-client-secret</code>.)`
       : `One-click sign-in isn't set up in this copy of Birddog, so ${esc(fallback)}.`;
     return `<div class="signin-row off"><span class="msg">${why} Have your own ${esc(who)} app? <button class="linkish" data-guide-link="logins">Bring your own app</button>.</span></div>`;
   }
@@ -820,10 +830,8 @@ function calCardHTML(src) {
   }
   const mode = ui.mode ?? (provider === 'caldav' ? 'caldav' : 'ics');
   const notReady = ['google', 'microsoft'].map(oauthState).filter((o) => o && !signInReady(o));
-  const noSecret = notReady.filter((o) => o.builtIn && o.secretMissing).map((o) => o.name);
-  const noOneClick = notReady.filter((o) => !(o.builtIn && o.secretMissing)).map((o) => o.name);
+  const noOneClick = notReady.filter((o) => !(o.builtIn && o.secretMissing)).map((o) => o.name); // a missing secret shows its own step
   const picker = `${signInRow('google', { label: 'Sign in with Google', compact: true })}${signInRow('microsoft', { label: 'Sign in with Microsoft', compact: true })}
-    ${noSecret.length ? `<div class="msg">${esc(noSecret.join(' and '))} sign-in isn't finished in this copy of Birddog: the built-in app's client secret isn't configured yet. Use the calendar's iCal link below for now. (Maintainers: <code>birddog secret set google-client-secret</code>.)</div>` : ''}
     ${noOneClick.length ? `<div class="msg">One-click ${esc(noOneClick.join(' and '))} sign-in isn't set up in this copy of Birddog: use the calendar's iCal link below, or <button class="linkish" data-guide-link="logins">bring your own app</button>.</div>` : ''}
     <div class="oauth-row"><button class="btn ${mode === 'caldav' ? 'on' : ''}" data-calmode="caldav">iCloud</button><button class="btn ${mode === 'ics' ? 'on' : ''}" data-calmode="ics">iCal link or file</button></div>`;
   if (mode === 'caldav') {

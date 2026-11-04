@@ -71,7 +71,7 @@ birddog mcp             MCP server on stdio (add --demo for made-up data)
 birddog notify          desktop notifications without the dashboard (--on, --test)
 birddog --port 5000     use another port
 birddog --host 0.0.0.0  listen beyond localhost (only with login turned on; also BIRDDOG_HOST)
-birddog secret set jira-token   store a secret in your keychain (reads stdin; also cal-url, caldav-password, anthropic-api-key, google-client-secret, atlassian-client-secret, apple-private-key, oidc-client-secret)
+birddog secret set jira-token   store a secret in your keychain (hidden prompt, or pipe it in; also cal-url, caldav-password, anthropic-api-key, google-client-secret, atlassian-client-secret, apple-private-key, oidc-client-secret)
 birddog --version
 birddog --help
 ```
@@ -385,7 +385,7 @@ Where a card shows **Sign in with …**, it's one click: Birddog uses **its own 
 >
 > The Calendar card shows the matching notice next to the button. It's driven by `BUILT_IN.google.status` in `src/auth/clients.mjs`: `'testing'` (invite-only, weekly sign-in), `'unverified'` (published: anyone can sign in through the warning screen, 100 accounts in all) or `'verified'` (no notice).
 >
-> **Client secret.** Google's token exchange needs the desktop client's secret. Google says it isn't confidential for desktop apps, but it's left out of the repo for now, so the card says "client secret isn't configured" instead of showing a button. To sign in with the built-in app anyway, put the secret in your keychain with `birddog secret set google-client-secret` (or set `BIRDDOG_GOOGLE_CLIENT_SECRET`).
+> **The Google app secret.** Google's token exchange also needs the desktop client's secret, and Birddog doesn't ship it (not in the code, config defaults or docs). Until you have it, the Calendar card shows one step instead of a button: get the secret from whoever runs the Birddog Google project, then run `birddog secret set google-client-secret` and paste it at the hidden prompt (it's kept in your keychain, and never passes through the command line or shell history). Or set `BIRDDOG_GOOGLE_CLIENT_SECRET` / `BIRDDOG_GOOGLE_CLIENT_SECRET_FILE` and restart. Maintainers: see [docs/register-apps.md](docs/register-apps.md#giving-someone-the-google-secret).
 
 After you sign in, the card shows the account and **Disconnect**. If a sign-in can't be renewed later (you revoked it, or PagerDuty's 30-day token ran out), the source turns stale with a **Sign in again** button.
 

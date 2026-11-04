@@ -18,9 +18,10 @@
 // provider supports it) on Disconnect.
 
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readJson, writeJson } from '../store.mjs';
-import { BUILT_IN, builtInSecret, googleStatus, NO_BUILT_IN, resolveClientId } from './clients.mjs';
+import { BUILT_IN, googleStatus, needsLocalSecret, NO_BUILT_IN, resolveClientId } from './clients.mjs';
 
 const PENDING_TTL_MS = 10 * 60_000;
 const EARLY_REFRESH_MS = 60_000;
@@ -126,17 +127,25 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
   const clientId = (p) => client(p).clientId;
   // A secret belongs to one app: the built-in client only ever uses its own (Google's
   // non-confidential desktop secret); an app you registered uses yours.
-  const localSecret = async (p) => env[envName(p, 'CLIENT_SECRET')] || (await secrets.get(`${p}-client-secret`).catch(() => null)) || null;
-  // A built-in client that comes with a secret (Google's desktop client) but ships with it empty
-  // takes that same app's secret from the environment or keychain instead.
-  const builtInHasSecret = (p) => Object.hasOwn(builtIn[p] ?? {}, 'clientSecret');
+  // A client secret from BIRDDOG_<P>_CLIENT_SECRET, its *_FILE variant (a Docker secret), or
+  // "birddog secret set <p>-client-secret" (the keychain).
+  const localSecret = async (p) => {
+    const v = envName(p, 'CLIENT_SECRET');
+    if (env[v]?.trim()) return env[v].trim();
+    if (env[`${v}_FILE`]) {
+      const fromFile = await fs.readFile(env[`${v}_FILE`], 'utf8').then((x) => x.trim()).catch(() => '');
+      if (fromFile) return fromFile;
+    }
+    return (await secrets.get(`${p}-client-secret`).catch(() => null)) || null;
+  };
+  // Birddog ships no client secrets. The built-in Google client needs one, so it takes the copy
+  // you stored locally; the other built-in clients are public and use none.
   const clientSecret = async (p) => {
     const { from } = client(p);
-    if (from === 'built-in') return builtInSecret(p, from, builtIn) || (builtInHasSecret(p) ? await localSecret(p) : null);
+    if (from === 'built-in') return needsLocalSecret(p, builtIn) ? localSecret(p) : null;
     return localSecret(p);
   };
-  // The built-in Google client can't finish a sign-in without its secret.
-  const needsSecret = (p) => def(p).secret === 'required' || (client(p).from === 'built-in' && builtInHasSecret(p));
+  const needsSecret = (p) => def(p).secret === 'required' || (client(p).from === 'built-in' && needsLocalSecret(p, builtIn));
   const gStatus = (p) => (p === 'google' && client(p).from === 'built-in' ? googleStatus(builtIn) : null);
   // What Google says when an account isn't on the test-user list (or the app isn't verified).
   const googleRefusal = (p, code, why) => {
@@ -247,7 +256,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       if (!id) throw new OAuthError(`One-click ${d.name} sign-in isn't available in this copy of Birddog. Use a token instead, or bring your own app: set oauth.${p}.clientId in config.json or ${envName(p, 'CLIENT_ID')} (see the guide).`);
       if (needsSecret(p) && !(await clientSecret(p))) {
         throw new OAuthError(client(p).from === 'built-in'
-          ? `${d.name} sign-in isn't finished in this copy of Birddog: the built-in app's client secret isn't configured. Run "birddog secret set ${p}-client-secret" (or set ${envName(p, 'CLIENT_SECRET')}), or use an iCal link instead.`
+          ? `${d.name} sign-in needs one more step: Birddog's app secret, which doesn't ship with Birddog. Get it from whoever runs Birddog's ${d.name.split(' ')[0]} project, then run "birddog secret set ${p}-client-secret", or set ${envName(p, 'CLIENT_SECRET')} (or ${envName(p, 'CLIENT_SECRET')}_FILE) and restart Birddog. Or use an iCal link instead.`
           : `${d.name} also needs its client secret: run "birddog secret set ${p}-client-secret".`);
       }
       for (const [k, v] of pending) if (v.exp < now()) pending.delete(k);

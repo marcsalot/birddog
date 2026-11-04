@@ -6,7 +6,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ### Added
 - The guide is **resizable**: drag its left edge to any width (or focus the edge and use ←/→, Shift for bigger steps; double-click resets). ⇤ in its header, or `Shift+G`, jumps between the normal rail and a wide reading view. The width is remembered (`guideWidth` pref). **Expand all / Collapse all** opens or closes every section at once.
-- Built-in Google app: client ID `787425286434-if73gibnotktjm2rrthk4fk3ujre313j.apps.googleusercontent.com` (project "Birddog", Desktop app client), status `'testing'`. Its desktop secret is left out of the repo for now: the Calendar card says "client secret isn't configured" instead of a button that would fail, and `birddog secret set google-client-secret` (or `BIRDDOG_GOOGLE_CLIENT_SECRET`) completes it.
+- Built-in Google app: client ID `787425286434-if73gibnotktjm2rrthk4fk3ujre313j.apps.googleusercontent.com` (project "Birddog", Desktop app client), status `'testing'`. Its desktop secret is **not shipped** (not in code, config defaults or docs). Until it's stored locally, the Calendar card shows one friendly step instead of a button that would fail: get the secret from whoever runs the Birddog Google project, then `birddog secret set google-client-secret`, or `BIRDDOG_GOOGLE_CLIENT_SECRET` / `BIRDDOG_GOOGLE_CLIENT_SECRET_FILE`.
+- `birddog secret set <name>` asks for the value at a hidden prompt when run at a terminal (still reads stdin when piped), and refuses a value given as an argument, so secrets stay out of shell history.
 - Built-in GitHub app: **Sign in with GitHub** (device flow) now works on github.com with no setup. The client ID is `Ov23liwWb176mY399VPJ` (OAuth App "Birddog"); `BIRDDOG_GITHUB_CLIENT_ID` and `sources.github.clientId` still override it.
 
 ### Changed

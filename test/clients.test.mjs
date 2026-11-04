@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
-import { BUILT_IN, builtInSecret, googleStatus, googleVerified, NO_BUILT_IN, resolveClientId } from '../src/auth/clients.mjs';
+import { BUILT_IN, googleStatus, googleVerified, needsLocalSecret, NO_BUILT_IN, resolveClientId } from '../src/auth/clients.mjs';
 import { createGithubAuth } from '../src/auth/github.mjs';
 import { createOAuth } from '../src/auth/oauth.mjs';
 import { createSecretStore } from '../src/secrets.mjs';
@@ -13,12 +13,12 @@ import * as linear from '../src/sources/linear.mjs';
 import * as pagerduty from '../src/sources/pagerduty.mjs';
 import { tmpDir } from './helpers.mjs';
 
-const GOOGLE_SECRET = 'GOCSPX-built-in-desktop-secret';
+const GOOGLE_SECRET = 'GOCSPX-handed-out-privately'; // what a person stores locally; never shipped
 const FAKE_BUILT_IN = {
   github: { clientId: 'Ov23-birddog', host: 'https://github.com' },
   gitlab: { clientId: 'gl-birddog', host: 'https://gitlab.com' },
   microsoft: { clientId: 'ms-birddog' },
-  google: { clientId: 'g-birddog.apps.googleusercontent.com', clientSecret: GOOGLE_SECRET, verified: false },
+  google: { clientId: 'g-birddog.apps.googleusercontent.com', localSecret: true, verified: false },
   linear: { clientId: 'lin-birddog' },
   pagerduty: { clientId: 'pd-birddog' },
   atlassian: { clientId: 'must-be-ignored' }, // never built in, even if someone adds one
@@ -81,14 +81,15 @@ describe('built-in OAuth clients', () => {
     assert.equal(resolveClientId('gitlab', { env: {}, host: 'https://git.acme.test', builtIn: b }).clientId, null);
   });
 
-  it('the built-in secret goes only with the built-in client ID', () => {
-    assert.equal(builtInSecret('google', 'built-in', FAKE_BUILT_IN), GOOGLE_SECRET);
-    assert.equal(builtInSecret('google', 'config', FAKE_BUILT_IN), null);
-    assert.equal(builtInSecret('linear', 'built-in', FAKE_BUILT_IN), null);
+  it('only the built-in Google client needs a secret supplied locally', () => {
+    assert.equal(needsLocalSecret('google', FAKE_BUILT_IN), true);
+    assert.equal(needsLocalSecret('linear', FAKE_BUILT_IN), false);
+    assert.equal(needsLocalSecret('google', {}), false);
   });
 
-  it('ships no confidential secrets: only Google may have one, and Atlassian/Slack have no app', () => {
-    for (const [p, c] of Object.entries(BUILT_IN)) if (p !== 'google') assert.equal(c.clientSecret, undefined, p);
+  it('ships no client secrets at all, and Atlassian/Slack have no app', () => {
+    for (const [p, c] of Object.entries(BUILT_IN)) assert.equal(Object.hasOwn(c, 'clientSecret'), false, p);
+    assert.equal(BUILT_IN.google.localSecret, true, 'the Google secret is supplied locally');
     assert.equal(BUILT_IN.atlassian, undefined);
     assert.equal(BUILT_IN.slack, undefined);
     assert.ok(NO_BUILT_IN.atlassian && NO_BUILT_IN.slack);
@@ -99,6 +100,7 @@ describe('built-in OAuth clients', () => {
     const secrets = await createSecretStore({ dir, backend: 'file' });
     const make = (builtIn, config = {}) => createOAuth({ dir, secrets, getConfig: () => ({ oauth: config }), fetchImpl: fakeProviders(), env: {}, builtIn });
     const on = make(FAKE_BUILT_IN);
+    await secrets.set('google-client-secret', GOOGLE_SECRET);
     const g = await on.status('google');
     assert.deepEqual([g.configured, g.builtIn, g.unverified, g.hasSecret], [true, true, true, true]);
     assert.doesNotMatch(JSON.stringify(g), /GOCSPX/);
@@ -108,7 +110,7 @@ describe('built-in OAuth clients', () => {
     const off = await make({}).status('linear');
     assert.deepEqual([off.configured, off.builtIn], [false, false]);
     const own = await make(FAKE_BUILT_IN, { google: { clientId: 'mine' } }).status('google');
-    assert.deepEqual([own.builtIn, own.unverified, own.hasSecret], [false, false, false], 'your own app: no built-in secret, no Google notice');
+    assert.deepEqual([own.builtIn, own.unverified, own.needsSecret], [false, false, false], 'your own app: secret optional, no Google notice');
     assert.equal((await make({ ...FAKE_BUILT_IN, google: { ...FAKE_BUILT_IN.google, verified: true } }).status('google')).unverified, false);
   });
 
@@ -124,11 +126,12 @@ describe('built-in OAuth clients', () => {
     assert.deepEqual([mine.deviceFlowAvailable, mine.builtIn], [true, false]);
   });
 
-  it('Linear and PagerDuty: PKCE with no secret; Google: PKCE plus its desktop secret', async () => {
+  it('Linear and PagerDuty: PKCE with no secret; Google: PKCE plus the secret stored locally', async () => {
     const dir = await tmpDir();
     const secrets = await createSecretStore({ dir, backend: 'file' });
     const f = fakeProviders();
     const o = createOAuth({ dir, secrets, getConfig: () => ({}), fetchImpl: f, env: {}, builtIn: FAKE_BUILT_IN });
+    await secrets.set('google-client-secret', GOOGLE_SECRET);
     for (const p of ['linear', 'pagerduty', 'google']) {
       const { url } = await o.start(p, `http://127.0.0.1:4747/auth/oauth/${p}/callback`);
       const { code, state, query } = f.approve(url);
@@ -186,6 +189,7 @@ describe('built-in OAuth clients', () => {
     const f = fakeProviders();
     const logged = [];
     const log = { warn: (...a) => logged.push(a.join(' ')), error: (...a) => logged.push(a.join(' ')), log: (...a) => logged.push(a.join(' ')) };
+    await secrets.set('google-client-secret', GOOGLE_SECRET);
     const app = await createBirddog({ dir, sources: [cal, linear, pagerduty], autoRefresh: false, log, secrets, fetchImpl: f, builtInClients: FAKE_BUILT_IN });
     const port = await app.start(0);
     const base = `http://127.0.0.1:${port}`;
@@ -228,17 +232,19 @@ describe('built-in OAuth clients', () => {
 });
 
 describe('built-in Google app: status, missing secret, testing mode', () => {
-  const NO_SECRET = { ...FAKE_BUILT_IN, google: { clientId: FAKE_BUILT_IN.google.clientId, clientSecret: '', status: 'testing' } };
+  const NO_SECRET = { ...FAKE_BUILT_IN, google: { clientId: FAKE_BUILT_IN.google.clientId, localSecret: true, status: 'testing' } };
   const CB = 'http://127.0.0.1:4747/auth/oauth/google/callback';
   const setup = async (builtIn, fetchImpl = fakeProviders(), extra = {}) => {
     const dir = await tmpDir();
     const secrets = await createSecretStore({ dir, backend: 'file' });
+    if (extra.storeSecret !== false) await secrets.set('google-client-secret', GOOGLE_SECRET);
+    delete extra.storeSecret;
     return { secrets, f: fetchImpl, o: createOAuth({ dir, secrets, getConfig: () => ({}), fetchImpl, env: {}, builtIn, ...extra }) };
   };
 
-  it('ships the Birddog desktop client in testing, with its secret left out', () => {
+  it('ships the Birddog desktop client in testing, with no secret', () => {
     assert.match(BUILT_IN.google.clientId, /^787425286434-[a-z0-9]+\.apps\.googleusercontent\.com$/);
-    assert.equal(BUILT_IN.google.clientSecret, '', 'the maintainer decides whether the secret goes in the repo');
+    assert.equal(Object.hasOwn(BUILT_IN.google, 'clientSecret'), false, 'kept out of the repo');
     assert.equal(googleStatus(), 'testing');
     assert.equal(googleVerified(), false);
   });
@@ -251,10 +257,10 @@ describe('built-in Google app: status, missing secret, testing mode', () => {
   });
 
   it('secret not configured: no button, a clear reason; the keychain secret completes it', async () => {
-    const { o, f, secrets } = await setup(NO_SECRET);
+    const { o, f, secrets } = await setup(NO_SECRET, fakeProviders(), { storeSecret: false });
     const s = await o.status('google');
     assert.deepEqual([s.configured, s.builtIn, s.needsSecret, s.hasSecret, s.secretMissing, s.googleStatus, s.unverified], [true, true, true, false, true, 'testing', true]);
-    await assert.rejects(o.start('google', CB), /client secret isn't configured.*birddog secret set google-client-secret.*iCal/);
+    await assert.rejects(o.start('google', CB), /one more step.*whoever runs.*birddog secret set google-client-secret.*BIRDDOG_GOOGLE_CLIENT_SECRET_FILE.*iCal/);
     await secrets.set('google-client-secret', GOOGLE_SECRET);
     assert.equal((await o.status('google')).secretMissing, false);
     const { code, state } = f.approve((await o.start('google', CB)).url);
@@ -262,6 +268,18 @@ describe('built-in Google app: status, missing secret, testing mode', () => {
     assert.equal(f.calls.findLast((c) => c.body.grant_type === 'authorization_code').body.client_secret, GOOGLE_SECRET);
     assert.ok((await o.status('google')).connected);
     assert.doesNotMatch(JSON.stringify(await o.status('google')), /GOCSPX/);
+  });
+
+  it('the secret can also come from BIRDDOG_GOOGLE_CLIENT_SECRET or its _FILE variant', async () => {
+    const dir = await tmpDir();
+    const secrets = await createSecretStore({ dir, backend: 'file' });
+    const mk = (env) => createOAuth({ dir, secrets, getConfig: () => ({}), fetchImpl: fakeProviders(), env, builtIn: NO_SECRET });
+    assert.equal((await mk({ BIRDDOG_GOOGLE_CLIENT_SECRET: GOOGLE_SECRET }).status('google')).secretMissing, false);
+    const file = `${dir}/google_client_secret`;
+    await (await import('node:fs/promises')).writeFile(file, `${GOOGLE_SECRET}\n`);
+    const fromFile = mk({ BIRDDOG_GOOGLE_CLIENT_SECRET_FILE: file });
+    assert.equal((await fromFile.status('google')).secretMissing, false);
+    assert.equal((await mk({ BIRDDOG_GOOGLE_CLIENT_SECRET_FILE: `${dir}/missing` }).status('google')).secretMissing, true);
   });
 
   it('your own Google app is unaffected: secret optional, no notice', async () => {
