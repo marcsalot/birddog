@@ -20,7 +20,7 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - **MCP server**: `birddog mcp`, over stdio, with `list_items`, `get_item`, `list_sources`, `mark_done`, `snooze` and `restore`. It shares state with the dashboard and never returns secrets.
 - **Demo mode**: `birddog --demo` (and `birddog mcp --demo`) runs on made-up data in a temporary folder and makes no network requests.
 - Demo GIF and screenshot; README rewritten for the public repo.
-- `npx bird-dog`: package metadata, and both `birddog` and `bird-dog` commands.
+- npx release: package metadata and a `birddog` command. Published as `@marcusferrell/birddog`, since npm rejects `bird-dog` as too close to an existing `birddog` package.
 
 ### Changed
 - Done and snooze state is re-read when another process changes it, so the dashboard and the MCP server can run side by side.

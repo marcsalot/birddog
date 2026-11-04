@@ -1,6 +1,6 @@
 # 🐾 Birddog
 
-[![npm](https://img.shields.io/npm/v/bird-dog?color=f5b700)](https://www.npmjs.com/package/bird-dog)
+[![npm](https://img.shields.io/npm/v/@marcusferrell/birddog?color=f5b700)](https://www.npmjs.com/package/@marcusferrell/birddog)
 [![Node 22+](https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![CI](https://github.com/marcsalot/birddog/actions/workflows/ci.yml/badge.svg)](https://github.com/marcsalot/birddog/actions/workflows/ci.yml)
@@ -11,8 +11,8 @@
 ![Birddog demo: the inbox, opening an item, marking one done, snoozing another, and switching themes](https://raw.githubusercontent.com/marcsalot/birddog/main/docs/demo.gif)
 
 ```bash
-npx bird-dog --demo --open     # look around with made-up data (http://127.0.0.1:4848)
-npx bird-dog --open            # the real thing (http://127.0.0.1:4747)
+npx @marcusferrell/birddog --demo --open  # look around with made-up data (http://127.0.0.1:4848)
+npx @marcusferrell/birddog --open         # the real thing (http://127.0.0.1:4747)
 ```
 
 You need Node 22 or newer. There's no account and no cloud, and the package has no dependencies. See [Install](#install) for `npm i -g`, Docker and running from source.
@@ -36,15 +36,15 @@ Work-in-progress hides in too many places: a branch you forgot to push, a review
 **1. With npm** (recommended; needs [Node.js](https://nodejs.org) 22 or newer):
 
 ```bash
-npx bird-dog --open          # run it straight away, nothing installed
+npx @marcusferrell/birddog --open       # run it straight away, nothing installed
 ```
 
 ```bash
-npm install -g bird-dog      # or install it for good …
-birddog --open               # … then run it as birddog (bird-dog works too)
+npm install -g @marcusferrell/birddog    # or install it for good …
+birddog --open                            # … then run it as birddog
 ```
 
-The npm package is called `bird-dog` because `birddog` was taken; the command is `birddog` either way. Upgrade with `npm install -g bird-dog@latest`.
+The npm package is `@marcusferrell/birddog` (the plain name `birddog` is taken); the command is `birddog` either way. Upgrade with `npm install -g @marcusferrell/birddog@latest`.
 
 **2. With Docker**: no Node needed. See [Run it in Docker](#run-it-in-docker).
 
@@ -178,7 +178,7 @@ When a source fails, its last good items stay in the list, marked stale, with a 
 **Claude Code:**
 
 ```bash
-claude mcp add birddog -- npx -y bird-dog mcp
+claude mcp add birddog -- npx -y @marcusferrell/birddog mcp
 ```
 
 **Claude Desktop:** add this to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop:
@@ -188,7 +188,7 @@ claude mcp add birddog -- npx -y bird-dog mcp
   "mcpServers": {
     "birddog": {
       "command": "npx",
-      "args": ["-y", "bird-dog", "mcp"]
+      "args": ["-y", "@marcusferrell/birddog", "mcp"]
     }
   }
 }
@@ -196,7 +196,7 @@ claude mcp add birddog -- npx -y bird-dog mcp
 
 Claude Desktop starts servers with a short `PATH`. If it can't find `npx`, use the full path (`which npx`). If you use the GitHub CLI login, add `"env": { "PATH": "/opt/homebrew/bin:/usr/bin:/bin" }` so Birddog can find `gh`.
 
-Want to try it first? Use `["-y", "bird-dog", "mcp", "--demo"]` and it runs on made-up data.
+Want to try it first? Use `["-y", "@marcusferrell/birddog", "mcp", "--demo"]` and it runs on made-up data.
 
 | Tool | What it does |
 |---|---|
@@ -603,7 +603,7 @@ test/                  node:test suites
 1. ✅ Skeleton, local git source, real UI, optional SSO, GitHub sign-in, OS keychain secrets
 2. ✅ GitHub and Jira Cloud sources
 3. ✅ Setup wizard, calendar (iCal) source, hardened keychain secrets, stale-source retry and backoff
-4. ✅ MCP server, demo mode, `npx bird-dog` release
+4. ✅ MCP server, demo mode, `npx @marcusferrell/birddog` release
 5. ✅ Docker image, Compose file, CI that runs the tests in the image
 
 Ideas for later: GitLab and Linear sources, a "focus" view that hides Later, desktop notifications for Now.

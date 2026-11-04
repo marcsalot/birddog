@@ -23,7 +23,7 @@ FROM ${NODE_IMAGE} AS package
 WORKDIR /src
 COPY . .
 RUN npm pack --silent --pack-destination /tmp >/dev/null \
- && mkdir /out && tar -xzf /tmp/bird-dog-*.tgz -C /out
+ && mkdir /out && tar -xzf /tmp/*.tgz -C /out
 
 # ---- runtime -----------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime

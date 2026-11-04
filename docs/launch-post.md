@@ -13,7 +13,7 @@ A few things I cared about while building it:
 • An MCP server, so Claude Code or Claude Desktop can ask "what needs me?" and snooze or clear items.
 • Keyboard-first: j/k, x for done, s for snooze, ⌘K for everything else.
 
-You can try it with made-up data: npx bird-dog --demo
+You can try it with made-up data: npx @marcusferrell/birddog --demo
 
 It's open source (MIT). Feedback and source ideas are welcome:
 https://github.com/marcsalot/birddog
