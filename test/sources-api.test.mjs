@@ -62,10 +62,9 @@ describe('GitHub and Jira through the API', () => {
   });
   after(() => app.close());
 
-  it('GitHub is stale with a "sign in" message until you connect, then fills in', async () => {
-    const before = await source('github');
-    assert.equal(before.status, 'stale');
-    assert.match(before.error, /Sign in to GitHub in setup/);
+  it('a new config starts with GitHub off; connecting switches it on and fills in', async () => {
+    assert.equal(await source('github'), undefined);
+    assert.equal((await call('/api/firstrun')).json.github.connected, false);
 
     await call('/api/connections/github/gh-cli', { method: 'POST', body: {} });
     const { json } = await call('/api/refresh', { method: 'POST', body: {} });

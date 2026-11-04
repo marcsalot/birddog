@@ -57,7 +57,11 @@ node bin/birddog.mjs --open
 
 ### First run
 
-On first run a **setup wizard** walks you through each source: your code folders (Birddog guesses `~/code`, `~/src`, `~/projects`, `~/Developer`, …, or the folder you ran it from), then GitHub, Jira and your calendar. Each step runs that source's test as soon as you reach it, so you see straight away whether it works. Skip whatever you don't use; skipping GitHub switches it off so it doesn't sit there as "stale". You can change anything later in **Connect a source**, or run the wizard again with `⌘K` → "Run the setup wizard".
+The first time you open Birddog it asks one thing: **where do you keep your code?** It has already looked in the usual places (`~/code`, `~/src`, `~/projects`, `~/Developer`, …, and the folder you ran it from), counted the repos in each, and ticked the ones that have some. Usually you just press **Show my work**, and the inbox fills with your uncommitted work, unpushed commits and branches to tidy. You don't need an account for any of this.
+
+Then Birddog suggests one next step above the list: **Connect GitHub** (one click with your `gh` login). Until you do, GitHub stays switched off, so a fresh inbox has no "not signed in" warnings. Everything else (Jira, Linear, Slack, calendars and the rest) waits in **Sources & settings** and the guide; "Not now" hides the suggestion for good. Prefer a tour of every source? `⌘K` → "Run the setup wizard".
+
+With login turned on, you see the same screen after your first sign-in. From a clean config folder on the development Mac, it takes **one click and about half a second** from starting `birddog` to the first items (median of 3 runs: 0.3 s to the first-run screen, then 0.25 s from the click to the list).
 
 ```
 birddog                 start on http://127.0.0.1:4747
@@ -795,8 +799,12 @@ test/                  node:test suites
 3. ✅ Setup wizard, calendar (iCal) source, hardened keychain secrets, stale-source retry and backoff
 4. ✅ MCP server, demo mode, `npx @marcusferrell/birddog` release
 5. ✅ Docker image, Compose file, CI that runs the tests in the image
+6. ✅ Notifications, Ask Birddog chat, Overview charts, in-app guide, collapsible menu (1.2–1.6)
+7. ✅ Real sign-ins: Google, Microsoft, Atlassian, iCloud CalDAV, Sign in with Apple (1.7)
+8. ✅ GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, GitHub Actions and Dependabot (1.8)
+9. ✅ One-step first run (1.9)
 
-Ideas for later: GitLab and Linear sources, a "focus" view that hides Later, desktop notifications for Now.
+Ideas for later: Bitbucket Cloud, a "focus" view that hides Later.
 
 ## Changelog
 

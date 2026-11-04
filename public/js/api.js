@@ -33,6 +33,7 @@ export const api = {
   prefs: () => call('GET', '/api/prefs'),
   savePrefs: (patch) => call('PUT', '/api/prefs', patch),
   setup: () => call('GET', '/api/setup'),
+  firstRun: () => call('GET', '/api/firstrun'),
   testSource: (id, settings) => call('POST', `/api/sources/${encodeURIComponent(id)}/test`, settings),
   saveSource: (id, settings) => call('PUT', `/api/sources/${encodeURIComponent(id)}`, settings),
   oauth: () => call('GET', '/api/oauth'),

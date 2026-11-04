@@ -69,6 +69,7 @@ export const demoGit = {
   id: 'git',
   name: 'Local git',
   description: 'Uncommitted work, unpushed commits and branches to tidy in your local repos. (Demo data.)',
+  normalizeSettings: (input = {}) => ({ roots: (Array.isArray(input.roots) ? input.roots : ['~/code']).map(String).slice(0, 20) }), // the demo never scans them
   test: async () => ({ ok: true, message: 'Demo: 3 repos in ~/code' }),
   collect: async (_config, ctx) => { ctx.summary?.('3 repos scanned (demo)'); return demoGitItems(ctx.now ?? Date.now()); },
 };
@@ -302,6 +303,8 @@ export async function createDemo() {
       secrets: demoSecrets(),
       fetchImpl: demoFetch(),
       cliToken: async () => 'demo-not-a-real-token',
+      // Made-up folders for the first-run screen, so the demo never looks at your disk.
+      firstRunFolders: async () => ({ home: '~', folders: [{ path: '~/code', repos: 6, configured: true, selected: true }, { path: '~/Projects', repos: 2, configured: false, selected: false }, { path: '~/Documents/GitHub', repos: 0, configured: false, selected: false }] }),
     },
     cleanup: () => fs.rm(dir, { recursive: true, force: true }),
   };

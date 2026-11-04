@@ -55,6 +55,9 @@ const st = {
   cards: {}, // per-source setup card UI state
   retrying: new Set(), // sources being retried from a stale bar
   wizard: null, // { step } while the first-run wizard is open
+  firstRun: null, // { folders, other, busy, msg } while the one-step first-run screen is open
+  only: null, // 'github' while setup shows just that card (the suggested next step)
+  nextStep: null, // { github: connected? } for the next-step card; null = don't show it
 };
 
 const $ = (s) => document.querySelector(s);
@@ -195,7 +198,7 @@ function emptyHTML() {
 function renderOverview() {
   const el = $('#list');
   const data = overviewData({ items: st.items, sources: st.sources, history: st.history.length ? st.history : [{ date: new Date().toISOString().slice(0, 10), missing: true }] });
-  el.innerHTML = overviewHTML(data, { width: el.clientWidth });
+  el.innerHTML = nextStepHTML() + overviewHTML(data, { width: el.clientWidth });
   bindOverview(el);
 }
 
@@ -206,7 +209,7 @@ function render() {
   const idx = selIndex(list);
   st.selId = list[idx]?.id ?? null;
   const bars = staleBarsHTML();
-  const head = bars + `<div class="page-head"><h1>${HEADINGS[st.view]}</h1><span class="sub">${list.length} item${list.length === 1 ? '' : 's'}${st.query ? ` matching “${esc(st.query)}” <button class="chip" id="clearQ">clear ✕</button>` : ''}</span></div>`;
+  const head = bars + nextStepHTML() + `<div class="page-head"><h1>${HEADINGS[st.view]}</h1><span class="sub">${list.length} item${list.length === 1 ? '' : 's'}${st.query ? ` matching “${esc(st.query)}” <button class="chip" id="clearQ">clear ✕</button>` : ''}</span></div>`;
   if (!list.length) {
     $('#list').innerHTML = head + emptyHTML();
     return;
@@ -467,7 +470,9 @@ function setHidden(next) {
 
 function openOverlay(sel) { closeAll(); $(sel).classList.add('open'); }
 function closeAll() {
+  if (st.firstRun) { st.firstRun = null; savePrefs({ seenSetup: true }); load({ quiet: true }); }
   st.wizard = null;
+  st.only = null;
   document.activeElement?.blur?.();
   document.querySelectorAll('.scrim.open').forEach((s) => s.classList.remove('open'));
   closeSnooze();
@@ -925,6 +930,80 @@ async function wizardAction(action) {
   autoTest(WIZARD[st.wizard.step].id);
 }
 
+// ---------------------------------------------------------------------------
+// First run: one step. Pick the folder(s) of repos (the best guess is already
+// ticked), and the inbox fills with local git work. No account needed.
+
+function firstRunHTML() {
+  const fr = st.firstRun;
+  $('#setupHead').innerHTML = '<h2 id="setupTitle">Where do you keep your code? 🐾</h2><p>Birddog starts with the git repos on this computer: uncommitted work, unpushed commits and branches to tidy. It only reads them, nothing leaves this machine, and you don\'t need an account.</p>';
+  let body;
+  if (!fr.folders) body = '<div class="card wide"><div class="msg">Looking for your repos…</div></div>';
+  else {
+    const rows = fr.folders.map((f, i) => `<label class="chk fr-row"><input type="checkbox" data-fr="${i}" ${f.selected ? 'checked' : ''}><code>${esc(f.path)}</code><span class="fr-n">${f.repos == null ? 'lots of folders' : `${f.repos} repo${f.repos === 1 ? '' : 's'}`}</span></label>`).join('');
+    body = `<div class="card wide fr-card">${rows || '<div class="msg">No usual code folder here (like <code>~/code</code> or <code>~/Projects</code>). Type the folder below.</div>'}
+      <label for="frOther">${rows ? 'Or another folder' : 'Folder with your repos'}</label>
+      <input id="frOther" data-fr-other spellcheck="false" placeholder="${esc(fr.home)}/…" value="${esc(fr.other ?? '')}">
+      ${fr.msg ? `<div class="msg bad">${esc(fr.msg)}</div>` : ''}</div>`;
+  }
+  $('#cards').innerHTML = body;
+  $('#setupFoot').innerHTML = `<span class="progress">That's the only step. Everything else is optional.</span><span style="flex:1"></span><button class="btn" data-wiz="start">Full setup…</button><button class="btn primary" data-fr-go ${fr.busy || !fr.folders ? 'disabled' : ''}>${fr.busy ? 'Scanning…' : 'Show my work →'}</button>`;
+  if (fr.folders && !fr.busy) setTimeout(() => $('[data-fr-go]')?.focus(), 0);
+}
+
+async function openFirstRun() {
+  openOverlay('#setupScrim');
+  st.wizard = null; st.only = null;
+  st.firstRun = { folders: null, home: '~' };
+  renderCards();
+  try {
+    const r = await api.firstRun();
+    st.firstRun = { ...st.firstRun, folders: r.folders, home: r.home };
+    st.nextStep = r.github.connected ? null : { github: false };
+  } catch (err) {
+    st.firstRun = { ...st.firstRun, folders: [], msg: err.message };
+  }
+  renderCards();
+}
+
+async function firstRunGo() {
+  const fr = st.firstRun;
+  document.querySelectorAll('[data-fr]').forEach((el) => { fr.folders[+el.dataset.fr].selected = el.checked; });
+  fr.other = $('#frOther')?.value.trim() ?? '';
+  const roots = [...fr.folders.filter((f) => f.selected).map((f) => f.path), ...(fr.other ? [fr.other] : [])];
+  if (!roots.length) { fr.msg = 'Tick a folder, or type one.'; return renderCards(); }
+  fr.busy = true; fr.msg = null;
+  renderCards();
+  const same = !fr.other && fr.folders.every((f) => f.selected === !!f.configured);
+  try {
+    // The usual case: the guess was right. config.json already scans it, so there's nothing to save.
+    if (!same) await api.saveSource('git', { roots });
+  } catch (err) {
+    fr.busy = false; fr.msg = err.message;
+    return renderCards();
+  }
+  savePrefs({ seenSetup: true });
+  st.firstRun = null;
+  closeAll();
+  await load();
+  st.view = 'all';
+  render();
+}
+
+/** The one suggested next step after the first run: connect GitHub. Shown until it's connected or dismissed. */
+function nextStepHTML() {
+  if (!st.nextStep || st.nextStep.github) return '';
+  return `<div class="next-step" role="region" aria-label="Suggested next step"><span class="ns-ico" aria-hidden="true">→</span>
+    <div class="ns-txt"><b>Next: connect GitHub</b><div>Review requests, your PRs with failing checks, and mentions, next to your local work. Takes a few seconds with your <code>gh</code> login.</div>
+    <small>Jira, Linear, Slack, calendars and more are in <button class="linkish" data-setup>Sources &amp; settings</button> and the <button class="linkish" data-guide-link="sources">guide</button>, whenever you want them.</small></div>
+    <button class="btn primary small" data-next="github">Connect GitHub</button><button class="btn small" data-next="hide">Not now</button></div>`;
+}
+
+async function nextStepAction(a) {
+  if (a === 'hide') { st.nextStep = null; savePrefs({ hideNextStep: true }); return render(); }
+  return openSetup({ only: 'github' });
+}
+
 function settingsChrome() {
   $('#setupHead').innerHTML = '<h2 id="setupTitle">Connect your sources</h2><p>Everything stays on this machine. Birddog only reads: it never changes your repos, PRs, tickets or calendar.</p>';
   const s = st.setup;
@@ -934,7 +1013,17 @@ function settingsChrome() {
 }
 
 function renderCards() {
+  if (st.firstRun) return firstRunHTML();
   if (st.wizard) return wizardHTML();
+  if (st.only === 'github') {
+    $('#setupHead').innerHTML = '<h2 id="setupTitle">Connect GitHub</h2><p>Birddog only reads: review requests, your PRs, mentions and issues. Your <code>gh</code> login is the quickest way in; Birddog stores no token for it.</p>';
+    const src = st.setup?.sources.find((x) => x.id === 'github');
+    const done = !!st.setup?.connections?.github?.connected;
+    $('#cards').innerHTML = !st.setup ? '<div class="card wide"><div class="msg">Loading…</div></div>' : src ? githubCardHTML({ ...src, enabled: true }) : '';
+    $('#setupFoot').innerHTML = `<span class="progress">${done ? '✓ Connected' : ''}</span><span style="flex:1"></span><button class="btn" data-only-all>All sources…</button><button class="btn primary" data-close>${done ? 'Go to my inbox →' : 'Not now'}</button>`;
+    if (done && st.nextStep) { st.nextStep = null; }
+    return;
+  }
   settingsChrome();
   const s = st.setup;
   if (!s) { $('#cards').innerHTML = '<div class="card wide"><div class="msg">Loading…</div></div>'; return; }
@@ -943,9 +1032,11 @@ function renderCards() {
   $('#cards').innerHTML = warn + s.sources.map(cardFor).join('') + soon.join('');
 }
 
-async function openSetup({ wizard = false } = {}) {
+async function openSetup({ wizard = false, only = null } = {}) {
   openOverlay('#setupScrim');
   st.cards = {};
+  st.firstRun = null;
+  st.only = only;
   st.wizard = wizard ? { step: 0 } : null;
   renderCards();
   try {
@@ -1069,7 +1160,7 @@ async function disconnectCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.view) return setView(d.view);
@@ -1106,6 +1197,9 @@ document.addEventListener('click', (e) => {
   if (d.retry) return retrySource(d.retry);
   if (d.enable) return enableAction(d.enable);
   if (d.wiz) return d.wiz === 'start' ? openWizard() : wizardAction(d.wiz);
+  if ('frGo' in d) return firstRunGo();
+  if (d.next) return nextStepAction(d.next);
+  if ('onlyAll' in d) { st.only = null; return renderCards(); }
   if (d.disconnect) return disconnectCard(d.disconnect);
   if (d.edit) { st.cards[d.edit] = { editing: true }; renderCards(); return document.querySelector(`[data-in="${CSS.escape(d.edit)}"],[data-f^="${CSS.escape(d.edit)}."]`)?.focus(); }
   if (d.cancel) { st.cards[d.cancel] = {}; return renderCards(); }
@@ -1160,6 +1254,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.target.matches?.('textarea[data-in]') && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveCard(e.target.dataset.in); return; }
+  if (e.target.matches?.('input[data-fr-other]') && e.key === 'Enter') { e.preventDefault(); firstRunGo(); return; }
   if (e.target.matches?.('input[data-f]') && e.key === 'Enter') { e.preventDefault(); connectCard(e.target.dataset.f.split('.')[0]); return; }
   if (e.target.matches?.('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (overlay()) return;
@@ -1255,7 +1350,8 @@ async function boot() {
     history.replaceState(null, '', location.pathname);
     if (p) toast(`✓ Signed in to ${esc({ google: 'Google', microsoft: 'Microsoft', atlassian: 'Atlassian' }[p] ?? p)}`);
     setTimeout(() => openSetup(), 200);
-  } else if (!prefs.seenSetup) setTimeout(openWizard, 400);
+  } else if (!prefs.seenSetup) openFirstRun();
+  else if (!prefs.hideNextStep) api.github().then((g) => { if (!g.connected) { st.nextStep = { github: false }; render(); } }).catch(() => {});
   liveReload();
 }
 

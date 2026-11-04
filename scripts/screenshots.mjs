@@ -96,6 +96,15 @@ try {
     await page.waitForFunction(() => /start with/.test(document.querySelector('#chatPanel .msg-bot')?.textContent ?? ''), null, { timeout: 15_000 });
     await page.waitForTimeout(200);
     await save('chat');
+
+    // The first-run screen, as a brand-new install shows it (demo folders, never your disk).
+    await page.evaluate(() => fetch('/api/prefs', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seenSetup: false }) }));
+    await page.reload();
+    await page.waitForSelector('#setupScrim.open [data-fr-go]:not([disabled])');
+    await page.waitForTimeout(400);
+    await save('first-run');
+    await page.click('[data-fr-go]');
+    await page.waitForSelector('.row');
     await page.close();
   }
   console.log(`\n  Saved ${shots.length} screenshots (demo data only):\n${shots.map((s) => `    ${s}`).join('\n')}\n`);

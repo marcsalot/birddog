@@ -21,6 +21,7 @@ import { Collector } from './collector.mjs';
 import { createHistory } from './history.mjs';
 import { createNotifier } from './notify.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
+import { repoFolders } from './firstrun.mjs';
 import { RULES } from './rules.mjs';
 import { createSecretStore } from './secrets.mjs';
 import { COMING_SOON, isEnabled, SOURCES, validateSource } from './sources/index.mjs';
@@ -157,12 +158,13 @@ async function serveStatic(req, res, pathname) {
  * @param {boolean} [opts.liveReload]  development: tell open pages to reload when public/ changes
  * @param {Function} [opts.notifySystem] shows a system notification (tests swap it)
  * @param {string} [opts.notifyChannel] force a channel ("system" for `birddog notify`)
+ * @param {Function} [opts.firstRunFolders] what the first-run screen offers (the demo swaps it)
  * @param {boolean} [opts.allowRemote] container mode: may listen on 0.0.0.0 without login, because
  *                                     Docker publishes the port to the host's loopback only
  */
 export async function createBirddog({
   dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console, secrets, fetchImpl = fetch, cliToken,
-  liveReload = false, allowRemote = false, notifySystem, notifyChannel,
+  liveReload = false, allowRemote = false, notifySystem, notifyChannel, firstRunFolders,
 }) {
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
@@ -207,6 +209,12 @@ export async function createBirddog({
       refresh?.({ only: 'github' }).catch(() => {});
     },
   });
+  // A brand-new config starts with local git only. GitHub stays off until you connect it
+  // (the first-run screen suggests that next), so a fresh inbox shows no "not signed in" error.
+  if (loaded.created && !config.sources?.github && !(await github.status().catch(() => ({}))).connected) {
+    config = { ...config, sources: { ...config.sources, github: { enabled: false } } };
+    await saveConfig(dir, config).catch(() => {});
+  }
   // What every source gets in ctx, besides now/warn/summary.
   const oauth = createOAuth({ dir, secrets, getConfig: () => config, fetchImpl, now });
   const context = { fetch: fetchImpl, github, oauth, secret: (name) => secrets.get(name) };
@@ -479,6 +487,12 @@ export async function createBirddog({
       return triage.prefs;
     }],
     ['GET', /^\/api\/setup$/, () => setupPayload()],
+    ['GET', /^\/api\/firstrun$/, async () => {
+      const git = config.sources?.git ?? {};
+      const gh = await github.status().catch(() => ({}));
+      const folders = firstRunFolders ?? repoFolders;
+      return { ...(await folders({ roots: git.roots ?? [], container: !!allowRemote, maxDepth: git.maxDepth ?? 3, cwd })), github: { connected: !!gh.connected, login: gh.login ?? null } };
+    }],
     ['GET', /^\/api\/chat\/status$/, () => chat.status()],
     ['GET', /^\/api\/oauth$/, async (_m, _b, ctx) => ({
       providers: await Promise.all(oauth.providers.map(async (p) => ({ ...(await oauth.status(p)), redirectUri: `${ctx.base}/auth/oauth/${p}/callback` }))),

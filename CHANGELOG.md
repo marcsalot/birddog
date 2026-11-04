@@ -2,6 +2,17 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-11-04
+
+### Changed
+- **One-step first run.** A new install asks only where your code is, with the folders that hold repos already ticked (and a repo count for each). One click, about half a second from start to the first items, no account. The multi-step wizard is still there under `⌘K` → "Run the setup wizard".
+- A new config starts with local git only: GitHub stays off until you connect it, so a fresh inbox has no "not signed in" warning. Connecting switches it on.
+- One suggested next step after the first run, **Connect GitHub**, above the inbox and the Overview, with a GitHub-only setup dialog. "Not now" hides it (`hideNextStep` pref).
+
+### Added
+- `GET /api/firstrun`: the folders the first-run screen offers. The demo uses made-up folders and never looks at your disk.
+- A first-run screenshot in the guide (`npm run screenshots`).
+
 ## [1.8.0] - 2026-11-04
 
 ### Added
@@ -136,7 +147,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.8.0]: https://github.com/marcsalot/birddog/compare/ac18fb3...main
+[1.9.0]: https://github.com/marcsalot/birddog/compare/619b986...main
+[1.8.0]: https://github.com/marcsalot/birddog/compare/ac18fb3...619b986
 [1.7.0]: https://github.com/marcsalot/birddog/compare/45bcfde...ac18fb3
 [1.6.0]: https://github.com/marcsalot/birddog/compare/0b78f3b...45bcfde
 [1.5.0]: https://github.com/marcsalot/birddog/compare/35cffb9...0b78f3b

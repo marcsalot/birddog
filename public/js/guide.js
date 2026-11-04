@@ -9,16 +9,18 @@ const keys = (...k) => k.map((x) => `<kbd>${esc(x)}</kbd>`).join(' ');
 
 export const SECTIONS = [
   {
-    id: 'start', title: 'Getting started', words: 'start first run setup wizard demo overview inbox what is',
+    id: 'start', title: 'Getting started', words: 'start first run setup wizard demo overview inbox what is folder repos no account next step',
     html: `<p>Birddog looks through your local git repos, GitHub, Jira and calendar, and lists what needs you, most urgent first. Every item says <b>why</b> it's there and which rule put it there.</p>
       ${shot('overview', 'The Overview: load dial, open items, meetings and the last 14 days')}
       <p><b>Overview</b> (${keys('0')}) is the front page: how busy you are right now, what has waited longest, and how the last two weeks went. <b>Inbox</b> (${keys('1')}) is the list itself, grouped into <b>Now</b>, <b>Today</b> and <b>Later</b>.</p>
-      <p>On first run a <b>setup wizard</b> walks through each source and tests it as you go. Run it again any time with ${keys('⌘K')} → <i>Run the setup wizard</i>.</p>
+      <p>The first time you open Birddog it asks one thing: <b>where do you keep your code?</b> It has already ticked the folder it found with your repos, so usually you just press <b>Show my work</b>. No account needed.</p>
+      ${shot('first-run', 'The first run: one question, with the folder of repos already ticked')}
+      <p>Then it suggests one next step, <b>Connect GitHub</b>, above the list. Everything else (Jira, Linear, Slack, calendars and the rest) waits in <b>Sources &amp; settings</b> until you want it. Prefer a tour of every source? ${keys('⌘K')} → <i>Run the setup wizard</i>.</p>
       <p>Just looking? <code>birddog --demo</code> runs on made-up data and never touches your repos, tokens or calendar.</p>`,
   },
   {
     id: 'sources', title: 'Sources', words: 'git github jira calendar ical connect token sign in folders repos stale retry',
-    html: `<p>Connect them in <b>Connect a source</b>, in the sidebar.</p>
+    html: `<p>Connect them in <b>Sources &amp; settings</b>, in the sidebar. A fresh install starts with local git only.</p>
       <ul>
         <li><b>Local git</b>: pick the folders that hold your code. Birddog finds unpushed commits, uncommitted work and branches to tidy. It never changes your repos.</li>
         <li><b>GitHub</b>: <i>Use my gh CLI login</i> is the quickest way in. You get review requests, your PRs with failing checks or change requests, @mentions and assigned issues.</li>
