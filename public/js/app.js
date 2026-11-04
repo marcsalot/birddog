@@ -9,6 +9,7 @@ import { chatOpen, closeChat, initChat, onChatEvent, toggleChat } from './chat.j
 import { closeGuide, guideOpen, guideWide, initGuide, loadShots, onGuideEvent, openGuide, toggleGuide, toggleGuideWide } from './guide.js';
 import { bindOverview, overviewData, overviewHTML } from './overview.js';
 import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
+import { sourceMatches } from './source-search.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,7 @@ const SRC = {
   pagerduty: { short: 'PD', c: '#06ac38' },
   slack: { short: 'SL', c: '#611f69' },
 };
+const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
 const srcInfo = (id) => SRC[id] ?? { short: id.slice(0, 2).toUpperCase(), c: 'var(--later)' };
 const URG = {
   now: { label: 'Now', c: 'var(--now)' },
@@ -56,6 +58,7 @@ const st = {
   retrying: new Set(), // sources being retried from a stale bar
   wizard: null, // { step } while the first-run wizard is open
   firstRun: null, // { folders, other, busy, msg } while the one-step first-run screen is open
+  srcQuery: '', // the search box in Sources & settings
   only: null, // 'github' while setup shows just that card (the suggested next step)
   nextStep: null, // { github: connected? } for the next-step card; null = don't show it
 };
@@ -242,7 +245,7 @@ function renderUpdated() {
 
 function applyData(data) {
   st.items = data.items;
-  st.sources = data.sources;
+  st.sources = [...data.sources].sort(byName);
   st.refreshedAt = data.refreshedAt;
   st.loaded = true;
 }
@@ -851,16 +854,18 @@ const cardFor = (src) => (src.enabled === false && (src.id === 'git' || src.id =
 
 const WIZARD = [
   { id: 'welcome', title: 'Welcome to Birddog 🐾', intro: 'Birddog looks through your work and points at what needs you next. Connect the places your work lives; each one is tested as soon as you reach it. Skip anything you don’t use. You can change all of it later from <b>Connect a source</b>.' },
-  { id: 'git', title: 'Your local repos', intro: 'Which folders hold your code? Birddog finds uncommitted work, unpushed commits and branches to tidy. It never changes your repos.',
+  { id: 'git', name: 'Local git', title: 'Your local repos', intro: 'Which folders hold your code? Birddog finds uncommitted work, unpushed commits and branches to tidy. It never changes your repos.',
     dockerIntro: 'Birddog sees the folders you mounted into the container, read-only (usually <code>/repos</code>). It finds uncommitted work, unpushed commits and branches to tidy, and never changes them.' },
-  { id: 'github', title: 'GitHub', intro: 'Review requests, your PRs that need work, mentions and assigned issues. The quickest way in is your existing <code>gh</code> login.',
+  { id: 'github', name: 'GitHub', title: 'GitHub', intro: 'Review requests, your PRs that need work, mentions and assigned issues. The quickest way in is your existing <code>gh</code> login.',
     dockerIntro: 'Review requests, your PRs that need work, mentions and assigned issues. In Docker, Birddog uses the token you pass as <code>GITHUB_TOKEN</code>.' },
-  { id: 'jira', title: 'Jira Cloud', intro: 'The tickets assigned to you, ranked by due date, sprint end, blockers and priority. You need your site, your email and an API token.',
+  { id: 'jira', name: 'Jira Cloud', title: 'Jira Cloud', intro: 'The tickets assigned to you, ranked by due date, sprint end, blockers and priority. You need your site, your email and an API token.',
     dockerIntro: 'The tickets assigned to you, ranked by due date, sprint end, blockers and priority. Enter your site and email here; the API token comes from <code>BIRDDOG_JIRA_TOKEN</code>.' },
-  { id: 'cal', title: 'Calendar', intro: 'Your next meetings, so a 10:00 standup never sneaks up on you. Paste an iCal link from Google, Outlook or iCloud, or pick an .ics file.',
+  { id: 'cal', name: 'Calendar', title: 'Calendar', intro: 'Your next meetings, so a 10:00 standup never sneaks up on you. Paste an iCal link from Google, Outlook or iCloud, or pick an .ics file.',
     dockerIntro: 'Your next meetings, so a 10:00 standup never sneaks up on you. The private iCal link comes from <code>BIRDDOG_CAL_URL</code>; set <code>TZ</code> so times show in your zone.' },
   { id: 'done', title: 'You’re all set', intro: 'Here’s what Birddog is watching. Press <kbd>r</kbd> any time to refresh, or <kbd>⌘K</kbd> → “Run the setup wizard” to come back here.' },
 ];
+// Source steps go A–Z by name, like every other list of sources.
+WIZARD.splice(1, WIZARD.length - 2, ...WIZARD.slice(1, -1).sort(byName));
 const SOURCE_STEPS = WIZARD.filter((w) => w.id !== 'welcome' && w.id !== 'done').length;
 
 function isConnected(src) {
@@ -1006,7 +1011,11 @@ async function nextStepAction(a) {
 }
 
 function settingsChrome() {
-  $('#setupHead').innerHTML = '<h2 id="setupTitle">Connect your sources</h2><p>Everything stays on this machine. Birddog only reads: it never changes your repos, PRs, tickets or calendar.</p>';
+  // Built once per opening, so typing in the search box never loses focus.
+  if (!$('#srcSearch')) {
+    $('#setupHead').innerHTML = `<h2 id="setupTitle">Connect your sources</h2><p>Everything stays on this machine. Birddog only reads: it never changes your repos, PRs, tickets or calendar.</p>
+      <div class="src-search"><span aria-hidden="true">🔍</span><input id="srcSearch" type="search" placeholder="Search sources: calendar, tickets, ci…" aria-label="Search sources" aria-describedby="srcCount" autocomplete="off" spellcheck="false" value="${esc(st.srcQuery)}"><span class="src-count" id="srcCount" aria-live="polite"></span></div>`;
+  }
   const s = st.setup;
   const ok = s ? s.sources.filter((x) => x.status?.status === 'ok').length : 0;
   const on = s ? s.sources.filter((x) => x.enabled !== false).length : 0;
@@ -1030,7 +1039,26 @@ function renderCards() {
   if (!s) { $('#cards').innerHTML = '<div class="card wide"><div class="msg">Loading…</div></div>'; return; }
   const warn = s.secretWarning ? `<div class="card wide warnbox"><div class="msg">⚠ ${esc(s.secretWarning)}</div></div>` : '';
   const soon = s.comingSoon.map((c) => `${cardTop(c.id, c.name, 'Coming soon', 'soon', false)}<div class="msg">${esc(c.description)}</div></div>`);
-  $('#cards').innerHTML = warn + s.sources.map(cardFor).join('') + soon.join('');
+  const tag = (html, id) => html.replace('<div class="card', `<div data-card="${esc(id)}" class="card`);
+  $('#cards').innerHTML = warn + s.sources.map((src) => tag(cardFor(src), src.id)).join('') + soon.map((html, i) => tag(html, s.comingSoon[i].id)).join('')
+    + '<div class="card wide src-empty" id="srcEmpty" hidden><div class="msg">No source matches that. Try a kind of thing, like <i>tickets</i>, <i>calendar</i> or <i>ci</i>.</div></div>';
+  filterCards();
+}
+
+/** Hide the cards that don't match (instead of re-rendering, so half-typed fields survive). */
+function filterCards() {
+  const s = st.setup;
+  if (!s || !$('#srcSearch')) return;
+  const all = [...s.sources, ...s.comingSoon];
+  let shown = 0;
+  for (const src of all) {
+    const el = document.querySelector(`[data-card="${CSS.escape(src.id)}"]`);
+    const ok = sourceMatches(src, st.srcQuery);
+    if (el) el.hidden = !ok;
+    if (ok) shown++;
+  }
+  $('#srcEmpty').hidden = shown > 0;
+  $('#srcCount').textContent = st.srcQuery.trim() ? `${shown} of ${all.length}` : `${all.length} sources, A–Z`;
 }
 
 async function openSetup({ wizard = false, only = null } = {}) {
@@ -1038,6 +1066,8 @@ async function openSetup({ wizard = false, only = null } = {}) {
   st.cards = {};
   st.firstRun = null;
   st.only = only;
+  st.srcQuery = '';
+  $('#setupHead').innerHTML = '';
   st.wizard = wizard ? { step: 0 } : null;
   renderCards();
   try {
@@ -1227,6 +1257,7 @@ $('#notifyPanel').addEventListener('change', (e) => { onNotifyPanelEvent(e); });
 $('#notifyPanel').addEventListener('click', (e) => { e.stopPropagation(); onNotifyPanelEvent(e); });
 $('#undoBtn').onclick = runUndo;
 $('#pInput').addEventListener('input', () => { pSel = 0; renderPalette(); });
+$('#setupHead').addEventListener('input', (e) => { if (e.target.id === 'srcSearch') { st.srcQuery = e.target.value; filterCards(); } });
 $('#appear').onclick = (e) => {
   e.stopPropagation();
   const b = e.target.closest('[data-pal],[data-mode]');
@@ -1241,6 +1272,7 @@ document.addEventListener('mousedown', (e) => {
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return overlay() ? closeAll() : openPalette(); }
   if (e.key === 'Escape') {
+    if (e.target.id === 'srcSearch' && e.target.value) { e.preventDefault(); e.target.value = ''; st.srcQuery = ''; return filterCards(); }
     if (appearOpen()) return closeAppear();
     if (notifyPanelOpen()) return closeNotifyPanel();
     if (chatOpen()) return closeChat();

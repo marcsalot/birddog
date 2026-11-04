@@ -347,6 +347,8 @@ The reader is built in (no dependencies) and handles what real feeds contain: fo
 
 ## More sources
 
+Sources & settings lists every source A–Z, with a search box that matches names and kinds of thing (*calendar* finds Google, Microsoft, iCloud and iCal; *ci* finds GitHub Actions, GitLab pipelines and Azure).
+
 GitLab, Linear, Azure DevOps, Sentry, PagerDuty and Slack are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token` and `slack-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN` and `BIRDDOG_SLACK_TOKEN`. None of them write anything. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL.
 
 | Source | Ranks it as | Rules that fire |

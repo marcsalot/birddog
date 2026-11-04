@@ -27,6 +27,7 @@ import { createSecretStore } from './secrets.mjs';
 import { COMING_SOON, isEnabled, SOURCES, validateSource } from './sources/index.mjs';
 import { Triage } from './triage.mjs';
 
+const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const MAX_BODY = 64 * 1024;
@@ -338,8 +339,8 @@ export async function createBirddog({
           secretNames: s.secretFields ?? {}, // names only, e.g. { token: 'gitlab-token' }
           status: status ?? null,
         };
-      })),
-      comingSoon: COMING_SOON.filter((c) => !sources.some((s) => s.id === c.id)),
+      })).then((list) => list.sort(byName)), // A–Z by display name, wherever they're listed
+      comingSoon: COMING_SOON.filter((c) => !sources.some((s) => s.id === c.id)).sort(byName),
       connections: { github: await github.status() },
     };
   }

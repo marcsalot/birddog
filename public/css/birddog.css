@@ -549,3 +549,10 @@ body.rail-collapsed .nav .ico .dot{width:13px;height:13px}
 body.rail-collapsed .src-toggle .check{width:24px;height:24px;font-size:13px}
 body.rail-collapsed .nav .count{top:0;right:2px}
 body.guide-open.guide-wide .keybar{display:none}
+
+/* Sources & settings: search */
+.src-search{display:flex;align-items:center;gap:8px;margin-top:12px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.src-search:focus-within{border-color:var(--accent)}
+.src-search input{flex:1;min-width:0;border:0;background:none;padding:9px 0;outline:none;font:inherit;color:var(--text)}
+.src-count{color:var(--muted);font-size:12px;white-space:nowrap}
+#cards [hidden]{display:none !important}

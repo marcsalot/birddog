@@ -20,7 +20,7 @@ export const SECTIONS = [
   },
   {
     id: 'sources', title: 'Sources', words: 'git github jira calendar ical connect token sign in folders repos stale retry',
-    html: `<p>Connect them in <b>Sources &amp; settings</b>, in the sidebar. A fresh install starts with local git only.</p>
+    html: `<p>Connect them in <b>Sources &amp; settings</b>. A fresh install starts with local git only. Sources are listed A–Z; type in the search box at the top to find one by name or by what it does (<i>calendar</i>, <i>tickets</i>, <i>ci</i>). ${keys('esc')} clears it.</p>
       <ul>
         <li><b>Local git</b>: pick the folders that hold your code. Birddog finds unpushed commits, uncommitted work and branches to tidy. It never changes your repos.</li>
         <li><b>GitHub</b>: <i>Use my gh CLI login</i> is the quickest way in. You get review requests, your PRs with failing checks or change requests, @mentions and assigned issues.</li>
