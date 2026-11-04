@@ -1,15 +1,21 @@
 # 🐾 Birddog
 
+[![npm](https://img.shields.io/npm/v/bird-dog?color=f5b700)](https://www.npmjs.com/package/bird-dog)
+[![Node 22+](https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![CI](https://github.com/marcsalot/birddog/actions/workflows/ci.yml/badge.svg)](https://github.com/marcsalot/birddog/actions/workflows/ci.yml)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
+
 **What needs me next?** Birddog is a local-first inbox for developers. It looks through your local git repos, GitHub, Jira and calendar, ranks what it finds with plain rules, and tells you *why* each thing is there.
 
 ![Birddog demo: the inbox, opening an item, marking one done, snoozing another, and switching themes](https://raw.githubusercontent.com/marcsalot/birddog/main/docs/demo.gif)
 
 ```bash
-npx bird-dog --demo     # look around with made-up data
-npx bird-dog --open     # the real thing, on http://127.0.0.1:4747
+npx bird-dog --demo --open     # look around with made-up data (http://127.0.0.1:4848)
+npx bird-dog --open            # the real thing (http://127.0.0.1:4747)
 ```
 
-You need Node 22 or newer. There's no account, no cloud and nothing else to install. Prefer containers? See [Run it in Docker](#run-it-in-docker).
+You need Node 22 or newer. There's no account and no cloud, and the package has no dependencies. See [Install](#install) for `npm i -g`, Docker and running from source.
 
 ## Why
 
@@ -25,103 +31,43 @@ Work-in-progress hides in too many places: a branch you forgot to push, a review
 - **Zero runtime dependencies.** It's plain Node and browser JavaScript. Even the iCalendar parser and the MCP server are hand-written.
 - **Talks to your AI tools.** `birddog mcp` lets Claude Code, Claude Desktop or any MCP client ask "what needs me?" and triage items.
 
-## Sources
+## Install
 
-| Source | What it finds | How it connects |
-|---|---|---|
-| **Local git** | Unpushed commits, uncommitted work, merged and stale branches | Scans folders you pick; runs read-only `git` commands |
-| **GitHub** | Review requests, your PRs with failing checks, change requests or conflicts, unread @mentions, assigned issues | Your existing `gh` login, or "Sign in with GitHub" (device flow) |
-| **Jira Cloud** | Your tickets: overdue, sprint ending, blocked, high priority | Site + email + API token |
-| **Calendar** | Meetings starting soon or later today, all-day events | Any iCal link (Google, Outlook, iCloud) or `.ics` file |
-
-When a source fails, its last good items stay in the list, marked stale, with a **Retry** button. One broken token never empties your inbox. Details for each source are [further down](#what-it-finds-local-git).
-
-## Privacy and secrets
-
-- Everything stays on your machine: config, cache and triage state live in `~/.config/birddog/` as plain JSON.
-- Tokens and private calendar links go to your **OS keychain** (macOS Keychain, or Secret Service on Linux), never into config files, never into API responses, and never to the browser. If no keychain is available, Birddog says so clearly before falling back to a file only you can read. See [Secrets](#secrets).
-- Birddog only talks to the services you connect, with `GET` requests, and to nothing else.
-- For a shared machine, you can put the dashboard behind your own OpenID Connect login (Google, Okta, Entra, …). See [Login](#login-for-the-dashboard-sso).
-- In [Docker](#run-it-in-docker), tokens come only from environment variables or Docker secrets and are never written to the volume. Your repos are mounted read-only, and the port is published to `127.0.0.1` only.
-
-## Use it from Claude (MCP)
-
-`birddog mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. It reads the same data as the dashboard, so both can run at once, and decisions made in one show up in the other.
-
-**Claude Code:**
+**1. With npm** (recommended; needs [Node.js](https://nodejs.org) 22 or newer):
 
 ```bash
-claude mcp add birddog -- npx -y bird-dog mcp
+npx bird-dog --open          # run it straight away, nothing installed
 ```
-
-**Claude Desktop:** add this to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop:
-
-```json
-{
-  "mcpServers": {
-    "birddog": {
-      "command": "npx",
-      "args": ["-y", "bird-dog", "mcp"]
-    }
-  }
-}
-```
-
-Claude Desktop starts servers with a short `PATH`. If it can't find `npx`, use the full path (`which npx`). If you use the GitHub CLI login, add `"env": { "PATH": "/opt/homebrew/bin:/usr/bin:/bin" }` so Birddog can find `gh`.
-
-Want to try it first? Use `["-y", "bird-dog", "mcp", "--demo"]` and it runs on made-up data.
-
-| Tool | What it does |
-|---|---|
-| `list_items` | What needs you, most urgent first, each with its "why". Filter by `urgency`, `source`, `status`; `limit`. |
-| `get_item` | One item in full: rule, fields, link, suggested next step. |
-| `list_sources` | Which sources are connected, item counts, and which are stale (with the error). |
-| `mark_done` | Done in Birddog until the item changes. |
-| `snooze` | Hide until `1h`, `3h`, `2d`, `tomorrow`, `next-week`, `change`, or a date. |
-| `restore` | Undo a done or snooze. |
-
-The tools return titles, "why" lines, links and fields, never tokens, secrets or settings. Triage tools only change Birddog's own list. If the dashboard hasn't refreshed recently, the MCP server refreshes the sources itself.
-
-## How it works
-
-```
- sources (git, GitHub, Jira, iCal)        each returns Items: title, why, urgency, url, fields
-        │   plain rules rank them          src/rules.mjs: first match wins, the rule is shown
-        ▼
- collector ── cache.json                  keeps the last good result per source; stale + backoff on failure
-        │
- triage ──── state.json                   done / snooze, comes back when the item changes
-        │
-        ├── HTTP server + UI               127.0.0.1 only, strict CSP, no build step (public/)
-        └── MCP server (stdio)             birddog mcp
- secrets ─── OS keychain                  tokens and private links, never in files or responses
-```
-
-Each source is one small ES module with `test()` and `collect()`. Adding one is about a page of code; see [Writing a source](#writing-a-source). The whole thing is about 5,700 lines of JavaScript with 164 `node:test` tests, and none of the tests touch the network. CI runs them on Node 22 and 24 and inside the Docker image.
-
-## Get started
 
 ```bash
-npx bird-dog --open
+npm install -g bird-dog      # or install it for good …
+birddog --open               # … then run it as birddog (bird-dog works too)
 ```
 
-Or from a clone:
+The npm package is called `bird-dog` because `birddog` was taken; the command is `birddog` either way. Upgrade with `npm install -g bird-dog@latest`.
+
+**2. With Docker**: no Node needed. See [Run it in Docker](#run-it-in-docker).
+
+**3. From source** (no `npm install` step, because there are no dependencies):
 
 ```bash
 git clone https://github.com/marcsalot/birddog && cd birddog
 node bin/birddog.mjs --open
 ```
 
+### First run
+
 On first run a **setup wizard** walks you through each source: your code folders (Birddog guesses `~/code`, `~/src`, `~/projects`, `~/Developer`, …, or the folder you ran it from), then GitHub, Jira and your calendar. Each step runs that source's test as soon as you reach it, so you see straight away whether it works. Skip whatever you don't use; skipping GitHub switches it off so it doesn't sit there as "stale". You can change anything later in **Connect a source**, or run the wizard again with `⌘K` → "Run the setup wizard".
 
 ```
 birddog                 start on http://127.0.0.1:4747
 birddog --open          start and open your browser
-birddog --demo          made-up data in a temporary folder; your real setup is never touched
+birddog --demo          made-up data in a temporary folder on :4848; your real setup is never touched
 birddog mcp             MCP server on stdio (add --demo for made-up data)
 birddog --port 5000     use another port
 birddog --host 0.0.0.0  listen beyond localhost (only with login turned on; also BIRDDOG_HOST)
 birddog secret set jira-token   store a secret in your keychain (reads stdin; also cal-url, oidc-client-secret)
+birddog --version
 birddog --help
 ```
 
@@ -205,6 +151,80 @@ claude mcp add birddog -- docker run -i --rm -v birddog-data:/data -v ~/code:/re
 ```
 
 Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashboard container last collected. If that's older than two refresh intervals, it refreshes itself, and then it needs the same tokens (add `-e GITHUB_TOKEN`, or `-v ~/.secrets/github:/run/secrets/github:ro -e GITHUB_TOKEN_FILE=/run/secrets/github`). Claude Desktop needs the full path to `docker` if it isn't on its `PATH`.
+
+## Sources
+
+| Source | What it finds | How it connects |
+|---|---|---|
+| **Local git** | Unpushed commits, uncommitted work, merged and stale branches | Scans folders you pick; runs read-only `git` commands |
+| **GitHub** | Review requests, your PRs with failing checks, change requests or conflicts, unread @mentions, assigned issues | Your existing `gh` login, or "Sign in with GitHub" (device flow) |
+| **Jira Cloud** | Your tickets: overdue, sprint ending, blocked, high priority | Site + email + API token |
+| **Calendar** | Meetings starting soon or later today, all-day events | Any iCal link (Google, Outlook, iCloud) or `.ics` file |
+
+When a source fails, its last good items stay in the list, marked stale, with a **Retry** button. One broken token never empties your inbox. Details for each source are [further down](#what-it-finds-local-git).
+
+## Privacy and secrets
+
+- Everything stays on your machine: config, cache and triage state live in `~/.config/birddog/` as plain JSON.
+- Tokens and private calendar links go to your **OS keychain** (macOS Keychain, or Secret Service on Linux), never into config files, never into API responses, and never to the browser. If no keychain is available, Birddog says so clearly before falling back to a file only you can read. See [Secrets](#secrets).
+- Birddog only talks to the services you connect, with `GET` requests, and to nothing else.
+- For a shared machine, you can put the dashboard behind your own OpenID Connect login (Google, Okta, Entra, …). See [Login](#login-for-the-dashboard-sso).
+- In [Docker](#run-it-in-docker), tokens come only from environment variables or Docker secrets and are never written to the volume. Your repos are mounted read-only, and the port is published to `127.0.0.1` only.
+
+## Use it from Claude (MCP)
+
+`birddog mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. It reads the same data as the dashboard, so both can run at once, and decisions made in one show up in the other.
+
+**Claude Code:**
+
+```bash
+claude mcp add birddog -- npx -y bird-dog mcp
+```
+
+**Claude Desktop:** add this to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "birddog": {
+      "command": "npx",
+      "args": ["-y", "bird-dog", "mcp"]
+    }
+  }
+}
+```
+
+Claude Desktop starts servers with a short `PATH`. If it can't find `npx`, use the full path (`which npx`). If you use the GitHub CLI login, add `"env": { "PATH": "/opt/homebrew/bin:/usr/bin:/bin" }` so Birddog can find `gh`.
+
+Want to try it first? Use `["-y", "bird-dog", "mcp", "--demo"]` and it runs on made-up data.
+
+| Tool | What it does |
+|---|---|
+| `list_items` | What needs you, most urgent first, each with its "why". Filter by `urgency`, `source`, `status`; `limit`. |
+| `get_item` | One item in full: rule, fields, link, suggested next step. |
+| `list_sources` | Which sources are connected, item counts, and which are stale (with the error). |
+| `mark_done` | Done in Birddog until the item changes. |
+| `snooze` | Hide until `1h`, `3h`, `2d`, `tomorrow`, `next-week`, `change`, or a date. |
+| `restore` | Undo a done or snooze. |
+
+The tools return titles, "why" lines, links and fields, never tokens, secrets or settings. Triage tools only change Birddog's own list. If the dashboard hasn't refreshed recently, the MCP server refreshes the sources itself.
+
+## How it works
+
+```
+ sources (git, GitHub, Jira, iCal)        each returns Items: title, why, urgency, url, fields
+        │   plain rules rank them          src/rules.mjs: first match wins, the rule is shown
+        ▼
+ collector ── cache.json                  keeps the last good result per source; stale + backoff on failure
+        │
+ triage ──── state.json                   done / snooze, comes back when the item changes
+        │
+        ├── HTTP server + UI               127.0.0.1 only, strict CSP, no build step (public/)
+        └── MCP server (stdio)             birddog mcp
+ secrets ─── OS keychain                  tokens and private links, never in files or responses
+```
+
+Each source is one small ES module with `test()` and `collect()`. Adding one is about a page of code; see [Writing a source](#writing-a-source). The whole thing is about 5,700 lines of JavaScript with 164 `node:test` tests, and none of the tests touch the network. CI runs them on Node 22 and 24 and inside the Docker image.
 
 ## What it finds (local git)
 
@@ -587,6 +607,10 @@ test/                  node:test suites
 5. ✅ Docker image, Compose file, CI that runs the tests in the image
 
 Ideas for later: GitLab and Linear sources, a "focus" view that hides Later, desktop notifications for Now.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

@@ -12,6 +12,7 @@
     "src",
     "public",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {
@@ -36,7 +37,8 @@
     "calendar",
     "ical",
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "docker"
   ],
   "repository": {
     "type": "git",
@@ -46,6 +48,9 @@
   "bugs": {
     "url": "https://github.com/marcsalot/birddog/issues"
   },
-  "author": "Marcus Ferrell",
+  "author": {
+    "name": "Marcus Ferrell",
+    "url": "https://github.com/marcsalot"
+  },
   "license": "MIT"
 }
