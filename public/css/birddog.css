@@ -504,3 +504,42 @@ body.rail-collapsed .rail .me{justify-content:center;padding:6px 0}
 .next-step small{display:block;margin-top:4px;color:var(--faint)}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline}
 @media (max-width:760px){.next-step{flex-wrap:wrap}.next-step .ns-txt{flex-basis:calc(100% - 40px)}}
+
+/* ---- Guide: widen and expand all ---------------------------------------- */
+body.guide-open{--guide-base:360px}
+body.guide-open.guide-wide{--guide-base:min(720px,46vw)}
+body.guide-open .app,
+body.rail-collapsed.guide-open .app{grid-template-columns:var(--rail-w) minmax(0,1fr) var(--guide-base)}
+body.guide-open.guide-wide{--guide-w:var(--guide-base)}
+.guide header{gap:8px}
+.guide .g-tools{display:flex;align-items:center;gap:6px}
+.guide .g-tools .icon-btn{width:30px;height:30px;font-size:15px}
+.guide .g-all{border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:4px 10px;font-size:12px;color:var(--muted);white-space:nowrap}
+.guide .g-all:hover{border-color:var(--accent);color:var(--text)}
+.guide [data-guide="wide"][aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+body.guide-wide .guide .g-body{font-size:14px;padding:10px 28px 80px}
+body.guide-wide .guide .g-shot img{max-width:640px}
+@media (max-width:1199px){
+  body.guide-open .app{grid-template-columns:var(--rail-w) minmax(0,1fr)}
+  body.guide-open.guide-wide{--guide-w:0px}
+  body.guide-wide .guide{width:min(96vw,720px)}
+}
+@media (min-width:1060px) and (max-width:1199px){
+  body.rail-collapsed.guide-open .app{grid-template-columns:var(--rail-w) minmax(0,1fr) var(--guide-base)}
+  body.rail-collapsed.guide-open.guide-wide{--guide-w:var(--guide-base)}
+}
+@media (max-width:760px){body.guide-open .app{grid-template-columns:1fr}}
+
+/* ---- Bigger menu icons --------------------------------------------------- */
+.nav button{gap:12px;padding:8px 10px}
+.nav .ico{width:24px;height:24px;font-size:18px}
+.nav .ico .dot{width:11px;height:11px}
+.src-toggle .check{width:20px;height:20px;border-radius:6px;font-size:12px;margin:0 2px}
+.logo,.logo svg{width:34px;height:34px}
+body.rail-collapsed{--rail-w:72px}
+body.rail-collapsed .nav button{padding:10px 0}
+body.rail-collapsed .nav .ico{width:28px;height:28px;font-size:21px}
+body.rail-collapsed .nav .ico .dot{width:13px;height:13px}
+body.rail-collapsed .src-toggle .check{width:24px;height:24px;font-size:13px}
+body.rail-collapsed .nav .count{top:0;right:2px}
+body.guide-open.guide-wide .keybar{display:none}

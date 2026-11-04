@@ -30,4 +30,15 @@ describe('main menu rail', () => {
     await again.load();
     assert.deepEqual([again.prefs.railOpen, again.prefs.guideOpen], [false, true]);
   });
+
+  it('remembers whether the guide is widened', async () => {
+    const t = new Triage({ dir: await tmpDir() });
+    await t.load();
+    assert.equal(t.prefs.guideWide, false);
+    assert.deepEqual(await t.setPrefs({ guideWide: true }), []);
+    assert.deepEqual(await t.setPrefs({ guideWide: 'wide' }), ['guideWide']);
+    const again = new Triage({ dir: t.file.replace(/\/state\.json$/, '') });
+    await again.load();
+    assert.equal(again.prefs.guideWide, true);
+  });
 });

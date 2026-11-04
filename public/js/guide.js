@@ -77,6 +77,7 @@ export const SECTIONS = [
       <tr><td>${keys('1')}–${keys('6')}</td><td>All, Now, Today, Later, Snoozed, Done</td></tr>
       <tr><td>${keys('a')}</td><td>Ask Birddog</td></tr>
       <tr><td>${keys('g')}</td><td>This guide</td></tr>
+      <tr><td>${keys('⇧G')}</td><td>Widen or narrow this guide</td></tr>
       <tr><td>${keys('m')}</td><td>Show or hide the menu</td></tr>
       <tr><td>${keys('r')}</td><td>Refresh everything</td></tr>
       <tr><td>${keys('/')} ${keys('⌘K')}</td><td>Search and commands</td></tr>
@@ -119,15 +120,17 @@ docker compose --profile demo up     # made-up data, port 4848</code></pre>
   },
 ];
 
-let ctx = null; // { save(open), theme() }
+let ctx = null; // { save(open), saveWide(wide), theme() }
 let query = '';
 
 const $ = (s) => document.querySelector(s);
 export const guideOpen = () => document.body.classList.contains('guide-open');
+export const guideWide = () => document.body.classList.contains('guide-wide');
 
 export function initGuide(options) {
   ctx = options;
   render();
+  setWide(!!options.wide, { save: false });
   if (options.open) setGuide(true, { save: false });
 }
 
@@ -148,6 +151,35 @@ function setGuide(open, { save = true, section } = {}) {
 export const openGuide = (section) => setGuide(true, { section });
 export const closeGuide = () => setGuide(false);
 export const toggleGuide = () => setGuide(!guideOpen());
+
+/** Widen the guide to read it comfortably, or narrow it back to a rail. */
+function setWide(wide, { save = true } = {}) {
+  document.body.classList.toggle('guide-wide', wide);
+  const b = $('#guideRail [data-guide="wide"]');
+  if (b) {
+    b.setAttribute('aria-pressed', String(wide));
+    b.setAttribute('aria-label', wide ? 'Narrow the guide (Shift+G)' : 'Widen the guide (Shift+G)');
+    b.title = b.getAttribute('aria-label');
+    b.textContent = wide ? '⇥' : '⇤';
+  }
+  if (save) ctx?.saveWide?.(wide);
+  if (guideOpen()) window.dispatchEvent(new Event('resize')); // charts re-measure
+}
+export const toggleGuideWide = () => setWide(!guideWide());
+
+/** Open or close every section at once. */
+function setAllSections(open) {
+  for (const d of document.querySelectorAll('#guideRail details:not([hidden])')) d.open = open;
+  syncAllButton();
+}
+function syncAllButton() {
+  const b = $('#guideRail [data-guide="all"]');
+  if (!b) return;
+  const visible = [...document.querySelectorAll('#guideRail details:not([hidden])')];
+  const allOpen = visible.length > 0 && visible.every((d) => d.open);
+  b.textContent = allOpen ? 'Collapse all' : 'Expand all';
+  b.setAttribute('aria-pressed', String(allOpen));
+}
 
 /** Point screenshots at the light or dark set, matching the current theme. */
 export function loadShots() {
@@ -173,7 +205,7 @@ export function searchGuide(q, sections = SECTIONS) {
 function render() {
   const el = $('#guideRail');
   if (!el) return;
-  el.innerHTML = `<header><b>Guide</b><button class="icon-btn" data-guide="close" aria-label="Close the guide (g)">✕</button></header>
+  el.innerHTML = `<header><b>Guide</b><span class="g-tools"><button class="g-all" data-guide="all" aria-pressed="false">Expand all</button><button class="icon-btn" data-guide="wide" aria-pressed="false" aria-label="Widen the guide (Shift+G)" title="Widen the guide (Shift+G)">⇤</button><button class="icon-btn" data-guide="close" aria-label="Close the guide (g)" title="Close the guide (g)">✕</button></span></header>
     <div class="g-search"><input id="guideSearch" type="search" placeholder="Search the guide…" aria-label="Search the guide" autocomplete="off" spellcheck="false"><span id="guideCount" aria-live="polite"></span></div>
     <div class="g-body">${SECTIONS.map((s, i) => `<details data-g="${s.id}" ${i === 0 ? 'open' : ''}><summary>${esc(s.title)}</summary><div class="g-sec">${s.html}</div></details>`).join('')}
       <p class="g-none" hidden>Nothing in the guide matches that. Try fewer words, or the README on GitHub.</p></div>`;
@@ -190,6 +222,7 @@ function applySearch() {
   }
   $('#guideRail .g-none').hidden = shown > 0;
   $('#guideCount').textContent = query ? `${shown} of ${SECTIONS.length}` : '';
+  syncAllButton();
 }
 
 export function onGuideEvent(e) {
@@ -197,5 +230,8 @@ export function onGuideEvent(e) {
   if (e.type === 'input' && e.target.id === 'guideSearch') { query = e.target.value.trim(); applySearch(); return true; }
   if (e.type === 'keydown' && e.key === 'Escape') { if (query) { e.target.value = ''; query = ''; applySearch(); } else closeGuide(); return true; }
   if (e.type === 'click' && e.target.closest('[data-guide="close"]')) { closeGuide(); return true; }
+  if (e.type === 'click' && e.target.closest('[data-guide="wide"]')) { toggleGuideWide(); return true; }
+  if (e.type === 'click' && e.target.closest('[data-guide="all"]')) { setAllSections(e.target.closest('[data-guide="all"]').getAttribute('aria-pressed') !== 'true'); return true; }
+  if (e.type === 'click' && e.target.closest('summary')) { setTimeout(syncAllButton); return false; }
   return false;
 }

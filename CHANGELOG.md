@@ -2,6 +2,14 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- The guide can be **widened** (⇤ in its header, or `Shift+G`) for comfortable reading, and remembers it. **Expand all / Collapse all** opens or closes every section at once.
+
+### Changed
+- Bigger icons in the main menu, especially when it's collapsed to icons (the collapsed menu is a little wider to fit them).
+
 ## [1.9.0] - 2026-11-04
 
 ### Changed

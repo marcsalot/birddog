@@ -6,7 +6,7 @@ import {
   PALETTE_NAMES, appearanceHTML, cyclePalette, initAppearance, setMode, setPalette, toggleTheme,
 } from './appearance.js';
 import { chatOpen, closeChat, initChat, onChatEvent, toggleChat } from './chat.js';
-import { closeGuide, guideOpen, initGuide, loadShots, onGuideEvent, openGuide, toggleGuide } from './guide.js';
+import { closeGuide, guideOpen, guideWide, initGuide, loadShots, onGuideEvent, openGuide, toggleGuide, toggleGuideWide } from './guide.js';
 import { bindOverview, overviewData, overviewHTML } from './overview.js';
 import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
@@ -505,6 +505,7 @@ function commands() {
     { label: 'Notifications…', run: () => toggleNotifyPanel() },
     { label: 'Ask Birddog…', k: 'a', run: () => toggleChat() },
     { label: guideOpen() ? 'Hide the guide' : 'Open the guide', k: 'g', run: () => toggleGuide() },
+    { label: guideWide() ? 'Narrow the guide' : 'Widen the guide', k: 'G', run: () => { if (!guideOpen()) openGuide(); toggleGuideWide(); } },
     { label: document.body.classList.contains('rail-collapsed') ? 'Expand the menu' : 'Collapse the menu', k: 'm', run: () => toggleRail() },
     ...[['start', 'Getting started'], ['sources', 'Sources'], ['notifications', 'Notifications'], ['chat', 'Ask Birddog'], ['docker', 'Docker'], ['mcp', 'MCP']].map(([id, t]) => ({ label: `Guide: ${t}`, run: () => openGuide(id) })),
     ...Object.entries(PALETTE_NAMES).map(([p, n]) => ({ label: `Theme: ${n}`, run: () => setPalette(p) })),
@@ -1280,6 +1281,7 @@ document.addEventListener('keydown', (e) => {
     case 'o': return openLink(sel);
     case 'a': e.preventDefault(); return toggleChat();
     case 'g': e.preventDefault(); return toggleGuide();
+    case 'G': e.preventDefault(); if (!guideOpen()) openGuide(); return toggleGuideWide();
     case 'm': e.preventDefault(); return toggleRail();
     case 'r': return refresh();
     // No toast here: it would replace a pending "Undo" toast, and the change is visible anyway.
@@ -1331,7 +1333,7 @@ async function boot() {
   try { prefs = await api.prefs(); } catch { /* use defaults */ }
   api.me().then(renderMe).catch(() => {});
   initAppearance({ prefs, save: savePrefs, changed: () => { if (appearOpen()) renderAppear(); loadShots(); } });
-  initGuide({ open: !!prefs.guideOpen, save: (open) => savePrefs({ guideOpen: open }), theme: () => document.documentElement.dataset.theme });
+  initGuide({ open: !!prefs.guideOpen, wide: !!prefs.guideWide, save: (open) => savePrefs({ guideOpen: open }), saveWide: (wide) => savePrefs({ guideWide: wide }), theme: () => document.documentElement.dataset.theme });
   st.hidden = new Set(prefs.hiddenSources ?? []);
   setRail(prefs.railOpen !== false, { save: false });
   render();
