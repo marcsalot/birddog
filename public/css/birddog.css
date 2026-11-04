@@ -574,3 +574,25 @@ body.guide-open.guide-wide .keybar{display:none}
 .acct-items button:hover,.acct-items button:focus-visible{background:var(--panel-2);outline:none}
 .acct-items kbd{font-size:11px}
 @media (max-width:520px){.search kbd{display:none}.search{min-width:0;overflow:hidden}.search span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+
+/* Fetch: the floating chat assistant, bottom right */
+.fetch-fab{position:fixed;right:calc(var(--guide-w,0px) + 20px);bottom:20px;width:52px;height:52px;border-radius:50%;border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));background:var(--panel);color:var(--accent);display:grid;place-items:center;box-shadow:var(--shadow);z-index:23;cursor:pointer;transition:transform .15s ease,border-color .15s}
+.fetch-fab:hover{transform:translateY(-2px);border-color:var(--accent)}
+.fetch-fab svg{width:26px;height:26px;fill:currentColor}
+.fetch-fab[aria-expanded="true"]{background:var(--accent-soft);border-color:var(--accent)}
+/* The details drawer and floating guide own the right edge while they're open. */
+#drawer.open ~ .fetch-fab{display:none}
+@media (max-width:1199px){body.guide-open:not(.rail-collapsed) .fetch-fab{display:none}}
+@media (max-width:1059px){body.guide-open .fetch-fab{display:none}}
+.drawer.chat{top:auto;left:auto;right:calc(var(--guide-w,0px) + 20px);bottom:84px;width:400px;height:560px;max-width:calc(100vw - 40px);max-height:calc(100vh - 110px);border:1px solid var(--line);border-radius:16px;overflow:hidden;transform:translateY(12px) scale(.98);opacity:0;transform-origin:bottom right;transition:transform .18s ease,opacity .18s ease,visibility .18s}
+.drawer.chat.open{transform:none;opacity:1}
+.chat .chat-title b::before{content:"✦ ";color:var(--accent)}
+/* Keep the shortcut bar and toasts clear of the button. */
+.keybar{right:calc(var(--guide-w,0px) + 84px)}
+@media (max-width:760px){
+  .toast{bottom:84px}
+  .drawer.chat{inset:0;width:auto;height:auto;max-width:none;max-height:none;border-radius:0;border:0}
+  body.chat-open .fetch-fab{display:none}
+}
+@media (prefers-reduced-motion:reduce){.drawer.chat,.fetch-fab{transition:none}}
+.content{padding-bottom:96px}@media (max-width:760px){.content{padding-bottom:96px}}

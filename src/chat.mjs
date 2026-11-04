@@ -1,4 +1,4 @@
-// "Ask Birddog": a chat that answers from your inbox.
+// "Ask Fetch": a chat that answers from your inbox.
 //
 // The local server calls the Claude Messages API with plain fetch (no SDK, no
 // dependencies) and hands the model Birddog's own MCP tools. Reading tools run
@@ -86,7 +86,7 @@ export async function streamMessage({ fetchImpl, apiKey, request, onText = () =>
   if (!res.ok) {
     let msg = '';
     try { msg = JSON.parse(await res.text())?.error?.message ?? ''; } catch { /* not JSON */ }
-    if (res.status === 401) throw new ChatError('Anthropic rejected the API key. Check it under Ask Birddog → Settings.', 502);
+    if (res.status === 401) throw new ChatError('Anthropic rejected the API key. Check it under Ask Fetch → Settings.', 502);
     if (res.status === 429) throw new ChatError('Anthropic is rate limiting this key. Try again in a minute.', 502);
     if (res.status === 529 || res.status >= 500) throw new ChatError('Anthropic is overloaded right now. Try again shortly.', 502);
     throw new ChatError(`Anthropic returned HTTP ${res.status}${msg ? `: ${msg}` : ''}`, 502);
@@ -133,7 +133,7 @@ export function echoContent(content) {
 // ---------------------------------------------------------------------------
 // The chat service
 
-const SYSTEM = (now) => `You are Birddog's assistant. Birddog is the user's local "what needs me next?" inbox across local git, GitHub, Jira and their calendar. Each item says why it is there and how urgent it is (now, today, later).
+const SYSTEM = (now) => `You are Fetch, Birddog's assistant (a dog that fetches answers). Birddog is the user's local "what needs me next?" inbox across local git, GitHub, Jira and their calendar. Each item says why it is there and how urgent it is (now, today, later).
 
 Answer from the user's inbox using the tools: list_items, get_item and list_sources read it. Be concise and concrete: name items by title, say why they matter, and suggest what to do first when asked. Don't invent items, people or dates the tools didn't return.
 
@@ -173,7 +173,7 @@ export function createChat({ app, secrets, getPrefs, setPrefs, getConfig, fetchI
   }
 
   async function setup({ apiKey: key, consent }) {
-    if (consent !== true) throw new ChatError('Agree that inbox content is sent to Anthropic to turn Ask Birddog on.');
+    if (consent !== true) throw new ChatError('Agree that inbox content is sent to Anthropic to turn Ask Fetch on.');
     if (key !== undefined && key !== '') {
       if (typeof key !== 'string' || !/^[\x21-\x7e]{20,300}$/.test(key.trim())) throw new ChatError('That does not look like an Anthropic API key.');
       try { await secrets.set(SECRET, key.trim()); } catch (e) { throw new ChatError(e.message); }
@@ -291,7 +291,7 @@ export function createChat({ app, secrets, getPrefs, setPrefs, getConfig, fetchI
     /** Send a message. emit(event) is called with {type:'session'|'text'|'tool'|'confirm'|'error'|'done'}. */
     async send({ sessionId, message }, emit, signal) {
       const st = await status();
-      if (!st.enabled) throw new ChatError('Ask Birddog is off. Add an API key and agree to send inbox content to Anthropic first.', 409);
+      if (!st.enabled) throw new ChatError('Ask Fetch is off. Add an API key and agree to send inbox content to Anthropic first.', 409);
       if (typeof message !== 'string' || !message.trim() || message.length > 8000) throw new ChatError('Type a question (up to 8000 characters).');
       const s = session(sessionId);
       if (s.pending) throw new ChatError('Confirm or cancel the pending change first.', 409);

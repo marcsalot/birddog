@@ -10,6 +10,13 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 ### Changed
 - Bigger icons in the main menu, especially when it's collapsed to icons (the collapsed menu is a little wider to fit them).
 
+## [1.10.0] - 2026-11-04
+
+### Changed
+- **Sources A–Z, with search.** Every list of sources is sorted by name (Sources & settings, the left rail, the setup wizard, ⌘K). Sources & settings has a search box that matches names and kinds of thing (*calendar*, *tickets*, *ci*), with an "N of M" count; Esc clears it.
+- **Top-right menu.** The Guide (book icon, `g`) and an account avatar now sit at the right of the top bar. The avatar's menu shows who you're signed in as, Sources & settings, Appearance, keyboard shortcuts, and Sign out when login is on. Both left the left rail.
+- **Ask Birddog is now "Ask Fetch"**, Birddog's assistant (the dog that fetches answers). It opens from a ✦ sparkle button in the bottom-right corner (or `a`) as a floating panel; on phones it's a full-screen sheet. The button steps aside for a docked guide and hides while the guide or the item drawer covers that corner. The shortcut bar and toasts keep clear of it. The API, consent flow, Confirm/Cancel and streaming are unchanged, and the demo's scripted replies speak as Fetch.
+
 ## [1.9.0] - 2026-11-04
 
 ### Changed
@@ -155,7 +162,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.9.0]: https://github.com/marcsalot/birddog/compare/619b986...main
+[1.10.0]: https://github.com/marcsalot/birddog/compare/7a6d029...main
+[1.9.0]: https://github.com/marcsalot/birddog/compare/619b986...7a6d029
 [1.8.0]: https://github.com/marcsalot/birddog/compare/ac18fb3...619b986
 [1.7.0]: https://github.com/marcsalot/birddog/compare/45bcfde...ac18fb3
 [1.6.0]: https://github.com/marcsalot/birddog/compare/0b78f3b...45bcfde

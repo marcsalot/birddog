@@ -156,7 +156,7 @@ function calendarText(now) {
 }
 
 // ---------------------------------------------------------------------------
-// A scripted stand-in for Claude, so "Ask Birddog" works in the demo without a key.
+// A scripted stand-in for Claude, so "Ask Fetch" works in the demo without a key.
 // It speaks the same streaming wire format, so the real chat code path runs.
 
 function sseBody(events) {
@@ -208,14 +208,14 @@ export function demoClaude(body) {
   if (prevTool?.name === 'list_items') {
     const items = parseList(result?.content);
     if (wantsChange && items[0]) return toolEvents(/snooze/.test(question) ? 'snooze' : 'mark_done', /snooze/.test(question) ? { id: items[0].id, until: 'tomorrow' } : { id: items[0].id });
-    if (!items.length) return textEvents('Nothing there right now. Nice.');
+    if (!items.length) return textEvents('Nothing to fetch there right now. Good dog, you.');
     const lines = items.slice(0, 4).map((i) => `- **${i.title}**: ${i.why}`).join('\n');
-    return textEvents(`Here's what needs you${/today/.test(question) ? ' today' : ' first'}:\n${lines}\n\nI'd start with the first one: ${items[0].why.split(' · ')[0].toLowerCase()}.`);
+    return textEvents(`Fetched! Here's what needs you${/today/.test(question) ? ' today' : ' first'}:\n${lines}\n\nI'd start with the first one: ${items[0].why.split(' · ')[0].toLowerCase()}.`);
   }
   if (prevTool && ['mark_done', 'snooze', 'restore'].includes(prevTool.name)) {
-    return textEvents(/declined/.test(result?.content ?? '') ? "Okay, I've left it as it is." : `Done. ${result?.content ?? ''}`);
+    return textEvents(/declined/.test(result?.content ?? '') ? "Okay, I'll drop it. Left as it is." : `Done, and brought back the receipt: ${result?.content ?? ''}`);
   }
-  return textEvents('(This is the demo\'s scripted assistant. With your own Anthropic API key, Claude answers here.)');
+  return textEvents('Woof. I\'m Fetch, in demo mode: a scripted stand-in. With your own Anthropic API key, Claude answers here as me.');
 }
 
 /** fetch() for the demo: answers for the fake APIs above, and refuses everything else. */

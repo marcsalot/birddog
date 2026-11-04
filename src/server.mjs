@@ -355,7 +355,7 @@ export async function createBirddog({
     try { return await fn(...args); } catch (e) { throw e instanceof HttpError ? e : new HttpError(400, e.message); }
   };
 
-  // ---- Ask Birddog (chat) ----
+  // ---- Ask Fetch (chat) ----
   const chat = createChat({
     app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; } },
     secrets, fetchImpl, version: VERSION, now,

@@ -151,7 +151,7 @@ If `BIRDDOG_REPOS` points to a folder that doesn't exist, Docker creates an empt
 | GitHub token | `GITHUB_TOKEN` (or `GH_TOKEN`) | `GITHUB_TOKEN_FILE=/run/secrets/github` |
 | Jira API token | `BIRDDOG_JIRA_TOKEN` | `BIRDDOG_JIRA_TOKEN_FILE` |
 | Calendar iCal link | `BIRDDOG_CAL_URL` | `BIRDDOG_CAL_URL_FILE` |
-| Anthropic API key (Ask Birddog) | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY_FILE` |
+| Anthropic API key (Ask Fetch) | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY_FILE` |
 | OIDC client secret (login) | `BIRDDOG_OIDC_CLIENT_SECRET` | `BIRDDOG_OIDC_CLIENT_SECRET_FILE` |
 | Session signing key (login) | `BIRDDOG_SESSION_KEY` | `BIRDDOG_SESSION_KEY_FILE` |
 
@@ -467,7 +467,7 @@ The menu on the left holds everything:
 - **Overview**
 - the **inbox** views (All, Now, Today, Later, Snoozed, Done)
 - your **sources** (click one to hide or show its items)
-- **Ask Birddog**, the **Guide**, and **Sources & settings**
+- **Ask Fetch**, the **Guide**, and **Sources & settings**
 
 Collapse it to icons with « or `m`. Counts stay visible as small badges (Now in red), and every icon keeps its name as a tooltip and for screen readers. Birddog remembers which way you left it. On a phone it becomes a drawer behind ☰. It fits beside the guide rail: with both open, the page in the middle keeps at least ~640px on wide screens, and on narrower ones the guide floats over the page instead.
 
@@ -493,11 +493,11 @@ Birddog opens on an **Overview**: one look at what your day is like. The inbox i
 
 The charts are plain SVG drawn by Birddog (no chart library). Hover, or move to a mark with the keyboard, to see its numbers; every chart also has **Show the numbers** with the same data as a table. Chart colors are a colorblind-checked set (orange = Now, blue = Today and open items, aqua = Later), stepped separately for light and dark, so they read the same in all three palettes.
 
-## Ask Birddog (chat)
+## Ask Fetch (chat)
 
-Press **💬 Ask** (or `a`) and ask about your inbox in plain words: *What needs me now? What's blocking me? Anything due tomorrow? Which of my PRs need work?* Birddog answers from your own items and can mark things done or snooze them.
+Press the **✦** button in the bottom-right corner (or `a`) to ask **Fetch**, Birddog's assistant (the dog that fetches answers), about your inbox in plain words: *What needs me now? What's blocking me? Anything due tomorrow? Which of my PRs need work?* Fetch answers from your own items and can mark things done or snooze them.
 
-- **Off until you turn it on.** It needs your own [Anthropic API key](https://console.anthropic.com/settings/keys), and you have to tick **"I understand that inbox content is sent to Anthropic"** first. To answer, Birddog sends your question and the items it looks up (titles, "why" lines, fields, links) to Anthropic's API. Nothing is sent before you turn it on. **Turn off** forgets the key.
+- **Off until you turn it on.** It needs your own [Anthropic API key](https://console.anthropic.com/settings/keys), and you have to tick **"I understand that inbox content is sent to Anthropic"** first. To answer, Fetch sends your question and the items it looks up (titles, "why" lines, fields, links) to Anthropic's API. Nothing is sent before you turn it on. **Turn off** forgets the key.
 - **Your key stays in your keychain** (`anthropic-api-key`), or in `ANTHROPIC_API_KEY` in Docker. It never goes into config.json, API responses or logs.
 - **It uses Birddog's own MCP tools.** The model reads with `list_items`, `get_item` and `list_sources`, and the panel shows which ones ran. Tool inputs are checked against their schemas before anything runs.
 - **It asks before it changes anything.** `mark_done`, `snooze` and `restore` stop the answer and show a **Confirm / Cancel** card. Only Birddog's own list changes, never GitHub, Jira or git.
@@ -542,7 +542,7 @@ All of it lives in `~/.config/birddog/state.json`, along with your theme.
 | `r` | refresh | `/` or `⌘K` | command palette |
 | `0` | Overview | `?` | shortcuts |
 | `g` | guide | `m` | collapse / expand the menu |
-| `1`–`6` | All / Now / Today / Later / Snoozed / Done | `a` | Ask Birddog |
+| `1`–`6` | All / Now / Today / Later / Snoozed / Done | `a` | Ask Fetch |
 | `t` | light / dark | `p` | next theme |
 
 ## Themes
@@ -719,7 +719,7 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `POST` | `/api/oauth/:provider/start` | the provider URL to send the browser to (`google`, `microsoft`, `atlassian`) |
 | `DELETE` | `/api/oauth/:provider` | sign out: forget (and where possible revoke) the tokens |
 | `GET` | `/api/history?days=14` | one row per day: open, now, today, later, done |
-| `GET` | `/api/chat/status` | whether Ask Birddog is on, and where the key comes from (never the key) |
+| `GET` | `/api/chat/status` | whether Ask Fetch is on, and where the key comes from (never the key) |
 | `POST` / `DELETE` | `/api/chat/setup` | `{ "apiKey": "…", "consent": true }` turns it on; `DELETE` turns it off and forgets the key |
 | `POST` | `/api/chat` | `{ "sessionId"?, "message" }`: streams NDJSON events (`text`, `tool`, `confirm`, `error`, `done`) |
 | `POST` | `/api/chat/confirm` | `{ "sessionId", "decisions": { "<id>": true } }`: answers pending changes, then streams the rest |
@@ -784,7 +784,7 @@ docker-compose.yml     the dashboard on a volume, plus a demo profile
 .github/workflows/     CI: tests on Node 22 and 24, and inside the image
 src/mcp.mjs            MCP server (JSON-RPC over stdio)
 src/notify.mjs         notifications: what's news, filters, quiet hours, system notifications
-src/chat.mjs           Ask Birddog: Claude Messages API over fetch, MCP tools, confirm-before-change
+src/chat.mjs           Ask Fetch: Claude Messages API over fetch, MCP tools, confirm-before-change
 src/history.mjs        the small per-day history behind the overview chart
 public/js/overview.js  the overview page: hand-rolled SVG charts and dials
 public/js/guide.js     the user guide rail (content and search)
@@ -803,10 +803,11 @@ test/                  node:test suites
 3. ✅ Setup wizard, calendar (iCal) source, hardened keychain secrets, stale-source retry and backoff
 4. ✅ MCP server, demo mode, `npx @marcusferrell/birddog` release
 5. ✅ Docker image, Compose file, CI that runs the tests in the image
-6. ✅ Notifications, Ask Birddog chat, Overview charts, in-app guide, collapsible menu (1.2–1.6)
+6. ✅ Notifications, Ask Fetch chat, Overview charts, in-app guide, collapsible menu (1.2–1.6)
 7. ✅ Real sign-ins: Google, Microsoft, Atlassian, iCloud CalDAV, Sign in with Apple (1.7)
 8. ✅ GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, GitHub Actions and Dependabot (1.8)
 9. ✅ One-step first run (1.9)
+10. ✅ Sources A–Z with search, top-right account menu, Fetch the floating assistant (1.10)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later.
 

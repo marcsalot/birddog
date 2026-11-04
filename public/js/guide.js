@@ -75,7 +75,7 @@ export const SECTIONS = [
       <tr><td>${keys('c')} ${keys('o')}</td><td>Copy the next-step command, open the link</td></tr>
       <tr><td>${keys('0')}</td><td>Overview</td></tr>
       <tr><td>${keys('1')}–${keys('6')}</td><td>All, Now, Today, Later, Snoozed, Done</td></tr>
-      <tr><td>${keys('a')}</td><td>Ask Birddog</td></tr>
+      <tr><td>${keys('a')}</td><td>Ask Fetch</td></tr>
       <tr><td>${keys('g')}</td><td>This guide</td></tr>
       <tr><td>${keys('⇧G')}</td><td>Widen or narrow this guide (or drag its left edge)</td></tr>
       <tr><td>${keys('m')}</td><td>Show or hide the menu</td></tr>
@@ -96,9 +96,9 @@ export const SECTIONS = [
       </ul>`,
   },
   {
-    id: 'chat', title: 'Ask Birddog (chat)', words: 'chat ask claude anthropic api key question assistant ai',
-    html: `${shot('chat', 'Ask Birddog answering "What needs me now?" from the inbox')}
-      <p>Press ${keys('a')} and ask in plain words: <i>What needs me now? What's due tomorrow? Which PRs need work?</i> Birddog answers from your own items, and can mark things done or snooze them. It always asks you to <b>Confirm</b> first.</p>
+    id: 'chat', title: 'Ask Fetch (chat)', words: 'chat ask claude anthropic api key question assistant ai',
+    html: `${shot('chat', 'Ask Fetch answering "What needs me now?" from the inbox')}
+      <p>Press ${keys('a')}, or the ✦ button in the bottom-right corner, and ask in plain words: <i>What needs me now? What's due tomorrow? Which PRs need work?</i> <b>Fetch</b>, Birddog's assistant (the dog that fetches answers), replies from your own items, and can mark things done or snooze them. It always asks you to <b>Confirm</b> first.</p>
       <p><b>Before you turn it on:</b> answers come from Claude, through your own Anthropic API key, and your question plus the items it looks up (titles, "why" lines, fields, links) are sent to Anthropic. It stays off until you add a key and agree to that. <b>Turn off</b> forgets the key.</p>`,
   },
   {

@@ -70,7 +70,7 @@ async function setup(script, { secretsEnv } = {}) {
   return { app, call, fetchImpl, secrets, logs };
 }
 
-describe('Ask Birddog (chat)', () => {
+describe('Ask Fetch (chat)', () => {
   it('is off until there is a key and consent, and never shows the key', async () => {
     const { app, call, secrets } = await setup([]);
     try {

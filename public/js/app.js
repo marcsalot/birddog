@@ -507,11 +507,11 @@ function commands() {
     { label: 'Toggle dark / light', k: 't', run: () => toggleTheme() },
     { label: 'Appearance…', run: openAppear },
     { label: 'Notifications…', run: () => toggleNotifyPanel() },
-    { label: 'Ask Birddog…', k: 'a', run: () => toggleChat() },
+    { label: 'Ask Fetch (chat)…', k: 'a', run: () => toggleChat() },
     { label: guideOpen() ? 'Hide the guide' : 'Open the guide', k: 'g', run: () => toggleGuide() },
     { label: guideWide() ? 'Narrow the guide' : 'Widen the guide', k: 'G', run: () => { if (!guideOpen()) openGuide(); toggleGuideWide(); } },
     { label: document.body.classList.contains('rail-collapsed') ? 'Expand the menu' : 'Collapse the menu', k: 'm', run: () => toggleRail() },
-    ...[['start', 'Getting started'], ['sources', 'Sources'], ['notifications', 'Notifications'], ['chat', 'Ask Birddog'], ['docker', 'Docker'], ['mcp', 'MCP']].map(([id, t]) => ({ label: `Guide: ${t}`, run: () => openGuide(id) })),
+    ...[['start', 'Getting started'], ['sources', 'Sources'], ['notifications', 'Notifications'], ['chat', 'Ask Fetch'], ['docker', 'Docker'], ['mcp', 'MCP']].map(([id, t]) => ({ label: `Guide: ${t}`, run: () => openGuide(id) })),
     ...Object.entries(PALETTE_NAMES).map(([p, n]) => ({ label: `Theme: ${n}`, run: () => setPalette(p) })),
     { label: 'Mode: follow system', run: () => setMode('system') },
     { label: 'Connect a source…', run: () => openSetup() },
@@ -1246,7 +1246,7 @@ window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer
 $('#openSetup').onclick = () => { closeMobileRail(); openSetup(); };
 $('#refresh').onclick = refresh;
 $('#appearBtn').onclick = (e) => { e.stopPropagation(); appearOpen() ? closeAppear() : openAppear(); };
-$('#chatBtn').onclick = () => { closeMobileRail(); toggleChat(); };
+$('#chatBtn').onclick = () => toggleChat();
 $('#railToggle').onclick = () => toggleRail();
 $('#menuBtn').onclick = () => openMobileRail();
 $('#railScrim').onclick = () => closeMobileRail();
