@@ -19,7 +19,7 @@
   "scripts": {
     "start": "node bin/birddog.mjs",
     "dev": "node bin/birddog.mjs --open",
-    "dev:watch": "node --watch-path=src --watch-path=bin bin/birddog.mjs --dev",
+    "dev:watch": "node --watch-path=src --watch-path=bin --watch-path=package.json bin/birddog.mjs --dev",
     "test": "node --test \"test/*.test.mjs\"",
     "dev:login": "node dev/login.mjs --open"
   },
