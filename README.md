@@ -147,6 +147,7 @@ If `BIRDDOG_REPOS` points to a folder that doesn't exist, Docker creates an empt
 | GitHub token | `GITHUB_TOKEN` (or `GH_TOKEN`) | `GITHUB_TOKEN_FILE=/run/secrets/github` |
 | Jira API token | `BIRDDOG_JIRA_TOKEN` | `BIRDDOG_JIRA_TOKEN_FILE` |
 | Calendar iCal link | `BIRDDOG_CAL_URL` | `BIRDDOG_CAL_URL_FILE` |
+| Anthropic API key (Ask Birddog) | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY_FILE` |
 | OIDC client secret (login) | `BIRDDOG_OIDC_CLIENT_SECRET` | `BIRDDOG_OIDC_CLIENT_SECRET_FILE` |
 | Session signing key (login) | `BIRDDOG_SESSION_KEY` | `BIRDDOG_SESSION_KEY_FILE` |
 
@@ -383,6 +384,17 @@ Rules live in [`src/rules.mjs`](src/rules.mjs). They are checked top to bottom a
 
 Inside a group, items sort by rule order, then oldest first (the work that has waited longest is most at risk). A branch counts as either stale *or* unpushed, never both, and repos with no remote are never nagged about pushing.
 
+## Ask Birddog (chat)
+
+Press **💬 Ask** (or `a`) and ask about your inbox in plain words: *What needs me now? What's blocking me? Anything due tomorrow? Which of my PRs need work?* Birddog answers from your own items and can mark things done or snooze them.
+
+- **Off until you turn it on.** It needs your own [Anthropic API key](https://console.anthropic.com/settings/keys), and you have to tick **"I understand that inbox content is sent to Anthropic"** first. To answer, Birddog sends your question and the items it looks up (titles, "why" lines, fields, links) to Anthropic's API. Nothing is sent before you turn it on. **Turn off** forgets the key.
+- **Your key stays in your keychain** (`anthropic-api-key`), or in `ANTHROPIC_API_KEY` in Docker. It never goes into config.json, API responses or logs.
+- **It uses Birddog's own MCP tools.** The model reads with `list_items`, `get_item` and `list_sources`, and the panel shows which ones ran. Tool inputs are checked against their schemas before anything runs.
+- **It asks before it changes anything.** `mark_done`, `snooze` and `restore` stop the answer and show a **Confirm / Cancel** card. Only Birddog's own list changes, never GitHub, Jira or git.
+- **Model:** `claude-sonnet-5-5` by default. Override it with `"chat": { "model": "…" }` in config.json or `BIRDDOG_CHAT_MODEL`. Answers stream in. Birddog calls the Messages API with plain `fetch` (no SDK, still zero dependencies) and opts into Anthropic's server-side refusal fallback (`fallbacks: "default"`).
+- In `--demo`, a scripted stand-in answers instead, so you can try it with no key; nothing goes to Anthropic.
+
 ## Notifications
 
 Press 🔔 in the top bar and switch on **Tell me when something needs me now**. Birddog then announces each item that becomes **Now** (a review someone is waiting on, a meeting about to start, an overdue ticket) and each source that stops refreshing.
@@ -582,6 +594,10 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `POST` | `/api/items/:id/snooze` | `{ "until": "<ISO date>" \| "change" }` |
 | `POST` | `/api/items/:id/restore` | undo done/snooze |
 | `GET`/`PUT` | `/api/prefs` | theme, mode, hidden sources, `notifications` settings |
+| `GET` | `/api/chat/status` | whether Ask Birddog is on, and where the key comes from (never the key) |
+| `POST` / `DELETE` | `/api/chat/setup` | `{ "apiKey": "…", "consent": true }` turns it on; `DELETE` turns it off and forgets the key |
+| `POST` | `/api/chat` | `{ "sessionId"?, "message" }`: streams NDJSON events (`text`, `tool`, `confirm`, `error`, `done`) |
+| `POST` | `/api/chat/confirm` | `{ "sessionId", "decisions": { "<id>": true } }`: answers pending changes, then streams the rest |
 | `POST` | `/api/notifications/claim` | `{ "canShow": true }`: new notifications for this tab (each is handed out once) |
 | `POST` | `/api/notifications/test` | queue a test notification, or `{ "channel": "system" }` to show one now |
 | `GET` | `/api/notifications/kinds` | which kinds of item can notify |
@@ -632,6 +648,7 @@ docker-compose.yml     the dashboard on a volume, plus a demo profile
 .github/workflows/     CI: tests on Node 22 and 24, and inside the image
 src/mcp.mjs            MCP server (JSON-RPC over stdio)
 src/notify.mjs         notifications: what's news, filters, quiet hours, system notifications
+src/chat.mjs           Ask Birddog: Claude Messages API over fetch, MCP tools, confirm-before-change
 src/demo.mjs           demo mode: canned git items and fake GitHub / Jira / calendar APIs
 docs/                  demo GIF, screenshot, launch post
 test/fixtures/         sample Google- and Outlook-style .ics files

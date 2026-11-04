@@ -107,6 +107,7 @@ export const ENV_SECRETS = Object.freeze({
   'cal-url': ['BIRDDOG_CAL_URL'],
   'oidc-client-secret': ['BIRDDOG_OIDC_CLIENT_SECRET'],
   'session-key': ['BIRDDOG_SESSION_KEY'],
+  'anthropic-api-key': ['ANTHROPIC_API_KEY', 'BIRDDOG_ANTHROPIC_API_KEY'],
 });
 
 export class ReadOnlySecretsError extends Error {}

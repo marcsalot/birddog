@@ -2,6 +2,14 @@
 
 All notable changes to Birddog. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-11-04
+
+### Added
+- **Ask Birddog**: a chat panel (`a`) that answers questions about your inbox. The local server calls the Claude Messages API (`claude-sonnet-5-5` by default) with plain `fetch` and streams the answer. The model uses Birddog's own MCP tools, with inputs checked against their schemas.
+- Changes the model proposes (`mark_done`, `snooze`, `restore`) wait for **Confirm / Cancel** in the panel.
+- It's opt-in: it needs your Anthropic API key (keychain, or `ANTHROPIC_API_KEY` in Docker) and your explicit consent to send inbox content to Anthropic.
+- A scripted stand-in assistant in `--demo`, so chat works without a key.
+
 ## [1.2.0] - 2026-11-04
 
 ### Added
@@ -61,7 +69,8 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 - Ranked, keyboard-first inbox where every item explains why it's there; done, snooze and undo; three themes in light and dark.
 - Optional OpenID Connect login for the dashboard, GitHub sign-in (gh CLI or device flow), and OS keychain secrets.
 
-[1.2.0]: https://github.com/marcsalot/birddog/compare/74c3238...main
+[1.3.0]: https://github.com/marcsalot/birddog/compare/c5a5fad...main
+[1.2.0]: https://github.com/marcsalot/birddog/compare/74c3238...c5a5fad
 [1.1.0]: https://github.com/marcsalot/birddog/compare/8453eb7...74c3238
 [1.0.0]: https://github.com/marcsalot/birddog/compare/f19aa7a...8453eb7
 [0.3.0]: https://github.com/marcsalot/birddog/compare/87709b1...f19aa7a

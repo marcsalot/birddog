@@ -5,6 +5,7 @@ import { api } from './api.js';
 import {
   PALETTE_NAMES, appearanceHTML, cyclePalette, initAppearance, setMode, setPalette, toggleTheme,
 } from './appearance.js';
+import { chatOpen, closeChat, initChat, onChatEvent, toggleChat } from './chat.js';
 import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
 
@@ -446,6 +447,7 @@ function commands() {
     { label: 'Toggle dark / light', k: 't', run: () => toggleTheme() },
     { label: 'Appearance…', run: openAppear },
     { label: 'Notifications…', run: () => toggleNotifyPanel() },
+    { label: 'Ask Birddog…', k: 'a', run: () => toggleChat() },
     ...Object.entries(PALETTE_NAMES).map(([p, n]) => ({ label: `Theme: ${n}`, run: () => setPalette(p) })),
     { label: 'Mode: follow system', run: () => setMode('system') },
     { label: 'Connect a source…', run: () => openSetup() },
@@ -950,6 +952,8 @@ $('#openPalette').onclick = () => openPalette();
 $('#openSetup').onclick = () => openSetup();
 $('#refresh').onclick = refresh;
 $('#appearBtn').onclick = (e) => { e.stopPropagation(); appearOpen() ? closeAppear() : openAppear(); };
+$('#chatBtn').onclick = () => toggleChat();
+for (const type of ['click', 'change', 'submit', 'keydown']) $('#chatPanel').addEventListener(type, (e) => { e.stopPropagation(); onChatEvent(e); });
 $('#notifyBtn').onclick = (e) => { e.stopPropagation(); closeAppear(); toggleNotifyPanel(); };
 $('#notifyPanel').addEventListener('change', (e) => { onNotifyPanelEvent(e); });
 $('#notifyPanel').addEventListener('click', (e) => { e.stopPropagation(); onNotifyPanelEvent(e); });
@@ -971,6 +975,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (appearOpen()) return closeAppear();
     if (notifyPanelOpen()) return closeNotifyPanel();
+    if (chatOpen()) return closeChat();
     if (overlay() || snoozeOpen()) return closeAll();
     if (drawerOpen()) return closeDrawer();
     if (st.query) { st.query = ''; render(); }
@@ -1003,6 +1008,7 @@ document.addEventListener('keydown', (e) => {
     case 'z': return runUndo();
     case 'c': return sel?.meta?.command ? copy(sel.meta.command, 'command') : undefined;
     case 'o': return openLink(sel);
+    case 'a': e.preventDefault(); return toggleChat();
     case 'r': return refresh();
     // No toast here: it would replace a pending "Undo" toast, and the change is visible anyway.
     case 't': toggleTheme(); return;
@@ -1055,6 +1061,7 @@ async function boot() {
   st.hidden = new Set(prefs.hiddenSources ?? []);
   render();
   await load();
+  initChat({ api, toast, onChanged: () => load({ quiet: true }) });
   initNotify({
     api, toast, prefs,
     sources: () => st.sources,

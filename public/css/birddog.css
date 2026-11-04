@@ -139,6 +139,44 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .cmd code{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--text)}
 .kv{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;font-size:13px;margin:0}
 .kv dt{color:var(--muted)}.kv dd{margin:0;overflow-wrap:anywhere}
+.ask-btn{display:flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-size:13px;font-weight:600}
+.ask-btn:hover{border-color:var(--accent)}
+.drawer.chat{width:460px;z-index:22}
+.chat .chat-title{display:flex;flex-direction:column;flex:1;min-width:0}
+.chat .chat-model{font-size:11px;color:var(--muted);font-weight:500}
+.chat .chat-body{flex:1;overflow:auto;padding:16px 20px;display:flex;flex-direction:column;gap:10px}
+.chat .msg-user{align-self:flex-end;max-width:85%;background:var(--accent-soft);color:var(--text);padding:8px 12px;border-radius:12px 12px 4px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.chat .msg-bot{max-width:95%;line-height:1.55;overflow-wrap:anywhere}
+.chat .msg-bot code,.chat-setup code{font-size:12px;padding:1px 5px;border-radius:5px;background:var(--panel-2)}
+.chat .msg-bot .li{display:block;padding-left:4px}
+.chat .msg-tool{font-size:12px;color:var(--muted)}
+.chat .msg-note{font-size:12px;color:var(--muted);font-style:italic}
+.chat .msg-err{font-size:13px;color:var(--now)}
+.chat .msg-confirm{border:1px solid color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 8%,var(--panel));border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.chat .msg-confirm.answered{opacity:.7}
+.chat .msg-confirm .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--warn);font-weight:700}
+.chat .typing{color:var(--muted)}
+.chat .chat-empty{display:flex;flex-direction:column;align-items:flex-start;gap:8px;color:var(--muted)}
+.chat .chat-empty p{margin:0 0 4px}
+.chat .chat-empty .chip{cursor:pointer;color:var(--text)}
+.chat .chat-empty .chip:hover{border-color:var(--accent)}
+.chat-form{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
+.chat-form textarea{flex:1;resize:none;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--text);font:inherit;font-size:14px}
+.chat-form textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent)}
+.chat-foot{font-size:11px;color:var(--muted);padding:0 16px 12px}
+.chat-foot a{color:var(--muted)}
+.chat-setup{display:flex;flex-direction:column;gap:12px;font-size:13px}
+.chat-setup p{margin:0}
+.chat-setup .chat-warn{border:1px solid color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 9%,var(--panel));border-radius:10px;padding:10px 12px;line-height:1.5}
+.chat-setup .field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.chat-setup .field a{color:var(--accent)}
+.chat-setup input[type=password]{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:var(--text);font:inherit;font-size:13px}
+.chat-setup .msg{font-size:12px;color:var(--muted)}
+.chat-setup .msg.good{color:var(--ok)}
+.chat-setup .msg.bad{color:var(--now)}
+.chat-setup .chk{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+.chat-setup .chk input{accent-color:var(--accent);margin-top:2px}
+.chat-setup .row-btns{display:flex;gap:8px}
 .drawer footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
 .btn{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:8px 14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;color:var(--text);text-decoration:none;font-size:14px}
 .btn:hover{border-color:var(--accent)}
@@ -275,6 +313,7 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
   .topbar{padding:12px 16px}
   .content{padding:16px 16px 60px}
   .appear-btn span{display:none}
+  .ask-btn span:last-child{display:none}
   .cards{grid-template-columns:1fr}
   .card .fields{grid-template-columns:1fr}
   .updated{display:none}

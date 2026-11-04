@@ -153,9 +153,72 @@ function calendarText(now) {
     + 'END:VCALENDAR\r\n';
 }
 
+// ---------------------------------------------------------------------------
+// A scripted stand-in for Claude, so "Ask Birddog" works in the demo without a key.
+// It speaks the same streaming wire format, so the real chat code path runs.
+
+function sseBody(events) {
+  const text = events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+  const enc = new TextEncoder();
+  return new ReadableStream({
+    async start(c) {
+      for (let i = 0; i < text.length; i += 48) { c.enqueue(enc.encode(text.slice(i, i + 48))); await new Promise((r) => setTimeout(r, 12)); }
+      c.close();
+    },
+  });
+}
+
+const textEvents = (text) => [
+  { type: 'message_start', message: { id: 'msg_demo', model: 'demo (scripted, not Claude)' } },
+  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  ...text.match(/[\s\S]{1,6}/g).map((t) => ({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } })),
+  { type: 'content_block_stop', index: 0 },
+  { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
+  { type: 'message_stop' },
+];
+const toolEvents = (name, input) => [
+  { type: 'message_start', message: { id: 'msg_demo', model: 'demo (scripted, not Claude)' } },
+  { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: `toolu_demo_${name}_${Date.now()}`, name, input: {} } },
+  { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } },
+  { type: 'content_block_stop', index: 0 },
+  { type: 'message_delta', delta: { stop_reason: 'tool_use' } },
+  { type: 'message_stop' },
+];
+
+/** Items from list_items' text: "- [now] Title\n  why\n  id: …". */
+function parseList(text) {
+  const out = [];
+  for (const m of String(text).matchAll(/- \[([a-z]+)[^\]]*\] (.+)\n {2}(.+)\n {2}id: (\S+)/g)) out.push({ urgency: m[1], title: m[2], why: m[3], id: m[4] });
+  return out;
+}
+
+export function demoClaude(body) {
+  const msgs = body.messages ?? [];
+  const last = msgs.at(-1);
+  const question = [...msgs].reverse().find((m) => m.role === 'user' && typeof m.content === 'string')?.content?.toLowerCase() ?? '';
+  const wantsChange = /\b(done|snooze|clear)\b/.test(question);
+  if (last?.role === 'user' && typeof last.content === 'string') {
+    const urgency = /calendar|meeting/.test(question) ? undefined : /today/.test(question) ? 'today' : 'now';
+    return toolEvents('list_items', /calendar|meeting/.test(question) ? { source: 'cal' } : { urgency });
+  }
+  const result = Array.isArray(last?.content) ? last.content.find((b) => b.type === 'tool_result') : null;
+  const prevTool = msgs.at(-2)?.content?.find?.((b) => b.type === 'tool_use');
+  if (prevTool?.name === 'list_items') {
+    const items = parseList(result?.content);
+    if (wantsChange && items[0]) return toolEvents(/snooze/.test(question) ? 'snooze' : 'mark_done', /snooze/.test(question) ? { id: items[0].id, until: 'tomorrow' } : { id: items[0].id });
+    if (!items.length) return textEvents('Nothing there right now. Nice.');
+    const lines = items.slice(0, 4).map((i) => `- **${i.title}**: ${i.why}`).join('\n');
+    return textEvents(`Here's what needs you${/today/.test(question) ? ' today' : ' first'}:\n${lines}\n\nI'd start with the first one: ${items[0].why.split(' · ')[0].toLowerCase()}.`);
+  }
+  if (prevTool && ['mark_done', 'snooze', 'restore'].includes(prevTool.name)) {
+    return textEvents(/declined/.test(result?.content ?? '') ? "Okay, I've left it as it is." : `Done. ${result?.content ?? ''}`);
+  }
+  return textEvents('(This is the demo\'s scripted assistant. With your own Anthropic API key, Claude answers here.)');
+}
+
 /** fetch() for the demo: answers for the fake APIs above, and refuses everything else. */
 export function demoFetch(clock = () => Date.now()) {
-  return async (url) => {
+  return async (url, init = {}) => {
     const u = new URL(url);
     const now = clock();
     const json = (body, status = 200) => ({ ok: status < 400, status, headers: new Headers(), text: async () => JSON.stringify(body), json: async () => body });
@@ -173,6 +236,9 @@ export function demoFetch(clock = () => Date.now()) {
       if (u.pathname === '/rest/api/3/field') return json([{ id: 'customfield_10020', name: 'Sprint', custom: true, schema: { custom: 'com.pyxis.greenhopper.jira:gh-sprint' } }]);
       if (u.pathname === '/rest/api/3/search/jql') return json({ isLast: true, issues: jiraData(now) });
     }
+    if (u.origin === 'https://api.anthropic.com' && u.pathname === '/v1/messages') {
+      return { ok: true, status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }), body: sseBody(demoClaude(JSON.parse(init.body))) };
+    }
     if (u.href === CAL_URL) return { ok: true, status: 200, headers: new Headers(), text: async () => calendarText(now) };
     return json({ message: 'Demo mode makes no real network requests' }, 404);
   };
@@ -180,7 +246,7 @@ export function demoFetch(clock = () => Date.now()) {
 
 /** A secret store that lives in memory and starts with the demo's fake credentials. */
 export function demoSecrets() {
-  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL]]);
+  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant']]);
   return {
     kind: 'demo (in memory)',
     secure: true,
@@ -205,6 +271,7 @@ export async function createDemo() {
       jira: { enabled: true, site: JIRA, email: 'sam@acme.example' },
       cal: { enabled: true, file: '', email: 'sam@acme.example' },
     },
+    chat: { demo: true },
   });
   await writeJson(path.join(dir, 'connections.json'), { github: { method: 'gh-cli', login: ME, name: 'Sam Developer', connectedAt: new Date().toISOString() } });
   await writeJson(path.join(dir, 'state.json'), { version: 1, items: {}, prefs: { seenSetup: true } });

@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { createGithubAuth } from './auth/github.mjs';
 import { AuthError, checkAuthConfig, createOidc, isAllowed } from './auth/oidc.mjs';
 import { createSessions } from './auth/session.mjs';
+import { ChatError, createChat } from './chat.mjs';
 import { Collector } from './collector.mjs';
 import { createNotifier } from './notify.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
@@ -313,6 +314,41 @@ export async function createBirddog({
     try { return await fn(...args); } catch (e) { throw e instanceof HttpError ? e : new HttpError(400, e.message); }
   };
 
+  // ---- Ask Birddog (chat) ----
+  const chat = createChat({
+    app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; } },
+    secrets, fetchImpl, version: VERSION, now,
+    getPrefs: () => triage.prefs,
+    setPrefs: (p) => triage.setPrefs(p),
+    getConfig: () => config,
+  });
+
+  /** Stream chat events to the browser as one JSON object per line. */
+  async function chatStream(req, res, fn) {
+    const body = await readBody(req);
+    const abort = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) abort.abort(); });
+    let started = false;
+    const emit = (ev) => {
+      if (!started) {
+        started = true;
+        res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      }
+      if (!res.writableEnded) res.write(`${JSON.stringify(ev)}\n`);
+    };
+    try {
+      await fn(body, emit, abort.signal);
+    } catch (err) {
+      if (!started) throw err instanceof ChatError ? new HttpError(err.status, err.message) : err;
+      if (err.name !== 'AbortError') emit({ type: 'error', message: err instanceof ChatError ? err.message : 'Something went wrong. Check the terminal for details.' });
+      if (!(err instanceof ChatError) && err.name !== 'AbortError') log.error?.('birddog: chat:', err.message);
+    }
+    res.end();
+  }
+  const chatRoute = (fn) => async (...a) => {
+    try { return await fn(...a); } catch (e) { throw e instanceof ChatError ? new HttpError(e.status, e.message) : e; }
+  };
+
   // ---- Live reload (development only) ----
   // Open pages listen on /api/dev/events. A change in public/ sends "reload";
   // a server restart (node --watch) drops the stream, and the page reloads when it reconnects.
@@ -370,6 +406,10 @@ export async function createBirddog({
       return triage.prefs;
     }],
     ['GET', /^\/api\/setup$/, () => setupPayload()],
+    ['GET', /^\/api\/chat\/status$/, () => chat.status()],
+    ['POST', /^\/api\/chat\/setup$/, chatRoute((_m, body) => chat.setup(body))],
+    ['DELETE', /^\/api\/chat\/setup$/, chatRoute(() => chat.turnOff())],
+    ['POST', /^\/api\/chat\/reset$/, (_m, body) => { chat.reset(body.sessionId); return { ok: true }; }],
     ['POST', /^\/api\/notifications\/claim$/, (_m, body) => ({ events: notifier.claim({ canShow: body.canShow !== false }) })],
     ['POST', /^\/api\/notifications\/test$/, asBadRequest(async (_m, body) => notifier.test(body.channel === 'system' ? 'system' : undefined))],
     ['GET', /^\/api\/notifications\/kinds$/, () => ({ kinds: notifyKinds(sources) })],
@@ -472,6 +512,8 @@ export async function createBirddog({
     }
 
     if (liveReload && url.pathname === '/api/dev/events' && req.method === 'GET') return devEvents(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/chat') return chatStream(req, res, (b, emit, signal) => chat.send(b, emit, signal));
+    if (req.method === 'POST' && url.pathname === '/api/chat/confirm') return chatStream(req, res, (b, emit, signal) => chat.confirm(b, emit, signal));
     if (!url.pathname.startsWith('/api/')) {
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
       return serveStatic(req, res, url.pathname);
