@@ -4,6 +4,9 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- **Website and live demo** at https://marcsalot.github.io/birddog/: a landing page, and the real UI running in the browser on recorded `--demo` data (`scripts/build-pages.mjs`, `site/`), with times shifted to now, triage, replies, slot claims and recorded Ask Fetch answers working in the tab. Deployed to GitHub Pages on every push to `main`.
+
 ## [1.17.0] - 2026-11-05
 
 ### Added

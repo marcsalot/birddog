@@ -5,3 +5,4 @@ node_modules/
 .claude/
 secrets/
 .env
+_site/

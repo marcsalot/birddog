@@ -6,6 +6,8 @@
 [![CI](https://github.com/marcsalot/birddog/actions/workflows/ci.yml/badge.svg)](https://github.com/marcsalot/birddog/actions/workflows/ci.yml)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
 
+**[Try the live demo →](https://marcsalot.github.io/birddog/app/)** (made-up data, runs in your browser) · [Website](https://marcsalot.github.io/birddog/)
+
 **What needs me next?** Birddog is a local-first inbox for developers. It looks through your local git repos, GitHub, Jira and calendar, ranks what it finds with plain rules, and tells you *why* each thing is there.
 
 ![Birddog demo: the inbox, opening an item, marking one done, snoozing another, and switching themes](https://raw.githubusercontent.com/marcsalot/birddog/main/docs/demo.gif)
@@ -894,6 +896,17 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `POST` | `/api/connections/github/gh-cli` | connect using the gh CLI login |
 | `GET` | `/auth/login`, `/auth/callback` | SSO sign-in (when login is on) |
 | `POST` | `/auth/logout` | sign out |
+
+## Website and live demo
+
+[marcsalot.github.io/birddog](https://marcsalot.github.io/birddog/) is built by `scripts/build-pages.mjs` and deployed by `.github/workflows/pages.yml` on every push to `main`:
+
+- `site/index.html` is the landing page.
+- `/app/` is the real UI from `public/`, running without a server. The build starts Birddog in `--demo` mode, records what each read-only API call answers, plus a few Ask Fetch conversations, into `app/demo-data.json`. In the browser, `site/static-demo.js` answers the app's `/api` calls from that file, shifting every timestamp so "starts in 8 minutes" stays true. Done, snooze, replies and slot claims last for the tab; settings can't change. Nothing leaves the page.
+
+```bash
+node scripts/build-pages.mjs        # writes _site/ (open _site/index.html through any static server)
+```
 
 ## Development
 
