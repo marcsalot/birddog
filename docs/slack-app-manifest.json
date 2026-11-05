@@ -1,0 +1,27 @@
+{
+  "_metadata": {
+    "major_version": 1,
+    "minor_version": 1
+  },
+  "display_information": {
+    "name": "Birddog",
+    "description": "Shows your Slack @mentions and DMs waiting on you in your local Birddog inbox, and lets you reply (opt-in).",
+    "background_color": "#17171a"
+  },
+  "oauth_config": {
+    "scopes": {
+      "user": [
+        "search:read",
+        "im:read",
+        "im:history",
+        "users:read",
+        "chat:write"
+      ]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

@@ -189,7 +189,7 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **Azure DevOps** | PRs you haven't voted on, work items assigned to you | PAT with Work Items: Read, Code: Read |
 | **Sentry** | New and regressed errors assigned to you | Auth token with `event:read`, `org:read` |
 | **PagerDuty** | Incidents paged to you (**Now**), your on-call shifts | User API token |
-| **Slack** | Mentions, and DMs waiting for your reply. Can reply, opt-in | User token with `search:read`, `im:read`, `im:history`, `users:read`; `chat:write` to reply |
+| **Slack** | Mentions, and DMs waiting for your reply. Can reply, opt-in | User token with `search:read`, `im:read`, `im:history`, `users:read`; `chat:write` to reply. Fastest setup: create the app from [docs/slack-app-manifest.json](docs/slack-app-manifest.json) |
 
 GitHub also reports **failing Actions runs** on branches you pushed this week, and **Dependabot alerts** on those repos (`"actions": false` / `"security": false` under `sources.github` turn them off).
 
