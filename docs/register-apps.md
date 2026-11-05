@@ -83,13 +83,17 @@ if you want them. Self-managed GitLab users bring their own app; the built-in on
    - **Redirect URI:** choose the platform **Public client/native (mobile & desktop)** and enter
      `http://localhost/auth/oauth/microsoft/callback`.
 3. **Register.** Then go to **Authentication**:
-   - Under *Mobile and desktop applications*, also add `http://127.0.0.1/auth/oauth/microsoft/callback`.
+   - Under *Mobile and desktop applications*, also add `http://127.0.0.1/auth/oauth/microsoft/callback`,
+     and for Microsoft Teams `http://localhost/auth/oauth/teams/callback` and
+     `http://127.0.0.1/auth/oauth/teams/callback` (Teams signs in separately, with the same app).
      If the portal refuses `http://127.0.0.1`, add it in the **Manifest** under `replyUrlsWithType`
      with `"type": "InstalledClient"`.
    - **Any port works:** for loopback redirects on this platform, Microsoft ignores the port.
    - Under **Advanced settings**, set **Allow public client flows** to **Yes**. Save.
 4. **API permissions → Add a permission → Microsoft Graph → Delegated:** `User.Read`,
-   `Calendars.Read` and `offline_access`. Don't grant admin consent; users consent for themselves.
+   `Calendars.Read` and `offline_access`, and for Teams `Chat.Read` and `ChatMessage.Send`. Don't
+   grant admin consent; users consent for themselves (Teams only asks for `ChatMessage.Send` once
+   someone turns on Allow replies). Teams chats need a work or school account.
 5. Don't create a client secret or certificate.
 6. **Paste back:** the **Application (client) ID** (a GUID) into `BUILT_IN.microsoft.clientId`.
 

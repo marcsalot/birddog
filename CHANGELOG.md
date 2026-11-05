@@ -4,6 +4,14 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-11-04
+
+### Added
+- **Microsoft Teams source.** 1:1 chats whose last message is someone else's (waiting for your reply), and @mentions of you in group and meeting chats that you haven't answered since. **Sign in with Microsoft Teams** uses the Microsoft app (same client ID and tenant settings as the Outlook calendar) but its own sign-in and tokens, so the calendar never asks for chat access. Reads with `Chat.Read`; work or school accounts only. Channel posts aren't read (that needs `ChannelMessage.Read.All`, which only an admin can grant).
+- **Teams replies**, opt-in like Slack: the same reply box, 5-second undo, Fetch confirmation and MCP gate. Turning on **Allow replies** adds `ChatMessage.Send` to the next sign-in; until it's granted, the reply box says so with a **Sign in again** button. Replies are plain text with no @mentions, so they ping nobody extra. 429s are retried briefly, then explained.
+- `grantedScopes(provider)` in the sign-in module, from the token response, so a source can tell what the user allowed.
+- The demo has a fake Teams (a waiting chat with Lena, an @mention in "Launch crew").
+
 ### Added
 - **Boundary tests** (`test/boundaries.test.mjs`, 38 tests): a scripted model tries to cross each of Fetch's boundaries (read tokens or settings, change or reply without Confirm, reply where replies are off, call the web or a tool Birddog doesn't have, obey instructions inside an item, store a secret, loop forever), and each test checks that Birddog holds the line.
 

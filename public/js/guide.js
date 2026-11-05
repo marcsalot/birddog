@@ -30,7 +30,7 @@ export const SECTIONS = [
       <p>Tokens and private links go to your OS keychain, never to config.json. If a source fails, its last good items stay, marked <b>stale</b>, with a <b>Retry</b> button.</p>`,
   },
   {
-    id: 'more', title: 'More sources (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack)', words: 'gitlab linear azure devops boards repos sentry pagerduty on call incident slack dm mention actions ci dependabot security token',
+    id: 'more', title: 'More sources (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Teams)', words: 'gitlab linear azure devops boards repos sentry pagerduty on call incident slack teams microsoft chat dm mention actions ci dependabot security token',
     html: `<p>Switch these on in <b>Sources &amp; settings</b> when you use them. Each one asks for the smallest read-only access that works, and keeps its token in your keychain.</p>
       <ul>
         <li><b>GitLab</b>: merge requests waiting for your review, your MRs with a failed pipeline or conflicts, and issues assigned to you. Use <i>Sign in with GitLab</i> (needs an application with the <code>read_api</code> scope) or a personal access token with <code>read_api</code>. Self-managed GitLab works too.</li>
@@ -39,6 +39,7 @@ export const SECTIONS = [
         <li><b>Sentry</b>: unresolved errors assigned to you, with regressed and new ones first. Needs an auth token with <code>event:read</code> and <code>org:read</code>.</li>
         <li><b>PagerDuty</b>: incidents paged to you (triggered ones are <b>Now</b>), and when you're on call. Needs a user API token.</li>
         <li><b>Slack</b>: messages that mention you, and DMs waiting for your reply. Needs a user token (<code>xoxp-…</code>) from your own Slack app, with <code>search:read</code>, <code>im:read</code>, <code>im:history</code> and <code>users:read</code>. Add <code>chat:write</code> too if you want to <a href="#" data-guide-link="replies">reply from Birddog</a>.</li>
+        <li><b>Microsoft Teams</b>: 1:1 chats waiting for your reply, and @mentions of you in group and meeting chats. Use <i>Sign in with Microsoft Teams</i> (a work or school account; Birddog asks for <code>Chat.Read</code>). Some organizations make an admin approve apps first; the sign-in page says so. Channel posts aren't included: reading them needs an admin-only permission.</li>
         <li><b>GitHub</b> also shows <b>failing Actions runs</b> on branches you pushed this week, and <b>Dependabot alerts</b> on those repos. Turn them off with <code>"actions": false</code> or <code>"security": false</code> under <code>sources.github</code>.</li>
       </ul>
       <p>In Docker, pass the tokens as <code>GITLAB_TOKEN</code>, <code>LINEAR_API_KEY</code>, <code>AZURE_DEVOPS_EXT_PAT</code>, <code>SENTRY_AUTH_TOKEN</code>, <code>BIRDDOG_PAGERDUTY_TOKEN</code> or <code>BIRDDOG_SLACK_TOKEN</code>.</p>`,
@@ -72,18 +73,19 @@ export const SECTIONS = [
       <p>Done and snooze only change Birddog's own list, never GitHub, Jira or git.</p>`,
   },
   {
-    id: 'replies', title: 'Reply from Birddog (Slack)', words: 'reply answer respond send post message slack dm mention thread chat write scope undo allow replies',
-    html: `<p>Answer a Slack DM, or reply in the thread of a mention, right from the item's details.</p>
+    id: 'replies', title: 'Reply from Birddog (Slack, Teams)', words: 'reply answer respond send post message slack teams microsoft dm mention thread chat write scope undo allow replies',
+    html: `<p>Answer a Slack DM, reply in the thread of a Slack mention, or answer a Microsoft Teams chat, right from the item's details.</p>
       <ul>
         <li><b>Off until you turn it on.</b> Tick <b>Allow replies</b> on the Slack card in <b>Sources &amp; settings</b>. Birddog then posts <b>as you</b>, but only when you press Send. It never posts on its own.</li>
-        <li><b>One more scope:</b> add <code>chat:write</code> under <i>User Token Scopes</i> in your Slack app, reinstall the app, and paste the new user token on the Slack card. Without it, the reply box tells you so before you type.</li>
+        <li><b>Teams:</b> after you tick <b>Allow replies</b>, press <b>Sign in again</b> on the Teams card so Microsoft can grant <code>ChatMessage.Send</code>. Teams has no threads in chats, so a reply goes into the chat, as plain text that pings nobody.</li>
+        <li><b>Slack needs one more scope:</b> add <code>chat:write</code> under <i>User Token Scopes</i> in your Slack app, reinstall the app, and paste the new user token on the Slack card. Without it, the reply box tells you so before you type.</li>
         <li>The box says who and where: <i>Reply to @priya in DM</i>, or <i>Reply in thread in #payments</i>. For a thread, <b>Also send to #payments</b> also shows it in the channel.</li>
         <li>Press ${keys('⇧R')} to jump to the box, type, then ${keys('⌘↵')} (or ${keys('Ctrl+↵')}). You have <b>5 seconds to undo</b> (${keys('z')} or <b>Undo send</b>). Then it goes out, you get a link to it, and the item clears.</li>
         <li>Plain text, up to 4000 characters. <code>@channel</code> and <code>@here</code> only work if you typed them yourself.</li>
         <li><b>Fetch</b> can draft a reply for you (<i>“reply to Priya that I'm free at 3”</i>). It shows the full text and sends only when you press <b>Confirm and send</b>.</li>
         <li><b>MCP</b> agents can reply only if you add <code>"mcp": { "allowReplies": true }</code> to config.json. That lets an AI post real messages under your name, so only turn it on for agents you trust.</li>
       </ul>
-      <p>Slack is the first source that can reply. Other chats (Teams, Discord, Google Chat) can plug into the same reply box later.</p>`,
+      <p>Slack and Teams can reply so far. Other chats (Discord, Google Chat) can plug into the same reply box later.</p>`,
   },
   {
     id: 'shortcuts', title: 'Keyboard shortcuts', words: 'keyboard shortcuts keys hotkeys',
@@ -92,7 +94,7 @@ export const SECTIONS = [
       <tr><td>${keys('↵')}</td><td>Open details</td></tr>
       <tr><td>${keys('x')} ${keys('s')} ${keys('z')} ${keys('u')}</td><td>Done, snooze, undo, restore</td></tr>
       <tr><td>${keys('c')} ${keys('o')}</td><td>Copy the next-step command, open the link</td></tr>
-      <tr><td>${keys('⇧R')} ${keys('⌘↵')}</td><td>Reply (Slack), send the reply</td></tr>
+      <tr><td>${keys('⇧R')} ${keys('⌘↵')}</td><td>Reply (Slack, Teams), send the reply</td></tr>
       <tr><td>${keys('0')}</td><td>Overview</td></tr>
       <tr><td>${keys('1')}–${keys('6')}</td><td>All, Now, Today, Later, Snoozed, Done</td></tr>
       <tr><td>${keys('a')}</td><td>Ask Fetch</td></tr>

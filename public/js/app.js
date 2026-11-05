@@ -26,8 +26,10 @@ const SRC = {
   sentry: { short: 'SE', c: '#6c5fc7' },
   pagerduty: { short: 'PD', c: '#06ac38' },
   slack: { short: 'SL', c: '#611f69' },
+  teams: { short: 'TM', c: '#5b5fc7' },
 };
 const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+const sourceName = (id) => st.sources?.find((x) => x.id === id)?.name ?? id;
 const srcInfo = (id) => SRC[id] ?? { short: id.slice(0, 2).toUpperCase(), c: 'var(--later)' };
 const URG = {
   now: { label: 'Now', c: 'var(--now)' },
@@ -432,6 +434,9 @@ function replyBoxHTML(i, srcName) {
   if (!r.allowed) {
     return `<div class="lbl">Reply</div><div class="msg">You can answer this from Birddog. Replying is off until you turn on <b>Allow replies</b> on the ${esc(srcName)} card; then Birddog posts <b>as you</b>.</div><div class="row-btns"><button class="btn small" data-setup>Open Sources &amp; settings</button></div>`;
   }
+  if (r.missingScope && i.source === 'teams') {
+    return `<div class="lbl">${esc(r.label)}</div><div class="msg warn">⚠ Birddog can't send Teams messages yet: Microsoft hasn't granted <code>${esc(r.missingScope)}</code>. Sign in with Microsoft Teams again and allow sending messages. (If your organization makes an admin approve apps, ask them.)</div><div class="row-btns"><button class="btn small primary" data-oauth="teams">Sign in with Microsoft Teams again</button></div>`;
+  }
   if (r.missingScope) {
     return `<div class="lbl">${esc(r.label)}</div><div class="msg warn">⚠ Your ${esc(srcName)} token can't post yet: it needs the <code>${esc(r.missingScope)}</code> scope. Add it under <b>User Token Scopes</b> in your Slack app, reinstall the app, then paste the new token on the ${esc(srcName)} card.</div><div class="row-btns"><button class="btn small" data-guide-link="replies">How to set it up</button><button class="btn small" data-setup>Open Sources &amp; settings</button></div>`;
   }
@@ -497,13 +502,13 @@ async function tickReply(i) {
       clearInterval(s.timer); sending = null;
       if (drawerItem()?.id === i.id) closeDrawer();
       leave(i.id, () => { i.status = 'done'; i.doneAt = new Date().toISOString(); });
-      toast(`✓ Sent ${esc(s.label.replace(/^Reply/, 'reply'))}${r.url ? ` · <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open in Slack ↗</a>` : ''}`);
+      toast(`✓ Sent ${esc(s.label.replace(/^Reply/, 'reply'))}${r.url ? ` · <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open in ${esc(sourceName(i.source))} ↗</a>` : ''}`);
     } else if (r.state === 'failed') {
       clearInterval(s.timer); sending = null;
       replyFailed(i, s.text, Object.assign(new Error(r.error?.message ?? 'Not sent.'), r.error ?? {}));
     } else if (Date.now() - s.sendsAt > 60_000) {
       clearInterval(s.timer); sending = null;
-      toast('⚠ No answer from Slack yet. Check Slack before sending again.');
+      toast(`⚠ No answer from ${esc(sourceName(i.source))} yet. Check there before sending again.`);
     }
   } catch (err) {
     clearInterval(s.timer); sending = null;
@@ -528,7 +533,7 @@ async function undoReply() {
 
 function replyFailed(i, text, err) {
   drafts.set(i.id, text);
-  if (err.code === 'missing_scope') i.reply = { ...i.reply, missingScope: err.scope ?? 'chat:write' };
+  if (err.code === 'missing_scope') i.reply = { ...i.reply, missingScope: err.scope ?? (i.source === 'teams' ? 'ChatMessage.Send' : 'chat:write') };
   if (drawerItem()?.id === i.id) {
     renderReplyBox(i);
     const m = $('[data-reply-msg]');
@@ -799,6 +804,7 @@ const READS = {
   linear: 'the issues assigned to you (read)',
   pagerduty: 'your incidents and on-call shifts (read)',
   atlassian: 'your Jira issues (read)',
+  teams: 'your Teams chats and the messages that mention you (Chat.Read)',
 };
 const signInReady = (o) => !!o && o.canStore && o.configured && !(o.needsSecret && !o.hasSecret);
 
@@ -846,7 +852,8 @@ function signInRow(p, { label, fallback = 'use a token below', compact = false }
       : `One-click sign-in isn't set up in this copy of Birddog, so ${esc(fallback)}.`;
     return `<div class="signin-row off"><span class="msg">${why} Have your own ${esc(who)} app? <button class="linkish" data-guide-link="logins">Bring your own app</button>.</span></div>`;
   }
-  return `<div class="signin-row"><button class="btn primary" data-oauth="${esc(p)}">${esc(label)}</button><span class="consent">Birddog will read ${READS[p] ?? 'your data, read-only'}. It never changes anything, and the tokens stay in your keychain.</span></div>${p === 'google' && o.unverified ? googleNoticeHTML(o.googleStatus) : ''}`;
+  const writes = p === 'teams' ? 'It only posts a reply you send yourself, once you turn on Allow replies' : 'It never changes anything';
+  return `<div class="signin-row"><button class="btn primary" data-oauth="${esc(p)}">${esc(label)}</button><span class="consent">Birddog will read ${READS[p] ?? 'your data, read-only'}. ${writes}, and the tokens stay in your keychain.</span></div>${p === 'google' && o.unverified ? googleNoticeHTML(o.googleStatus) : ''}`;
 }
 
 function jiraCardHTML(src) {
@@ -1009,12 +1016,12 @@ function offCardHTML(src) {
 }
 
 /** Any token-based source (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack), from its `setup` metadata. */
-/** "Allow replies" on a source that can reply (Slack): the only switch that lets Birddog post. */
+/** "Allow replies" on a source that can reply (Slack, Teams): the only switch that lets Birddog post. */
 function replySwitchHTML(src) {
   if (!src.replies) return '';
   const on = src.replies.allowed;
   return `<div class="reply-switch ${on ? 'on' : ''}"><label><input type="checkbox" data-allow-replies="${esc(src.id)}" ${on ? 'checked' : ''}> <b>Allow replies</b></label>
-    <div class="msg">${on ? 'On. When you send a reply from an item, Birddog posts it <b>as you</b> in' : 'Off: Birddog only reads. Turn this on to answer DMs and mentions from Birddog. It will post <b>as you</b> in'} ${esc(src.name)}: into the DM, or in the thread of a mention. It never posts on its own, and every reply waits 5 seconds so you can undo it. Needs the <code>chat:write</code> scope on your token.</div></div>`;
+    <div class="msg">${on ? 'On. When you send a reply from an item, Birddog posts it <b>as you</b> in' : 'Off: Birddog only reads. Turn this on to answer from Birddog. It will post <b>as you</b> in'} ${esc(src.name)}${src.id === 'teams' ? ', into the chat' : ': into the DM, or in the thread of a mention'}. It never posts on its own, and every reply waits 5 seconds so you can undo it. ${src.setup?.replyNote ? esc(src.setup.replyNote) : 'Needs the <code>chat:write</code> scope on your token.'}</div></div>`;
 }
 
 function tokenCardHTML(src) {
@@ -1047,8 +1054,24 @@ function tokenCardHTML(src) {
     <div class="row-btns"><button class="btn primary" data-connect="${src.id}" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? `<button class="btn" data-cancel="${src.id}">Cancel</button>` : ''}${hasToken ? `<button class="btn" data-disconnect="${src.id}" ${off}>Disconnect</button>` : ''}</div></div>`;
 }
 
+/** A source you can only reach through a sign-in (Microsoft Teams). */
+function signInCardHTML(src) {
+  const ui = st.cards[src.id] ?? {};
+  const p = src.setup.oauth;
+  const o = oauthState(p);
+  const { status, cls, label, msg, summary } = cardState(src, ui);
+  if (src.enabled && o?.connected) {
+    return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <div class="msg">Connected, signed in${o.account ? ` as <b>${esc(o.account)}</b>` : ''}${summary}</div>${msg}${replySwitchHTML(src)}
+      <div class="row-btns"><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-oauth="${esc(p)}">Sign in again</button><button class="btn" data-oauth-off="${esc(p)}">Disconnect</button></div></div>`;
+  }
+  return `${cardTop(src.id, src.name, ui.busy ? 'Working…' : src.enabled && status === 'stale' ? 'Needs attention' : 'Not connected', status === 'stale' && src.enabled ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
+    ${signInRow(p, { label: `Sign in with ${src.name}`, fallback: 'bring your own Microsoft app (the same one the Outlook calendar sign-in uses)' })}
+    ${src.setup.notes ? `<div class="msg">${esc(src.setup.notes)}</div>` : ''}${msg}</div>`;
+}
+
 const CARDS = { git: gitCardHTML, github: githubCardHTML, jira: jiraCardHTML, cal: calCardHTML };
-const cardFor = (src) => (src.enabled === false && (src.id === 'git' || src.id === 'github') ? offCardHTML(src) : (CARDS[src.id] ?? (src.setup ? tokenCardHTML : gitCardHTML))(src));
+const cardFor = (src) => (src.enabled === false && (src.id === 'git' || src.id === 'github') ? offCardHTML(src) : (CARDS[src.id] ?? (src.setup?.oauthOnly ? signInCardHTML : src.setup ? tokenCardHTML : gitCardHTML))(src));
 
 // ---------------------------------------------------------------------------
 // First-run wizard: one source per step, each tested live as you reach it.

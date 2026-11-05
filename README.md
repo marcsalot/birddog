@@ -190,6 +190,7 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **Sentry** | New and regressed errors assigned to you | Auth token with `event:read`, `org:read` |
 | **PagerDuty** | Incidents paged to you (**Now**), your on-call shifts | User API token |
 | **Slack** | Mentions, and DMs waiting for your reply. Can reply, opt-in | User token with `search:read`, `im:read`, `im:history`, `users:read`; `chat:write` to reply. Fastest setup: create the app from [docs/slack-app-manifest.json](docs/slack-app-manifest.json) |
+| **Microsoft Teams** | 1:1 chats waiting for your reply, @mentions in group and meeting chats. Can reply, opt-in | Sign in with Microsoft Teams (work or school account): `Chat.Read`; `ChatMessage.Send` to reply. Channel posts aren't read (that needs an admin-only permission) |
 
 GitHub also reports **failing Actions runs** on branches you pushed this week, and **Dependabot alerts** on those repos (`"actions": false` / `"security": false` under `sources.github` turn them off).
 
@@ -382,6 +383,7 @@ Where a card shows **Sign in with …**, it's one click: Birddog uses **its own 
 | PagerDuty | **Sign in with PagerDuty** (Classic User OAuth, PKCE, no secret) | `read` | yes |
 | Jira Cloud | API token; advanced: your own Atlassian app | `read:jira-work`, `read:jira-user` | no: Atlassian needs a confidential secret |
 | Slack | user token (`xoxp-…`) | read-only scopes, plus `chat:write` to reply | no: Slack needs a confidential secret |
+| Microsoft Teams | **Sign in with Microsoft Teams** (the Microsoft app above, its own sign-in) | `Chat.Read`, `User.Read`; `ChatMessage.Send` only after you turn on Allow replies | yes, with the Microsoft app |
 | Calendar | **iCloud** (CalDAV with an app-specific password) | your iCloud calendars, read-only | n/a |
 
 > **About Google sign-in.** Birddog's Google app is **in testing** for now, so sign-in is **invite-only**: Google only admits accounts the maintainer added as test users, and everyone else gets "access denied" or "has not completed verification" (Birddog turns both into this advice). Use your calendar's private **iCal link** instead, which needs no Google sign-in. Test users see Google's **"unverified app"** screen (choose **Continue**, or **Advanced → Go to Birddog (unsafe)**), and Google ends test sign-ins after **7 days**, so expect **Sign in again** weekly. Birddog only reads your calendar events, read-only, and they stay on your computer.
@@ -731,7 +733,7 @@ Optionally export:
 - `secretFields`: setup fields that are secrets, e.g. `{ token: 'weather-token' }`. Birddog stores them in the keychain under that name, strips them before `normalizeSettings` sees the form, and never writes them to config.json. `test()` gets the unsaved draft through `ctx.secret()`, so "Test" works before "Save". A blank field keeps the saved secret.
 - `validateSecrets(values)`: check or clean secret values (keyed by secret name) before they are tested or stored; throw to reject. Calendar uses it to turn `webcal://` into `https://`.
 - `enabledByDefault = false`: keep the source off until the user saves its settings (Jira and Calendar do this).
-- `capabilities = ['reply']`, with `replyTarget(item)` (who and where a reply goes, no network), `reply(item, text, ctx, { broadcast, mentions })` → `{ ok, url? }`, and optionally `replyCheck(ctx)` (e.g. a missing scope, before the user types). Birddog adds the reply box, the "Allow replies" switch, the 5-second undo, Fetch's confirmation and the MCP tool around it; see [`src/replies.mjs`](src/replies.mjs) and the Slack source. Slack is the only one so far. Another chat (Teams, Discord, Google Chat) plugs in the same way, and so could comments later: GitHub and GitLab PR comments, Jira comments.
+- `capabilities = ['reply']`, with `replyTarget(item)` (who and where a reply goes, no network), `reply(item, text, ctx, { broadcast, mentions })` → `{ ok, url? }`, and optionally `replyCheck(ctx)` (e.g. a missing scope, before the user types). Birddog adds the reply box, the "Allow replies" switch, the 5-second undo, Fetch's confirmation and the MCP tool around it; see [`src/replies.mjs`](src/replies.mjs) and the Slack and Teams sources. Another chat (Discord, Google Chat) plugs in the same way, and so could comments later: GitHub and GitLab PR comments, Jira comments.
 
 The rules of the road:
 
@@ -860,8 +862,9 @@ test/                  node:test suites
 11. ✅ One-click sign-ins through Birddog's own public apps, Sign in with Linear and PagerDuty (1.11)
 12. ✅ Reply from Birddog: Slack DMs and mentions, opt-in, with undo; Fetch drafts, MCP opt-in (1.12)
 13. ✅ Fetch on Haiku, with memory, every source, and visible, enforced boundaries (1.13)
+14. ✅ Microsoft Teams: chats waiting on you, @mentions, and opt-in replies (1.14)
 
-Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Teams, Discord, Google Chat) and comments (GitHub/GitLab PRs, Jira).
+Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Discord, Google Chat), Teams channel mentions (with admin consent) and comments (GitHub/GitLab PRs, Jira).
 
 ## Changelog
 

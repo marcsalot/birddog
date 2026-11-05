@@ -131,8 +131,8 @@ describe('demo mode', () => {
     const app = await createBirddog({ ...demo.options, autoRefresh: false, log: quiet });
     try {
       const snap = await app.refresh();
-      assert.deepEqual(snap.sources.map((s) => [s.id, s.status]), [['git', 'ok'], ['github', 'ok'], ['jira', 'ok'], ['cal', 'ok'], ['slack', 'ok']]);
-      for (const id of ['git', 'github', 'jira', 'cal', 'slack']) assert.ok(snap.items.some((i) => i.source === id), `${id} has items`);
+      assert.deepEqual(snap.sources.map((s) => [s.id, s.status]), [['git', 'ok'], ['github', 'ok'], ['jira', 'ok'], ['cal', 'ok'], ['slack', 'ok'], ['teams', 'ok']]);
+      for (const id of ['git', 'github', 'jira', 'cal', 'slack', 'teams']) assert.ok(snap.items.some((i) => i.source === id), `${id} has items`);
       assert.ok(snap.items.some((i) => i.urgency === 'now') && snap.items.some((i) => i.urgency === 'today') && snap.items.some((i) => i.urgency === 'later'));
       assert.ok(demo.options.dir.includes('birddog-demo-'));
       const res = await demoFetch()('https://example.org/anything');

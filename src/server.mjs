@@ -429,6 +429,7 @@ export async function createBirddog({
   const IDENTIFY = {
     google: (p, token) => googleAccount({ fetchImpl, token }),
     microsoft: (p, token) => graphAccount({ fetchImpl, token }),
+    teams: (p, token) => graphAccount({ fetchImpl, token }),
     atlassian: (p, token) => atlassianSite({ fetchImpl, token }),
     gitlab: async (p, token) => {
       const r = await fetchImpl(`${gitlabBase()}/api/v4/user`, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } });
@@ -455,6 +456,7 @@ export async function createBirddog({
     gitlab: { source: 'gitlab', on: () => ({ auth: 'oauth', url: gitlabBase() }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
     linear: { source: 'linear', on: () => ({ auth: 'oauth' }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
     pagerduty: { source: 'pagerduty', on: () => ({ auth: 'oauth' }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
+    teams: { source: 'teams', on: () => ({}), uses: () => true, off: {} }, // Teams has no other way in
   };
   /** After a sign-in, point the matching source at it and switch it on. */
   function useProvider(p, info) {

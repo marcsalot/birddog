@@ -11,7 +11,7 @@ meetings. This policy explains what it reads and where that data goes.
 - Birddog runs **on your computer**. There is no Birddog server, no account, no analytics and no
   telemetry.
 - It **reads**. It never edits, deletes, or marks anything read in the services you connect. The
-  one thing it can write is a **reply you send yourself** (Slack, for now), and only after you turn
+  one thing it can write is a **reply you send yourself** (Slack or Microsoft Teams), and only after you turn
   on **Allow replies** for that service. Then it posts as you.
 - What it reads stays on your computer. The one exception is the optional chat (see below).
 - Sign-in tokens are kept in your operating system's keychain.
@@ -26,6 +26,9 @@ Birddog reads only what you connect, and only to build your own list:
 - **Jira, Linear:** issues assigned to you.
 - **Sentry, PagerDuty:** errors assigned to you, incidents, and on-call shifts.
 - **Slack:** messages that mention you, and direct messages waiting for your reply.
+- **Microsoft Teams:** your recent chats (the last message of each, and recent messages in group
+  chats, to find ones that @mention you), read through Microsoft Graph with the `Chat.Read`
+  permission. Channel posts are not read. Birddog doesn't mark anything as read.
 - **Calendars** (Google, Microsoft, iCloud, iCal links): your events, read-only.
 
 ## Google user data
@@ -41,13 +44,15 @@ including the Limited Use requirements.
 
 ## Replies (opt-in)
 
-Replying is off until you tick **Allow replies** on a source's card (Slack is the only one so far).
+Replying is off until you tick **Allow replies** on a source's card (Slack or Microsoft Teams). For
+Teams, the permission to send (`ChatMessage.Send`) is only requested at your next sign-in after that.
 With it on:
 
 - Birddog posts a message **as you**, only when you press **Send** on an item, into that DM or into
   the thread of that mention. Each reply waits 5 seconds so you can undo it.
 - What it sends is exactly the text you typed, plus the channel and thread it goes to, to that
-  service only (Slack's `chat.postMessage`, with the token in your keychain).
+  service only (Slack's `chat.postMessage`, or Microsoft Graph's chat messages endpoint for Teams,
+  with the token in your keychain). Teams replies are plain text with no @mentions.
 - **Fetch** (the optional chat) can draft a reply, but it shows you the full text and sends nothing
   until you confirm. The draft is written by Claude through Anthropic's API, like any Fetch answer.
 - **MCP** clients (AI agents such as Claude Code) can post replies only if you also set

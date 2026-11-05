@@ -11,9 +11,10 @@ import * as linear from './linear.mjs';
 import * as pagerduty from './pagerduty.mjs';
 import * as sentry from './sentry.mjs';
 import * as slack from './slack.mjs';
+import * as teams from './teams.mjs';
 
 // Order is the order in setup: the essentials first, then the rest of a developer's day.
-export const SOURCES = [git, github, jira, cal, gitlab, linear, azure, sentry, pagerduty, slack];
+export const SOURCES = [git, github, jira, cal, gitlab, linear, azure, sentry, pagerduty, slack, teams];
 
 /** Sources that appear in setup but are not built yet. */
 export const COMING_SOON = [];

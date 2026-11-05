@@ -261,9 +261,33 @@ function slackData(t0, sent, now) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Microsoft Teams (fake Graph): a 1:1 chat waiting on you and a group-chat @mention.
+
+const TEAMS_ME = { id: 'demo-sam', displayName: 'Sam Developer', mail: 'sam@acme.example' };
+const teamsLink = (chatId) => `https://teams.microsoft.com/l/chat/${encodeURIComponent(chatId)}/0`;
+
+function teamsData(t0, sentTo, now) {
+  const at = (agoMs) => new Date(t0 - agoMs).toISOString();
+  const lena = { user: { id: 'demo-lena', displayName: 'Lena Ortiz' } };
+  const omar = { user: { id: 'demo-omar', displayName: 'Omar Haddad' } };
+  const mine = (chatId) => sentTo.get(chatId);
+  const dm = mine('19:demo-lena') ?? { id: 'm-lena-1', createdDateTime: at(25 * MIN), messageType: 'message', from: lena, body: { contentType: 'html', content: '<p>Could you look over the release notes before 4? I flagged two lines.</p>' } };
+  const mention = { id: 'm-launch-7', createdDateTime: at(70 * MIN), messageType: 'message', from: omar, body: { contentType: 'html', content: '<p><at id="0">Sam</at> can you confirm the rollout window for Thursday?</p>' }, mentions: [{ id: 0, mentionText: 'Sam', mentioned: { user: { id: TEAMS_ME.id, displayName: 'Sam' } } }] };
+  const launch = [...(mine('19:demo-launch') ? [mine('19:demo-launch')] : []), mention, { id: 'm-launch-6', createdDateTime: at(80 * MIN), messageType: 'message', from: omar, body: { contentType: 'html', content: '<p>Staging looks good.</p>' } }];
+  return {
+    chats: [
+      { id: '19:demo-lena', chatType: 'oneOnOne', topic: null, webUrl: teamsLink('19:demo-lena'), lastMessagePreview: dm },
+      { id: '19:demo-launch', chatType: 'group', topic: 'Launch crew', webUrl: teamsLink('19:demo-launch'), lastMessagePreview: launch[0] },
+    ],
+    messages: { '19:demo-launch': launch, '19:demo-lena': [dm] },
+  };
+}
+
 /** fetch() for the demo: answers for the fake APIs above, and refuses everything else. */
 export function demoFetch(clock = () => Date.now()) {
   const sent = new Set(); // channels the demo "replied" in, so the item clears like the real thing
+  const teamsSent = new Map(); // Teams chat id → your reply
   const t0 = clock(); // fake Slack messages keep their timestamps (and so their ids) across refreshes
   return async (url, init = {}) => {
     const u = new URL(url);
@@ -277,6 +301,20 @@ export function demoFetch(clock = () => Date.now()) {
       if (method === 'users.info') return json({ ok: true, user: { name: SLACK_PEOPLE[body.user] ?? 'someone', profile: { display_name: SLACK_PEOPLE[body.user] ?? '' } } });
       const data = slackData(t0, sent, now)[method];
       return data ? json(data, 200, { 'x-oauth-scopes': 'search:read,im:read,im:history,users:read,chat:write' }) : json({ ok: false, error: 'unknown_method' });
+    }
+    if (u.origin === 'https://graph.microsoft.com') {
+      const p = decodeURIComponent(u.pathname.replace('/v1.0', ''));
+      const data = teamsData(t0, teamsSent, now);
+      if (p === '/me') return json(TEAMS_ME);
+      if (p === '/me/chats') return json({ value: data.chats });
+      const m = /^\/chats\/([^/]+)\/messages$/.exec(p);
+      if (m && (init.method ?? 'GET') === 'POST') {
+        const msg = { id: `m-you-${now}`, createdDateTime: new Date(now).toISOString(), messageType: 'message', from: { user: { id: TEAMS_ME.id, displayName: TEAMS_ME.displayName } }, body: JSON.parse(init.body).body, webUrl: teamsLink(m[1]) };
+        teamsSent.set(m[1], msg);
+        return json(msg, 201);
+      }
+      if (m) return json({ value: data.messages[m[1]] ?? [] });
+      return json({ error: { code: 'NotFound', message: 'Not in the demo' } }, 404);
     }
     if (u.origin === API) {
       const gh = githubData(now);
@@ -319,7 +357,9 @@ export function demoHistory(now) {
 
 /** A secret store that lives in memory and starts with the demo's fake credentials. */
 export function demoSecrets() {
-  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token']]);
+  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token'],
+    // A fake Teams sign-in that never expires (the fake Graph above takes any token).
+    ['oauth-teams', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Chat.Read ChatMessage.Send' })]]);
   return {
     kind: 'demo (in memory)',
     secure: true,
@@ -345,10 +385,14 @@ export async function createDemo() {
       cal: { enabled: true, file: '', email: 'sam@acme.example' },
       // Replies are on in the demo; the fake Slack above takes them and sends nothing anywhere.
       slack: { enabled: true, allowReplies: true },
+      teams: { enabled: true, allowReplies: true },
     },
     chat: { demo: true },
   });
-  await writeJson(path.join(dir, 'connections.json'), { github: { method: 'gh-cli', login: ME, name: 'Sam Developer', connectedAt: new Date().toISOString() } });
+  await writeJson(path.join(dir, 'connections.json'), {
+    github: { method: 'gh-cli', login: ME, name: 'Sam Developer', connectedAt: new Date().toISOString() },
+    oauth: { teams: { account: 'sam@acme.example', connectedAt: new Date().toISOString() } },
+  });
   await writeJson(path.join(dir, 'state.json'), { version: 1, items: {}, prefs: { seenSetup: true } });
   await writeJson(path.join(dir, 'history.json'), { days: demoHistory(Date.now()) });
   return {

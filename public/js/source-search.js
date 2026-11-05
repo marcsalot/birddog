@@ -12,6 +12,7 @@ export const KEYWORDS = {
   sentry: 'errors exceptions crashes monitoring alerts',
   pagerduty: 'incidents on call oncall alerts pages ops',
   slack: 'chat messages mentions dms direct',
+  teams: 'microsoft teams chat messages mentions office 365 m365 work',
 };
 
 /**

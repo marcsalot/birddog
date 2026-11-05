@@ -3,6 +3,8 @@
 //
 //   google     Google Calendar (read-only)          desktop-app client, PKCE
 //   microsoft  Microsoft 365 / Outlook calendar     public client, PKCE, no secret
+//   teams      Microsoft Teams chats                the same Microsoft app, its own sign-in
+//              (Chat.Read; ChatMessage.Send only once "Allow replies" is on)
 //   gitlab     GitLab (read_api)                    non-confidential app, PKCE, no secret
 //   linear     Linear (read)                        PKCE, no secret
 //   pagerduty  PagerDuty (read)                     Classic User OAuth, PKCE, no secret
@@ -46,6 +48,22 @@ export const PROVIDERS = {
     scopes: ['offline_access', 'User.Read', 'Calendars.Read'],
     extra: {},
     secret: 'none', // public client
+    tokenBody: 'form',
+    register: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
+  },
+  // Teams uses the Microsoft app (same client ID, tenant and redirect rules) but signs
+  // in separately, so the calendar sign-in never asks for chat access, and Teams asks
+  // for permission to send only after you turn on "Allow replies".
+  teams: {
+    name: 'Microsoft Teams',
+    app: 'microsoft',
+    authorize: (c) => `https://login.microsoftonline.com/${encodeURIComponent(c.tenant || 'common')}/oauth2/v2.0/authorize`,
+    token: (c) => `https://login.microsoftonline.com/${encodeURIComponent(c.tenant || 'common')}/oauth2/v2.0/token`,
+    revoke: null,
+    scopes: ['offline_access', 'User.Read', 'Chat.Read'],
+    scopesFor: (config) => (config.sources?.teams?.allowReplies === true ? ['ChatMessage.Send'] : []),
+    extra: {},
+    secret: 'none',
     tokenBody: 'form',
     register: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
   },
@@ -121,9 +139,11 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
     if (!d) throw new OAuthError(`No sign-in flow for "${p}"`, 404);
     return d;
   };
-  const settings = (p) => ({ ...(getConfig().oauth?.[p] ?? {}) });
+  // A provider that rides on another's app (Teams on Microsoft) takes that app's client ID and settings.
+  const appOf = (p) => PROVIDERS[p]?.app ?? p;
+  const settings = (p) => ({ ...(getConfig().oauth?.[appOf(p)] ?? {}), ...(appOf(p) !== p ? getConfig().oauth?.[p] ?? {} : {}) });
   const hostFor = (p) => (p === 'gitlab' ? settings(p).url || 'https://gitlab.com' : null);
-  const client = (p) => resolveClientId(p, { env, configured: settings(p).clientId || null, host: hostFor(p), builtIn: NO_BUILT_IN[p] ? {} : builtIn });
+  const client = (p) => resolveClientId(appOf(p), { env, configured: settings(p).clientId || null, host: hostFor(p), builtIn: NO_BUILT_IN[appOf(p)] ? {} : builtIn });
   const clientId = (p) => client(p).clientId;
   // A secret belongs to one app: the built-in client only ever uses its own (Google's
   // non-confidential desktop secret); an app you registered uses yours.
@@ -232,7 +252,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
         name: d.name,
         configured: !!c.clientId,
         builtIn: c.from === 'built-in',
-        clientIdFrom: c.from === 'env' ? c.variable : c.from === 'config' ? `config.json (oauth.${p}.clientId)` : c.from === 'built-in' ? "Birddog's own app" : null,
+        clientIdFrom: c.from === 'env' ? c.variable : c.from === 'config' ? `config.json (oauth.${appOf(p)}.clientId)` : c.from === 'built-in' ? "Birddog's own app" : null,
         noBuiltIn: NO_BUILT_IN[p] ?? null, // why there's no one-click app for this provider
         googleStatus: gStatus(p), // 'testing' | 'unverified' | 'verified' for the built-in Google app
         unverified: !!gStatus(p) && gStatus(p) !== 'verified', // drives the notice next to the button
@@ -253,7 +273,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       const d = def(p);
       if (secrets.readOnly) throw new OAuthError(`Sign-in needs somewhere safe to keep the tokens, and ${secrets.kind} is read-only here (Docker). Use an API token or an iCal link instead.`);
       const id = clientId(p);
-      if (!id) throw new OAuthError(`One-click ${d.name} sign-in isn't available in this copy of Birddog. Use a token instead, or bring your own app: set oauth.${p}.clientId in config.json or ${envName(p, 'CLIENT_ID')} (see the guide).`);
+      if (!id) throw new OAuthError(`One-click ${d.name} sign-in isn't available in this copy of Birddog. Use a token instead, or bring your own app: set oauth.${appOf(p)}.clientId in config.json or ${envName(appOf(p), 'CLIENT_ID')} (see the guide).`);
       if (needsSecret(p) && !(await clientSecret(p))) {
         throw new OAuthError(client(p).from === 'built-in'
           ? `${d.name} sign-in needs one more step: Birddog's app secret, which doesn't ship with Birddog. Get it from whoever runs Birddog's ${d.name.split(' ')[0]} project, then run "birddog secret set ${p}-client-secret", or set ${envName(p, 'CLIENT_SECRET')} (or ${envName(p, 'CLIENT_SECRET')}_FILE) and restart Birddog. Or use an iCal link instead.`
@@ -267,7 +287,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       pending.set(state, { provider: p, verifier, redirectUri, exp: now() + PENDING_TTL_MS });
       const url = new URL(d.authorize(settings(p)));
       url.search = new URLSearchParams({
-        response_type: 'code', client_id: id, redirect_uri: redirectUri, scope: [...d.scopes, ...(settings(p).extraScopes ?? [])].join(d.scopeSep ?? ' '),
+        response_type: 'code', client_id: id, redirect_uri: redirectUri, scope: [...d.scopes, ...(d.scopesFor?.(getConfig()) ?? []), ...(settings(p).extraScopes ?? [])].join(d.scopeSep ?? ' '),
         state, code_challenge: challenge, code_challenge_method: 'S256', ...d.extra,
       }).toString();
       return { url: url.toString() };
@@ -300,6 +320,12 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
     },
 
     connection,
+
+    /** The scopes the provider granted at the last sign-in (from the token response), or null if unknown. */
+    async grantedScopes(p) {
+      const t = await readTokens(p);
+      return typeof t?.scope === 'string' ? t.scope.split(/[\s,]+/).filter(Boolean) : null;
+    },
 
     /** Forget the tokens; revoke them at the provider where that is possible. */
     async disconnect(p) {
