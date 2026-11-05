@@ -42,7 +42,13 @@ async function setup({ clientId = 'Iv1.test', script = [], cliToken } = {}) {
   return { dir, secrets, gh, auth };
 }
 
-const until = async (fn) => { for (let i = 0; i < 100; i++) { if (await fn()) return; await new Promise((r) => setImmediate(r)); } throw new Error('timed out'); };
+// Wait on the clock, not a tick count: the device flow writes real files, which can
+// take many event-loop turns when the machine is busy (CI, parallel test files).
+const until = async (fn, ms = 5000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { if (await fn()) return; await new Promise((r) => setTimeout(r, 5)); }
+  throw new Error('timed out');
+};
 
 describe('GitHub sign-in', () => {
   it('device flow: shows a code, waits, then stores the token in the secret store', async () => {

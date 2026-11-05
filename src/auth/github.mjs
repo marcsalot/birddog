@@ -30,7 +30,9 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
   const file = path.join(dir, 'connections.json');
   const wait = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms).unref?.()));
   let device = null; // the device flow in progress, if any
-  const notify = () => { Promise.resolve().then(onChange).catch(() => {}); };
+  // Awaited, so a connect or disconnect has switched the source on or off before it
+  // answers; onChange starts its own rescan in the background.
+  const notify = () => Promise.resolve().then(onChange).catch(() => {});
 
   // Client ID: BIRDDOG_GITHUB_CLIENT_ID, then sources.github.clientId, then Birddog's own app (github.com only).
   const settings = () => {
@@ -89,7 +91,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
           await saveConnection({ method: 'device', login: me.login, name: me.name, connectedAt: new Date(now()).toISOString() });
           flow.status = 'done';
           flow.login = me.login;
-          notify();
+          await notify();
         } catch (e) { flow.status = 'error'; flow.error = e.message; }
         return;
       }
@@ -157,7 +159,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
       const me = await whoami(token);
       await secrets.delete(SECRET).catch(() => {});
       await saveConnection({ method: 'gh-cli', login: me.login, name: me.name, connectedAt: new Date(now()).toISOString() });
-      notify();
+      await notify();
       return this.status();
     },
 
@@ -173,7 +175,7 @@ export function createGithubAuth({ dir, secrets, getConfig, fetchImpl = fetch, c
       device = null;
       await secrets.delete(SECRET).catch(() => {});
       await saveConnection(null);
-      notify();
+      await notify();
       return this.status();
     },
   };
