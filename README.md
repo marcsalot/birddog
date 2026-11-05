@@ -510,7 +510,7 @@ birddog slot start --worktree PROJ-123   # claim the first free slot, build, sta
 birddog slot status                      # every slot: ports, who holds it, free or busy
 birddog slot restart --service web       # restart one service in the slot you hold
 birddog slot stop                        # stop yours (the checkout you're in by default)
-birddog slot cleanup                     # stop every slot the locks record
+birddog slot cleanup                     # stop every slot the locks record (--ports: also orphans on slot ports)
 ```
 
 Settings go in `launch-site.json` at the top of your repo (commit it; every worktree finds it through the main checkout):
@@ -532,10 +532,22 @@ Settings go in `launch-site.json` at the top of your repo (commit it; every work
 
 `{api}`, `{web}` (any port name), `{slot}`, `{worktree}` and `{worktree_path}` are filled in per slot. Each service waits on the port named by its `port` field (default: its own name).
 
+Optional sections, each skipped when absent:
+
+| Key | What it does |
+|---|---|
+| `require` | files that must exist in the worktree before anything is claimed |
+| `guards` | `{ "file", "pattern", "message" }`: stop before claiming when a local file contains a pattern (say a hard-coded port). Guards only read. |
+| `overlays` | `{ "file", "body" }`: per-slot files written into the worktree (say `web/.env.local` with `PORT={web}`). A file of yours already there is backed up and restored when the slot stops; tracked files are refused; both stay out of `git status` via `.git/info/exclude`. |
+| `build` | commands run before the services start |
+| `after` | commands run once the slot is live (codegen and the like); a failure is reported, the slot stays up |
+| `"ownerCheck": "port"` (per service) | accept whoever listens on the port, for a listener outside the service's own processes (a Docker-published port). Stop then takes that listener down too. |
+
 How it stays safe with several people or agents launching at once:
 
 - A slot is free only with **no lock and none of its ports answering**. Claiming creates the lock exclusively, so two launches can't both win.
-- Services start together and are polled together. One that exits before opening its port fails at once, with the end of its log.
+- Services start together and are polled together. One that exits before opening its port fails at once, with the end of its log. A port answered by a process the launch didn't start fails as `FOREIGN_LISTENER` instead of passing for ready.
+- Each recorded pid carries its process start time, so a pid the OS has since given to another program is never taken for ours, and never killed.
 - Anything that fails releases the claim (before launch) or stops what was started. Stop kills only the process trees the lock records, checks the ports went quiet, and only then releases the lock. A port held by something else is reported, never killed.
 - Locks are `key=value` lines (`worktree`, `worktree_path`, `slot`, `status`, `<service>_pid`, `ports`, `timestamp`, `heartbeat`) in `lockDir` (default: the worktree root); logs are in `lockDir/.launch-site/logs/`. A lock with nothing running, or `starting` for longer than `staleStartingSec` (300), is cleared on the next start.
 

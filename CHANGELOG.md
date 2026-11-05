@@ -4,6 +4,15 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-11-05
+
+### Added
+- **Launch slots, complete**: `require` (files that must exist) and `guards` (patterns that must not appear in a local file) are checked before anything is claimed; `overlays` write per-slot files into the worktree, backing up and restoring yours, refusing tracked files and staying out of `git status`; `after` steps run once a slot is live (failures are reported, the slot stays up); `--open` opens the browser.
+- **Who owns a port**: a port answered by a process the launch didn't start fails as `FOREIGN_LISTENER` instead of passing for ready, and teardown stops listeners our processes started but never anyone else's. Per service, `"ownerCheck": "port"` accepts any listener (a Docker-published port). Uses lsof and ps on macOS and Linux, netstat and PowerShell on Windows.
+- **Pid start stamps** in locks (`starts=`): a pid the OS has reused for another process is never treated as ours or killed.
+- `birddog slot cleanup --ports` also stops orphan listeners on slot ports (only when asked); cleanup reverts overlays left by launches that lost their lock.
+- CI runs the launch-slot tests on Windows.
+
 ## [1.16.0] - 2026-11-05
 
 ### Added

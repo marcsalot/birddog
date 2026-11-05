@@ -22,6 +22,17 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm test
 
+  launch-windows:
+    # Launch slots stop processes and read ports differently on Windows (taskkill, netstat, PowerShell).
+    name: Launch slots on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test test/launch.test.mjs
+
   docker:
     name: Docker image
     runs-on: ubuntu-latest

@@ -5,12 +5,14 @@ import net from 'node:net';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 import {
+  applyOverlays, revertOverlays, preflight,
   alive, board, claim, cleanupSlots, fill, findLaunchConfig, LaunchError, loadLaunchConfig, lockPath, lockState,
   normalizeLaunchConfig, portOpen, readLock, restartSlot, slotCommand, startSlot, stopSlot, sweepStale,
 } from '../src/launch.mjs';
 import { installSkill, listSkills, skillCommand } from '../src/skills.mjs';
 import { createWorkspace } from '../src/workspace.mjs';
 import { workspaceHTML } from '../public/js/work.js';
+import { spawn } from 'node:child_process';
 import { commit, git, tmpDir } from './helpers.mjs';
 
 const NODE = JSON.stringify(process.execPath);
@@ -53,7 +55,8 @@ describe('launch-site.json', () => {
     assert.equal(c.worktreeRoot, path.resolve('/repo'));
     assert.equal(c.lockDir, path.resolve('/repo'));
     assert.equal(c.slots[0].lock, '.slot-dev1.lock');
-    assert.deepEqual(c.services.web, { command: 'npm run dev', cwd: '.', env: {}, port: 'web', timeoutSec: 120 });
+    assert.deepEqual(c.services.web, { command: 'npm run dev', cwd: '.', env: {}, port: 'web', timeoutSec: 120, ownerCheck: 'tree' });
+    assert.deepEqual([c.overlays, c.guards, c.after, c.require], [[], [], [], []]);
   });
   for (const [what, raw] of [
     ['no slots', { slots: [] }],
@@ -65,6 +68,13 @@ describe('launch-site.json', () => {
     ['a service folder outside the worktree', { ...ok, services: { web: { command: 'x', cwd: '../elsewhere' } } }],
     ['a bad environment variable name', { ...ok, services: { web: { command: 'x', env: { 'A B': '1' } } } }],
     ['a service without a command', { ...ok, services: { web: {} } }],
+    ['an unknown ownerCheck', { ...ok, services: { web: { command: 'x', ownerCheck: 'any' } } }],
+    ['an overlay outside the worktree', { ...ok, overlays: [{ file: '../x.env', body: '' }] }],
+    ['an overlay listed twice', { ...ok, overlays: [{ file: 'web/.env', body: '' }, { file: 'web//.env', body: '' }] }],
+    ['an overlay without a body', { ...ok, overlays: [{ file: 'web/.env' }] }],
+    ['a guard with a wildcard', { ...ok, guards: [{ file: 'api/*.json', pattern: 'x' }] }],
+    ['a guard with a bad pattern', { ...ok, guards: [{ file: 'a.json', pattern: '(' }] }],
+    ['a required file outside the worktree', { ...ok, require: ['/etc/passwd'] }],
   ]) {
     it(`refuses ${what}`, () => assert.throws(() => normalizeLaunchConfig(raw, base), LaunchError));
   }
@@ -203,7 +213,7 @@ describe('birddog skill install', () => {
   it('ships the launch-site skill with Claude Code frontmatter', async () => {
     assert.ok((await listSkills()).includes('launch-site'));
     const md = await fs.readFile(path.resolve('skills/launch-site/SKILL.md'), 'utf8');
-    assert.match(md, /^---\nname: launch-site\ndescription: .+\n---\n/);
+    assert.match(md, /^---\r?\nname: launch-site\r?\ndescription: .+\r?\n---\r?\n/);
   });
   it('installs into ~/.claude/skills, and won\'t replace a folder it didn\'t put there', async () => {
     const home = await tmpDir();
@@ -255,5 +265,174 @@ describe('the Worktrees page and launch slots', () => {
     assert.match(html, /◌<\/span> Starting/);
     assert.match(html, /Start in a slot/);
     assert.match(html, /from <code>[^<]*launch-site\.json<\/code>/);
+  });
+});
+
+/** A git repo worktree for the overlay tests (tracked checks need git). */
+async function gitSetup(over = {}) {
+  const s = await setup(over);
+  for (const d of ['app-PROJ-1', 'app-PROJ-2']) {
+    const w = path.join(s.root, d);
+    git(w, ['init', '-q']);
+    await fs.writeFile(path.join(w, 'tracked.env'), 'TRACKED=1\n');
+    git(w, ['add', 'tracked.env']);
+    commit(w, 'init', Date.now());
+  }
+  return s;
+}
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+describe('launch slots: overlays', () => {
+  const OVERLAY = { file: 'web/.env.local', body: 'PORT={web}\nAPI=http://localhost:{api}\nSLOT={slot}\n' };
+
+  it('writes per-slot files, backs up yours, keeps both out of git, and restores on stop', async () => {
+    const s = await gitSetup({ overlays: [OVERLAY] });
+    cleanups.push(() => cleanupSlots(s.cfg));
+    const w = path.join(s.root, 'app-PROJ-1');
+    const env = path.join(w, 'web', '.env.local');
+    await fs.writeFile(env, 'MINE=1\n');
+    await startSlot(s.cfg, wt(s, 'PROJ-1'));
+    assert.equal(await fs.readFile(env, 'utf8'), `PORT=${s.p.w1}\nAPI=http://localhost:${s.p.a1}\nSLOT=dev1\n`);
+    assert.equal(await fs.readFile(`${env}.birddog-bak`, 'utf8'), 'MINE=1\n');
+    const exclude = await fs.readFile(path.join(w, '.git', 'info', 'exclude'), 'utf8');
+    assert.match(exclude, /^web\/\.env\.local$/m);
+    assert.match(exclude, /^web\/\.env\.local\.birddog-bak$/m);
+    assert.equal(git(w, ['status', '--porcelain']).trim(), '', 'git sees nothing new');
+    await stopSlot(s.cfg, { worktree: 'PROJ-1' });
+    assert.equal(await fs.readFile(env, 'utf8'), 'MINE=1\n', 'your file is back');
+    assert.ok(!(await fs.stat(`${env}.birddog-bak`).catch(() => null)));
+  });
+
+  it('removes a file it created, and re-applying never backs up its own file over yours', async () => {
+    const s = await gitSetup({ overlays: [OVERLAY] });
+    const w = path.join(s.root, 'app-PROJ-1');
+    const env = path.join(w, 'web', '.env.local');
+    const slot = s.cfg.slots[0];
+    await applyOverlays(s.cfg, slot, 'PROJ-1', w);
+    await applyOverlays(s.cfg, slot, 'PROJ-1', w);
+    assert.ok(!(await fs.stat(`${env}.birddog-bak`).catch(() => null)), 'no backup of our own file');
+    assert.equal(await revertOverlays(s.cfg, w), true);
+    assert.ok(!(await fs.stat(env).catch(() => null)), 'the file it created is gone');
+  });
+
+  for (const [what, overlays, setupFn, re] of [
+    ['a git-tracked file', [{ file: 'tracked.env', body: 'X=1' }], null, /tracked by git/],
+    ['a tracked file spelled in another case', [{ file: 'TRACKED.ENV', body: 'X=1' }], null, /tracked by git/],
+    ['a leftover backup from a launch that never restored it', [{ file: 'web/.env.local', body: 'X=1' }], (w) => fs.writeFile(path.join(w, 'web', '.env.local.birddog-bak'), 'OLD'), /never restored/],
+  ]) {
+    it(`refuses ${what}, writes nothing and releases the claim`, async () => {
+      const s = await gitSetup({ overlays: [{ file: 'web/first.env', body: 'A=1' }, ...overlays] });
+      const w = path.join(s.root, 'app-PROJ-1');
+      if (setupFn) await setupFn(w);
+      await assert.rejects(startSlot(s.cfg, wt(s, 'PROJ-1')), re);
+      assert.ok(!(await fs.stat(path.join(w, 'web', 'first.env')).catch(() => null)), 'no overlay was written');
+      assert.equal(await fs.readFile(path.join(w, 'tracked.env'), 'utf8'), 'TRACKED=1\n');
+      assert.equal(await readLock(lockPath(s.cfg, s.cfg.slots[0])), null);
+    });
+  }
+});
+
+describe('launch slots: before claiming', () => {
+  it('stops on a guard or a missing file, with nothing claimed', async () => {
+    const s = await setup({ require: ['api/settings.json'], guards: [{ file: 'api/local.json', pattern: '"Kestrel"\\s*:', message: 'remove the Kestrel block, it pins a port' }] });
+    const w = path.join(s.root, 'app-PROJ-1');
+    await assert.rejects(startSlot(s.cfg, wt(s, 'PROJ-1')), /MISSING_FILE: .*api\/settings\.json/);
+    await fs.writeFile(path.join(w, 'api', 'settings.json'), '{}');
+    await preflight(s.cfg, w); // guarded file absent: passes
+    await fs.writeFile(path.join(w, 'api', 'local.json'), '{ "Kestrel": { "Endpoints": {} } }');
+    await assert.rejects(startSlot(s.cfg, wt(s, 'PROJ-1')), /GUARD_TRIPPED: api\/local\.json: remove the Kestrel block/);
+    assert.equal(await readLock(lockPath(s.cfg, s.cfg.slots[0])), null);
+    assert.equal(await fs.readFile(path.join(w, 'api', 'local.json'), 'utf8'), '{ "Kestrel": { "Endpoints": {} } }', 'guards only read');
+  });
+});
+
+describe('launch slots: ownership', () => {
+  const IDLE = `${NODE} -e "setInterval(()=>{},1000)"`;
+
+  it('a port answered by something the launch did not start is FOREIGN_LISTENER, not ready', async () => {
+    const s = await setup();
+    s.raw.services = { web: { cwd: 'web', command: IDLE, timeoutSec: 15 } };
+    await fs.writeFile(path.join(s.main, 'launch-site.json'), JSON.stringify(s.raw));
+    const cfg = await loadLaunchConfig(path.join(s.main, 'launch-site.json'));
+    cleanups.push(() => cleanupSlots(cfg));
+    const started = startSlot(cfg, wt(s, 'PROJ-1'));
+    await sleepMs(1500); // after the pre-launch port check
+    const outsider = await listen(s.p.w1);
+    cleanups.push(() => new Promise((r) => outsider.close(r)));
+    await assert.rejects(started, /FOREIGN_LISTENER: port \d+ \(web\) is held by pid \d+/);
+    assert.ok(await portOpen(s.p.w1), 'the outsider was not killed');
+    assert.equal(await readLock(lockPath(cfg, cfg.slots[0])), null, 'our claim was released');
+    outsider.close();
+  });
+
+  it('ownerCheck "port" takes whoever listens (a Docker-published port)', async () => {
+    const s = await setup();
+    s.raw.services = { web: { cwd: 'web', command: IDLE, timeoutSec: 15, ownerCheck: 'port' } };
+    await fs.writeFile(path.join(s.main, 'launch-site.json'), JSON.stringify(s.raw));
+    const cfg = await loadLaunchConfig(path.join(s.main, 'launch-site.json'));
+    cleanups.push(() => cleanupSlots(cfg));
+    const started = startSlot(cfg, wt(s, 'PROJ-1'));
+    await sleepMs(1500);
+    // a separate process (stop takes the recorded port owner down, so not this test runner)
+    const published = spawn(process.execPath, ['-e', `require('http').createServer((q,r)=>r.end()).listen(${s.p.w1},'127.0.0.1')`], { stdio: 'ignore' });
+    cleanups.push(async () => published.kill());
+    const r = await started;
+    assert.equal(r.slot, 'dev1');
+    assert.equal((await readLock(lockPath(cfg, cfg.slots[0]))).web_port_pid, String(published.pid));
+    const stop = await stopSlot(cfg, { worktree: 'PROJ-1' });
+    assert.equal(stop.verified, true);
+    assert.ok(!alive(published.pid), 'stop takes down the recorded port owner');
+  });
+
+  it('a recorded pid that now belongs to another process is not ours: stale, and never killed', async () => {
+    const s = await setup();
+    const victim = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+    cleanups.push(async () => victim.kill());
+    await sleepMs(200);
+    const file = lockPath(s.cfg, s.cfg.slots[0]);
+    await fs.writeFile(file, `worktree=REUSE-1\nworktree_path=${s.root}\nslot=dev1\nstatus=live\napi_pid=${victim.pid}\nstarts=${victim.pid}:not-its-start-time\n`);
+    assert.equal(await lockState(s.cfg, s.cfg.slots[0]), 'STALE');
+    await stopSlot(s.cfg, { worktree: 'REUSE-1' });
+    assert.ok(alive(victim.pid), 'the process that reused the pid is still running');
+    // the real stamp, though, is ours
+    const real = await (await import('../src/launch-proc.mjs')).procStamp(victim.pid);
+    assert.ok(real, 'start stamps are readable on this OS');
+    await fs.writeFile(file, `worktree=REUSE-2\nstatus=live\napi_pid=${victim.pid}\nstarts=${victim.pid}:${real}\n`);
+    assert.equal(await lockState(s.cfg, s.cfg.slots[0]), 'LIVE');
+    await fs.rm(file);
+  });
+
+  it('records each service pid with its start stamp, and the pid that owns each port', async () => {
+    const s = await setup();
+    cleanups.push(() => cleanupSlots(s.cfg));
+    await startSlot(s.cfg, wt(s, 'PROJ-1'));
+    const lock = await readLock(lockPath(s.cfg, s.cfg.slots[0]));
+    assert.ok(/^\d+$/.test(lock.web_port_pid), 'the listener behind the web port');
+    for (const k of ['api_pid', 'web_pid', 'web_port_pid']) assert.match(lock.starts, new RegExp(`(^|;)${lock[k]}:`), `${k} has a stamp`);
+    await stopSlot(s.cfg, { worktree: 'PROJ-1' });
+  });
+
+  it('cleanup --ports also stops an orphan listener with no lock; plain cleanup leaves it', async () => {
+    const s = await setup();
+    const orphan = spawn(process.execPath, ['-e', `require('http').createServer((q,r)=>r.end()).listen(${s.p.a2},'127.0.0.1')`], { stdio: 'ignore' });
+    cleanups.push(async () => orphan.kill());
+    for (let i = 0; i < 40 && !(await portOpen(s.p.a2)); i++) await sleepMs(100);
+    await cleanupSlots(s.cfg);
+    assert.ok(await portOpen(s.p.a2), 'plain cleanup only stops what locks record');
+    const r = await cleanupSlots(s.cfg, { sweepPorts: true });
+    assert.ok(r.every((x) => x.verified));
+    assert.ok(!(await portOpen(s.p.a2)));
+  });
+});
+
+describe('launch slots: after steps', () => {
+  it('run once the slot is live; a failing one is reported and the slot stays up', async () => {
+    const s = await setup({ after: [{ command: `${NODE} -e "require('fs').writeFileSync('codegen.txt','{api}')"` }, { command: `${NODE} -e "process.exit(4)"` }] });
+    cleanups.push(() => cleanupSlots(s.cfg));
+    const r = await startSlot(s.cfg, wt(s, 'PROJ-1'));
+    assert.equal(await fs.readFile(path.join(s.root, 'app-PROJ-1', 'codegen.txt'), 'utf8'), String(s.p.a1));
+    assert.deepEqual(r.afterFailed, [2]);
+    assert.equal((await readLock(lockPath(s.cfg, s.cfg.slots[0]))).status, 'live');
+    await stopSlot(s.cfg, { worktree: 'PROJ-1' });
   });
 });
