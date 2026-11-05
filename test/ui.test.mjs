@@ -43,3 +43,14 @@ describe('main menu rail', () => {
     assert.deepEqual(await again.setPrefs({ guideWidth: null }), [], 'reset to the default');
   });
 });
+
+describe('Ask Fetch setup form', () => {
+  it('reads the pasted API key before re-rendering the form (which empties the field)', () => {
+    const js = fs.readFileSync(path.join(ROOT, 'public', 'js', 'chat.js'), 'utf8');
+    const block = js.slice(js.indexOf("d.chat === 'enable'"));
+    const read = block.indexOf("$('#chatKey')");
+    const rerender = block.indexOf('busy = true; render()');
+    assert.ok(read > 0 && rerender > 0, 'enable handler found');
+    assert.ok(read < rerender, 'the key is read before render() rebuilds the input');
+  });
+});

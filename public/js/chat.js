@@ -198,9 +198,11 @@ export async function onChatEvent(e) {
     return true;
   }
   if (d.chat === 'enable') {
+    // Read the key before render(): it rebuilds the form, which empties the field.
+    const apiKey = $('#chatKey')?.value ?? '';
     busy = true; render();
     try {
-      status = await ctx.api.chatSetup({ apiKey: $('#chatKey')?.value ?? '', consent: consentChecked });
+      status = await ctx.api.chatSetup({ apiKey, consent: consentChecked });
       ctx.toast('✓ Ask Fetch is on');
     } catch (err) {
       status = { ...status, error: err.message };

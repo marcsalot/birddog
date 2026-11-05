@@ -4,6 +4,9 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+- **Ask Fetch setup ignored the pasted API key** and said "Paste an Anthropic API key." The form was redrawn (to show it was busy) before the key was read, which emptied the field, so an empty key was sent.
+
 ### Changed
 - The menu's collapse button is now a round tab on the rail's right edge, halfway down the screen, instead of beside the logo. It follows the edge when the menu collapses.
 
