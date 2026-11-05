@@ -4,6 +4,9 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- **Boundary tests** (`test/boundaries.test.mjs`, 38 tests): a scripted model tries to cross each of Fetch's boundaries (read tokens or settings, change or reply without Confirm, reply where replies are off, call the web or a tool Birddog doesn't have, obey instructions inside an item, store a secret, loop forever), and each test checks that Birddog holds the line.
+
 ## [1.13.0] - 2026-11-04
 
 ### Added
