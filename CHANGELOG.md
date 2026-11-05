@@ -4,6 +4,9 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+- The menu's collapse button is now a round tab on the rail's right edge, halfway down the screen, instead of beside the logo. It follows the edge when the menu collapses.
+
 ## [1.12.0] - 2026-11-04
 
 ### Added

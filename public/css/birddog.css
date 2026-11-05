@@ -448,8 +448,9 @@ body.guide-open .guide{display:flex}
 
 /* ---- Main menu rail ------------------------------------------------------- */
 .brand{position:relative}
-.rail-toggle{margin-left:auto;width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:none;color:var(--faint);font-size:14px;line-height:1;display:grid;place-items:center;flex:none}
-.rail-toggle:hover{border-color:var(--line);color:var(--text)}
+/* Collapse handle: a round tab on the rail's right edge, halfway down the screen. */
+.rail-toggle{position:fixed;top:50%;left:calc(var(--rail-w) - 13px);transform:translateY(-50%);z-index:30;width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--faint);font-size:14px;line-height:1;display:grid;place-items:center;padding:0 0 2px;box-shadow:var(--shadow);transition:left .2s ease,color .15s,border-color .15s}
+.rail-toggle:hover{border-color:var(--faint);color:var(--text)}
 .nav .ico{width:18px;flex:none;display:grid;place-items:center;font-size:14px}
 nav .rl,.rail .rl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .rail-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px}
@@ -463,7 +464,7 @@ nav .rl,.rail .rl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-
 body.rail-collapsed .rail{padding:18px 8px;align-items:stretch}
 body.rail-collapsed .rail .rl,body.rail-collapsed .rail .nav-label,body.rail-collapsed .rail .hint,body.rail-collapsed .rail .src-status,body.rail-collapsed .rail .me .who,body.rail-collapsed .rail .me button{display:none}
 body.rail-collapsed .brand{flex-direction:column;gap:8px;padding:2px 0}
-body.rail-collapsed .rail-toggle{margin:0;transform:rotate(180deg)}
+body.rail-collapsed .rail-toggle{transform:translateY(-50%) rotate(180deg)}
 body.rail-collapsed .nav button{justify-content:center;padding:8px 0;position:relative}
 body.rail-collapsed .nav .count{position:absolute;top:1px;right:4px;margin:0;font-size:10px;font-weight:700;min-width:15px;height:15px;line-height:15px;border-radius:8px;text-align:center;background:var(--panel-2);color:var(--text)}
 body.rail-collapsed .nav .count:empty{display:none}
