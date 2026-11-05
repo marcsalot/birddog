@@ -7,8 +7,8 @@
 //   isOurs(pid, roots)      is pid one of roots, or started by one of them? true / false / undefined
 //   killTree(pid)           stop a process and everything it started
 //
-// Lookups shell out to what each OS has: lsof and ps on macOS and Linux (plus /proc on
-// Linux), netstat and PowerShell on Windows. When a tool is missing the answer is
+// Lookups use what each OS has: /proc on Linux (lsof and ps as a fallback), lsof and ps
+// on macOS, netstat and PowerShell on Windows. When a tool is missing the answer is
 // "undefined", and callers treat that as "can't tell" rather than "free" or "ours".
 
 import { execFile } from 'node:child_process';
@@ -67,8 +67,39 @@ export async function sameProcess(pid, stamp) {
   return !now || now === stamp; // an unreadable stamp counts as the same (safe for "is it running")
 }
 
+/** Linux without lsof (say a slim container): match the listening socket's inode in /proc. */
+async function procPortOwner(port) {
+  const hex = port.toString(16).toUpperCase().padStart(4, '0');
+  const inodes = new Set();
+  let readable = false;
+  for (const f of ['/proc/net/tcp', '/proc/net/tcp6']) {
+    const t = await fsp.readFile(f, 'utf8').catch(() => null);
+    if (t === null) continue;
+    readable = true;
+    for (const line of t.split('\n').slice(1)) {
+      const c = line.trim().split(/\s+/);
+      if (c.length > 9 && c[3] === '0A' && c[1].endsWith(`:${hex}`)) inodes.add(c[9]); // 0A = LISTEN
+    }
+  }
+  if (!readable) return undefined;
+  if (!inodes.size) return null;
+  for (const d of await fsp.readdir('/proc').catch(() => [])) {
+    if (!/^\d+$/.test(d)) continue;
+    for (const fd of await fsp.readdir(`/proc/${d}/fd`).catch(() => [])) {
+      const link = await fsp.readlink(`/proc/${d}/fd/${fd}`).catch(() => '');
+      const m = /^socket:\[(\d+)\]$/.exec(link);
+      if (m && inodes.has(m[1])) return Number(d);
+    }
+  }
+  return undefined; // listening, but by a process we can't see
+}
+
 /** Who listens on a local TCP port: pid, null (nobody), or undefined (can't tell). */
 export async function portOwner(port) {
+  if (process.platform === 'linux') {
+    const viaProc = await procPortOwner(port);
+    if (viaProc !== undefined) return viaProc;
+  }
   if (WIN) {
     const r = await exec('netstat.exe', ['-ano']);
     if (!r.ok) return undefined;
@@ -95,6 +126,18 @@ async function processTable() {
     const t = new Map();
     for (const l of r.out.split(/\r?\n/)) { const [p, pp] = l.trim().split(/\s+/).map(Number); if (p) t.set(p, { ppid: pp, pgid: null }); }
     return t;
+  }
+  if (process.platform === 'linux') {
+    // /proc/<pid>/stat: "pid (comm) state ppid pgrp ..."; works where ps is minimal (busybox)
+    const t = new Map();
+    for (const d of await fsp.readdir('/proc').catch(() => [])) {
+      if (!/^\d+$/.test(d)) continue;
+      const st = await fsp.readFile(`/proc/${d}/stat`, 'utf8').catch(() => null);
+      if (!st) continue;
+      const f = st.slice(st.lastIndexOf(')') + 2).split(' ');
+      t.set(Number(d), { ppid: Number(f[1]), pgid: Number(f[2]) });
+    }
+    if (t.size) return t;
   }
   const r = await exec('ps', ['-A', '-o', 'pid=,ppid=,pgid=']);
   if (!r.ok) return null;

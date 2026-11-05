@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,10 +10,15 @@ export async function tmpDir(prefix = 'birddog-test-') {
   return fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
 }
 
+// Git for Windows can't read \\.\nul as a config file, so point it at an empty temp file there.
+const EMPTY_CONFIG = process.platform === 'win32'
+  ? (() => { const f = path.join(os.tmpdir(), 'birddog-test-empty.gitconfig'); try { writeFileSync(f, ''); } catch { /* exists */ } return f; })()
+  : os.devNull;
+
 const GIT_ENV = {
   GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
   GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com',
-  GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull,
+  GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: EMPTY_CONFIG,
 };
 
 /** Run git in a test repo with a clean, predictable config. */
