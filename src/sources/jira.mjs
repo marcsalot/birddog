@@ -59,7 +59,7 @@ export function normalizeSettings(input = {}) {
 // ---------------------------------------------------------------------------
 // API client
 
-async function jiraClient(config, ctx) {
+export async function jiraClient(config, ctx) {
   const fetchImpl = ctx.fetch ?? fetch;
   let site; let apiBase; let headers;
   if (config.auth === 'oauth') {

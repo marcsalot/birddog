@@ -18,6 +18,8 @@ import { AuthError, checkAuthConfig, createOidc, isAllowed } from './auth/oidc.m
 import { createSessions } from './auth/session.mjs';
 import { ChatError, createChat } from './chat.mjs';
 import { createMemory } from './memory.mjs';
+import { createBoard, normalizeBoard } from './board.mjs';
+import { createWorkspace, newWorktreeCommand, normalizeWorkspace, SlotError, ticketIndex } from './workspace.mjs';
 import { Collector } from './collector.mjs';
 import { createHistory } from './history.mjs';
 import { createNotifier } from './notify.mjs';
@@ -171,6 +173,7 @@ async function serveStatic(req, res, pathname) {
 export async function createBirddog({
   dir, sources = SOURCES, cwd, now, autoRefresh = true, log = console, secrets, fetchImpl = fetch, cliToken,
   liveReload = false, allowRemote = false, notifySystem, notifyChannel, firstRunFolders, builtInClients, replyUndoMs,
+  workspaceGit, workspaceProbe, workspaceAlive,
 }) {
   sources.forEach(validateSource);
   const loaded = await loadConfig(dir, { cwd });
@@ -387,6 +390,33 @@ export async function createBirddog({
     try { return await fn(...args); } catch (e) { throw e instanceof HttpError ? e : new HttpError(400, e.message); }
   };
 
+  // ---- Ticket board and worktrees / slots ----
+  const board = createBoard({ getConfig: () => config, context, ...(now ? { now } : {}) });
+  const workspace = createWorkspace({
+    dir, getConfig: () => config, fetchImpl, ...(now ? { now } : {}),
+    ...(workspaceGit ? { git: workspaceGit } : {}), ...(workspaceProbe ? { probe: workspaceProbe } : {}), ...(workspaceAlive ? { alive: workspaceAlive } : {}),
+  });
+  const slotRoute = (fn) => async (...a) => {
+    try { return await fn(...a); } catch (e) { throw e instanceof SlotError ? new HttpError(400, e.message) : e; }
+  };
+  /** The board, with each ticket's worktrees and slots, and a "start a worktree" command for the rest. */
+  async function boardPayload(fresh = false) {
+    const [b, ws] = await Promise.all([board.get({ fresh }), workspace.get({ fresh }).catch(() => null)]);
+    const links = ws?.links ?? {};
+    const repo = ws?.repos?.[0];
+    const start = {};
+    if (repo) {
+      for (const l of b.lanes) for (const c of l.cards) {
+        if (!links[c.key]?.worktrees?.length) start[c.key] = newWorktreeCommand({ repo: repo.path, key: c.key, prefix: ws.settings.branchPrefix, base: repo.base ?? 'origin/main' });
+      }
+    }
+    return { ...b, links, start, repo: repo?.display ?? null };
+  }
+  async function workspacePayload(fresh = false) {
+    const [ws, b] = await Promise.all([workspace.get({ fresh }), board.get().catch(() => null)]);
+    return { ...ws, tickets: ticketIndex(b) };
+  }
+
   // ---- Ask Fetch (chat) ----
   const chat = createChat({
     app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; }, replies },
@@ -556,6 +586,29 @@ export async function createBirddog({
       const folders = firstRunFolders ?? repoFolders;
       return { ...(await folders({ roots: git.roots ?? [], container: !!allowRemote, maxDepth: git.maxDepth ?? 3, cwd })), github: { connected: !!gh.connected, login: gh.login ?? null } };
     }],
+    ['GET', /^\/api\/board$/, (_m, _b, ctx) => boardPayload(ctx.query.get('fresh') === '1')],
+    ['PUT', /^\/api\/board\/settings$/, asBadRequest(async (_m, body) => {
+      config = { ...config, board: normalizeBoard(body) };
+      await saveConfig(dir, config);
+      board.clear();
+      return boardPayload(true);
+    })],
+    ['DELETE', /^\/api\/board\/settings$/, async () => {
+      const { board: _gone, ...rest } = config;
+      config = rest;
+      await saveConfig(dir, config);
+      board.clear();
+      return boardPayload(true);
+    }],
+    ['GET', /^\/api\/workspace$/, (_m, _b, ctx) => workspacePayload(ctx.query.get('fresh') === '1')],
+    ['PUT', /^\/api\/workspace\/settings$/, asBadRequest(async (_m, body) => {
+      config = { ...config, workspace: normalizeWorkspace(body) };
+      await saveConfig(dir, config);
+      workspace.clear();
+      return workspacePayload(true);
+    })],
+    ['PUT', /^\/api\/workspace\/slots\/(dev|qa)\/([^/]+)$/, slotRoute(async (m, body) => { await workspace.claim(m[1], m[2], body); return workspacePayload(); })],
+    ['DELETE', /^\/api\/workspace\/slots\/(dev|qa)\/([^/]+)$/, slotRoute(async (m) => { await workspace.release(m[1], m[2]); return workspacePayload(); })],
     ['GET', /^\/api\/chat\/status$/, () => chat.status()],
     ['GET', /^\/api\/oauth$/, async (_m, _b, ctx) => ({
       providers: await Promise.all(oauth.providers.map(async (p) => ({ ...(await oauth.status(p)), redirectUri: `${ctx.base}/auth/oauth/${p}/callback` }))),
@@ -745,6 +798,8 @@ export async function createBirddog({
     secrets,
     get config() { return config; },
     replies,
+    board,
+    workspace,
     configFile: loaded.file,
     authFile: loaded.authFile,
     firstRun: loaded.created,

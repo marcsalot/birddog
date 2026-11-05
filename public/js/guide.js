@@ -118,6 +118,11 @@ export const SECTIONS = [
       </ul>`,
   },
   {
+    id: 'work', title: 'Board, worktrees and slots', words: 'board swimlane lane kanban jira status code review pass ready for deployment worktree git slot dev qa environment claim port lock version',
+    html: `<p><b>Board</b> (${keys('b')}) shows your Jira tickets in lanes: <b>In Progress</b>, <b>In Code Review</b>, <b>Code Review Pass</b> and <b>Ready for Deployment</b>. Each card says how long the ticket has sat in its status (⏳ after 3 days) and where it lives: its worktree, the dev slot running it, the QA slot it's on. <b>Lanes &amp; filter</b> renames lanes, picks which Jira statuses go in each, and whose tickets to show. Birddog never moves a ticket.</p>
+      <p><b>Worktrees &amp; slots</b> (${keys('w')}) lists every git worktree with its ticket, changes and how far it is from main, your <b>dev slots</b> (running when their ports answer) and your <b>QA slots</b>. Give the QA slots an address pattern like <code>https://qa{n}.example.com</code> and a version path, and Birddog shows which branch each one runs. <b>Claim…</b> notes who has a slot and for which ticket; claims stay on this machine. The buttons copy git commands for you to run.</p>`,
+  },
+  {
     id: 'chat', title: 'Ask Fetch (chat)', words: 'chat ask claude anthropic api key question assistant ai haiku memory remember forget boundaries limits',
     html: `${shot('chat', 'Ask Fetch answering "What needs me now?" from the inbox')}
       <p>Press ${keys('a')}, or the ✦ button in the bottom-right corner, and ask in plain words: <i>What needs me now? What's due tomorrow? Which PRs need work?</i> <b>Fetch</b>, Birddog's assistant (the dog that fetches answers), replies from your own items, and can mark things done or snooze them. It always asks you to <b>Confirm</b> first.</p>

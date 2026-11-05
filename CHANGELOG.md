@@ -4,6 +4,14 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-11-05
+
+### Added
+- **Ticket board** (`b`): your Jira tickets in swimlanes, In Progress → In Code Review → Code Review Pass → Ready for Deployment. Cards show time in status (from the changelog, ⏳ after 3 days), type, priority, fix version, and the ticket's worktree, dev slot and QA slot; tickets without a worktree get a copyable `git worktree add` command. **Lanes & filter** edits lane names, the Jira statuses in each (several per lane), their order, and whose tickets (mine, projects, or a JQL filter). Read-only, one search a minute at most.
+- **Worktrees & slots** (`w`): every git worktree with its ticket and board lane, changes, unpushed commits, ahead/behind main and last commit, with flags for what needs a look; local **dev slots** (running when their ports answer or their lock file names a live process; claim one by hand); numbered **QA slots** (12, or however many) that Birddog asks which branch and build they run, with claims for who has which. Commands are copied, never run.
+- `config.json → board` and `→ workspace`, `slots.json` for claims, and `GET /api/board`, `GET /api/workspace` with their settings and slot routes.
+- The demo has a full board, five worktrees, three dev slots and twelve QA slots (one down, one claimed).
+
 ## [1.14.0] - 2026-11-04
 
 ### Added

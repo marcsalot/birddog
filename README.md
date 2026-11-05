@@ -487,6 +487,7 @@ The menu on the left holds everything:
 
 - **Overview**
 - the **inbox** views (All, Now, Today, Later, Snoozed, Done)
+- **Work**: the ticket **Board** (`b`) and **Worktrees & slots** (`w`)
 - your **sources** (click one to hide or show its items)
 - **Ask Fetch**, the **Guide**, and **Sources & settings**
 
@@ -499,6 +500,46 @@ Press the book icon at the top right, or `g`, for the **guide**, a searchable ra
 The avatar at the far right of the top bar opens the **account menu**: who you're signed in as (with login on) or "just you, on this computer", Sources & settings, Appearance, keyboard shortcuts, and Sign out when login is on.
 
 Its screenshots come from `npm run screenshots`, a [Playwright](https://playwright.dev) script that starts Birddog in `--demo` mode (made-up data only) and captures light and dark versions into `public/guide/`. Playwright is a **devDependency**; the published package still has no runtime dependencies. It needs a Chromium: `npx playwright install chromium`, or point `BIRDDOG_CHROMIUM` at one.
+
+## Ticket board
+
+**Board** (`b`) shows your Jira tickets in delivery swimlanes:
+
+**In Progress → In Code Review → Code Review Pass → Ready for Deployment**
+
+Each card has the ticket, how long it has sat in its status (from the Jira changelog; ⏳ after 3 days), type, priority and fix version, and where the work lives: its **worktree** (with uncommitted changes), the **dev slot** running it, and the **QA slot** it is deployed to or claimed on. A ticket with no worktree yet gets **Copy "new worktree"**, a `git worktree add` command for you to run.
+
+**Lanes & filter** edits the board:
+
+- **Whose tickets:** assigned to you (default), everyone's in some projects, or your own JQL.
+- **Lanes:** name, Jira statuses (each lane takes several, since teams name them differently, e.g. *Code Review* / *PR Code Review*), order. Up to 8 lanes. A status can be in one lane only. **Reset to defaults** brings back the four above.
+
+It needs the Jira source connected. It's read-only: one search per minute at most, and Birddog never moves a ticket. Settings live in `config.json → board`.
+
+## Worktrees & slots
+
+**Worktrees & slots** (`w`) is where each ticket is being worked on, run and tested:
+
+- **Dev slots**: the places you run the app on this machine, each with its own ports. A slot is **Running** when something listens on its ports, or when its **lock file** names a live process. You can also **Claim** a slot for a worktree and ticket by hand, with a note. A lock file whose processes have gone shows **Stale lock**.
+- **QA slots**: numbered shared test environments (say QA 1 to QA 12). Give an address pattern like `https://qa{n}.example.com` and a **version path** (like `/api/version`) and Birddog asks each one, at most once a minute, which branch, commit and build it runs, and finds the ticket in the branch name. **Claim** notes who has a slot, for which ticket. Claims are notes on your machine (`slots.json`), not a lock your team sees.
+- **Worktrees**: every `git worktree` of your repos: branch, ticket and its board lane, uncommitted changes, unpushed commits, ahead/behind the main branch, last commit and dev slot, with flags like *Ready for deployment, but has uncommitted changes*, *41 commits behind main* or *no commit in 19 days*. Buttons copy `code …`, `cd …` and `git worktree remove …`; Birddog only reads your repos.
+
+With no repos set, it lists every repo that uses worktrees in your git scan folders. **Set up slots** changes everything:
+
+```json
+"workspace": {
+  "repos": ["~/code/myapp"],
+  "ticketPattern": "(PROJ|OPS)-\\d+",
+  "branchPrefix": "feature/",
+  "devSlots": [
+    { "label": "Dev 1", "ports": [5173, 5001], "lockFile": "~/code/.dev1.lock" },
+    { "label": "Dev 2", "ports": [5174, 5003] }
+  ],
+  "qa": { "count": 12, "pattern": "https://qa{n}.example.com", "versionPath": "/api/version", "label": "QA {n}" }
+}
+```
+
+A **lock file** is whatever your launch scripts write: `key=value` lines or JSON. Birddog reads `worktree` (or `path`, `cwd`), `branch`, `ticket`, any `pid` / `*_pid`, and `heartbeat` (or `updated`, `started`). The **version reply** can name things its own way: `branch` / `gitBranch` / `sourceBranch`, `gitSha` / `sha` / `commit`, `buildId` / `buildNumber` / `version`, also nested under `git` or `build`.
 
 ## Overview
 
@@ -685,7 +726,7 @@ Force a backend with `BIRDDOG_SECRETS=keychain|secret-service|file|env`. `env` i
 }
 ```
 
-Every source key is optional. Next to it: `state.json` (done/snooze/preferences), `cache.json` (last good data from each source) and `connections.json` (who you are signed in as; never tokens). Tokens live in the keychain. Changes to `auth` take effect on restart.
+Every source key is optional; `board` and `workspace` are set from the Board and Worktrees pages (see above). Next to it: `slots.json` (your slot claims), `state.json` (done/snooze/preferences), `cache.json` (last good data from each source) and `connections.json` (who you are signed in as; never tokens). Tokens live in the keychain. Changes to `auth` take effect on restart.
 
 ## Writing a source
 
@@ -782,6 +823,11 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `DELETE` | `/api/sources/:id` | disconnect: delete its secrets and switch it off |
 | `POST` | `/api/sources/:id/retry` | refresh just this source, now |
 | `PUT` | `/api/sources/:id/enabled` | `{ "enabled": true \| false }`: switch a source on or off, keeping its settings |
+| `GET` | `/api/board?fresh=1` | the ticket board: lanes of cards, each ticket's worktrees and slots, "new worktree" commands |
+| `PUT` / `DELETE` | `/api/board/settings` | `{ "scope", "projects", "jql", "lanes": [{ "label", "statuses" }] }`; `DELETE` resets |
+| `GET` | `/api/workspace?fresh=1` | worktrees, dev slots, QA slots, and the board status of each ticket |
+| `PUT` | `/api/workspace/settings` | repos, ticket pattern, dev slots, QA slots |
+| `PUT` / `DELETE` | `/api/workspace/slots/:kind/:id` | claim (`{ "worktree"?, "ticket"?, "owner"?, "note"? }`) or release a `dev` or `qa` slot |
 | `GET` | `/api/me` | whether login is on, and who is signed in |
 | `GET` / `DELETE` | `/api/connections/github` | GitHub sign-in status / disconnect |
 | `POST` | `/api/connections/github/device` | start "Sign in with GitHub" |

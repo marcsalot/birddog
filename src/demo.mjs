@@ -138,6 +138,55 @@ function jiraData(now) {
   ];
 }
 
+/** Tickets on the board: one search with statuses in the lanes, with a changelog for "time in status". */
+function boardIssues(now) {
+  const status = (name) => ({ name, statusCategory: { key: 'indeterminate' } });
+  const moved = (to, daysAgo) => ({ histories: [{ created: iso(now - daysAgo * DAY), items: [{ field: 'status', toString: to }] }] });
+  const t = (key, summary, st, daysIn, extra = {}) => ({
+    key, changelog: moved(st, daysIn),
+    fields: { summary, status: status(st), priority: { name: 'Medium' }, issuetype: { name: 'Story' }, assignee: { displayName: 'Sam Developer' }, fixVersions: [], updated: iso(now - Math.min(daysIn, 1) * DAY), ...extra },
+  });
+  return [
+    t('PAY-214', 'Reconcile November payouts', 'In Progress', 2.2, { priority: { name: 'High' } }),
+    t('PAY-235', 'Payout retry dashboard', 'In Progress', 0.4, { issuetype: { name: 'Task' } }),
+    t('PAY-226', 'Show refund status in the dashboard', 'In Code Review', 1.3),
+    t('PAY-233', 'Idempotency keys on payout API', 'In Code Review', 3.6, { issuetype: { name: 'Bug' }, priority: { name: 'High' } }),
+    t('PAY-219', 'Refund audit log', 'In Code Review Pass', 0.8, { fixVersions: [{ name: '2026.11.2' }] }),
+    t('PAY-198', 'Payout CSV export', 'Ready for Deployment', 1.9, { fixVersions: [{ name: '2026.11.2' }] }),
+    t('PAY-201', 'Currency rounding on refunds', 'Ready for Deployment', 4.1, { issuetype: { name: 'Bug' }, fixVersions: [{ name: '2026.11.2' }] }),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Worktrees and slots (canned, so the demo never reads your disk)
+
+const QA_PATTERN = 'https://qa{n}.acme-demo.example';
+/** What each QA slot's /api/version says. Missing = up on main; null = not answering. */
+const QA_DEPLOYS = { 2: 'feature/PAY-219-refund-audit', 3: 'feature/PAY-226-refund-status', 7: 'release/2026.11.2', 9: 'feature/PAY-198-payout-csv', 11: null, 12: 'feature/OPS-90-log-shipping' };
+
+export function demoWorkspaceGit(now = Date.now()) {
+  const home = os.homedir();
+  const repo = path.join(home, 'code', 'acme-payments');
+  const wt = (suffix, branch, facts) => ({ path: suffix ? `${repo}-${suffix}` : repo, branch, head: 'a1b2c3d4e5f6', facts });
+  const ago = (d) => new Date(now - d * DAY).toISOString();
+  const list = [
+    wt('', 'main', { changed: 0, untracked: 0, ahead: 0, behind: 0, unpushed: 0, lastCommitAt: ago(0.3), lastSubject: 'Merge PAY-205: payout webhooks' }),
+    wt('PAY-214', 'feature/PAY-214-reconcile-payouts', { changed: 4, untracked: 1, ahead: 3, behind: 2, unpushed: 1, lastCommitAt: ago(0.2), lastSubject: 'Match payouts by settlement id' }),
+    wt('PAY-226', 'feature/PAY-226-refund-status', { changed: 0, untracked: 0, ahead: 5, behind: 6, unpushed: 0, lastCommitAt: ago(1.3), lastSubject: 'Refund status pill' }),
+    wt('PAY-233', 'bugfix/PAY-233-idempotency', { changed: 0, untracked: 0, ahead: 2, behind: 1, unpushed: 0, lastCommitAt: ago(3.6), lastSubject: 'Reject replayed payout requests' }),
+    wt('PAY-180', 'feature/PAY-180-old-export', { changed: 2, untracked: 0, ahead: 1, behind: 41, unpushed: 1, lastCommitAt: ago(19), lastSubject: 'WIP export' }),
+  ];
+  return {
+    findRepos: async () => [repo],
+    worktrees: async () => list.map((w, i) => ({ path: w.path, head: w.head, branch: w.branch, bare: false, detached: false, locked: false, prunable: false, main: i === 0 })),
+    base: async () => 'origin/main',
+    inspect: async (dir) => ({ conflicts: 0, upstream: 'origin/x', ...list.find((w) => w.path === dir).facts }),
+    readFile: async () => { throw new Error('no lock files in the demo'); },
+  };
+}
+/** Dev 1's ports answer (it's running); the rest are quiet. */
+export const demoProbe = async (port) => port === 5173 || port === 5001;
+
 function calendarText(now) {
   const at = (h, m = 0, dayOffset = 0) => { const d = new Date(now); d.setDate(d.getDate() + dayOffset); d.setHours(h, m, 0, 0); return d.getTime(); };
   const soon = Math.ceil((now + 8 * MIN) / (5 * MIN)) * 5 * MIN; // a round time, 8 to 12 minutes away
@@ -328,10 +377,16 @@ export function demoFetch(clock = () => Date.now()) {
     if (u.origin === JIRA) {
       if (u.pathname === '/rest/api/3/myself') return json({ displayName: 'Sam Developer' });
       if (u.pathname === '/rest/api/3/field') return json([{ id: 'customfield_10020', name: 'Sprint', custom: true, schema: { custom: 'com.pyxis.greenhopper.jira:gh-sprint' } }]);
-      if (u.pathname === '/rest/api/3/search/jql') return json({ isLast: true, issues: jiraData(now) });
+      if (u.pathname === '/rest/api/3/search/jql') return json({ isLast: true, issues: /status in \(/.test(u.searchParams.get('jql') ?? '') ? boardIssues(now) : jiraData(now) });
     }
     if (u.origin === 'https://api.anthropic.com' && u.pathname === '/v1/messages') {
       return { ok: true, status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }), body: sseBody(demoClaude(JSON.parse(init.body))) };
+    }
+    const qa = /^https:\/\/qa(\d+)\.acme-demo\.example$/.exec(u.origin);
+    if (qa && u.pathname === '/api/version') {
+      const n = Number(qa[1]);
+      if (QA_DEPLOYS[n] === null) throw new TypeError('fetch failed');
+      return json({ branch: QA_DEPLOYS[n] ?? 'main', gitSha: `9f${String(n).padStart(2, '0')}c0ffee1234`, buildId: `2026.11.${300 + n}`, deployedAt: iso(now - n * 3 * HOUR) });
     }
     if (u.href === CAL_URL) return { ok: true, status: 200, headers: new Headers(), text: async () => calendarText(now) };
     return json({ message: 'Demo mode makes no real network requests' }, 404);
@@ -388,6 +443,14 @@ export async function createDemo() {
       teams: { enabled: true, allowReplies: true },
     },
     chat: { demo: true },
+    workspace: {
+      devSlots: [{ label: 'Dev 1', ports: [5173, 5001] }, { label: 'Dev 2', ports: [5174, 5003] }, { label: 'Dev 3', ports: [5175, 5005] }],
+      qa: { count: 12, pattern: QA_PATTERN, versionPath: '/api/version', label: 'QA {n}' },
+    },
+  });
+  await writeJson(path.join(dir, 'slots.json'), {
+    dev: { dev1: { worktree: '~/code/acme-payments-PAY-214', ticket: 'PAY-214', note: null, at: new Date().toISOString() }, dev2: { worktree: '~/code/acme-payments-PAY-226', ticket: 'PAY-226', note: 'Checking the refund pill on Safari', at: new Date().toISOString() } },
+    qa: { 5: { ticket: 'PAY-233', owner: 'Priya', note: 'Regression run', at: new Date().toISOString() } },
   });
   await writeJson(path.join(dir, 'connections.json'), {
     github: { method: 'gh-cli', login: ME, name: 'Sam Developer', connectedAt: new Date().toISOString() },
@@ -401,6 +464,8 @@ export async function createDemo() {
       // The other sources are listed (switched off) so setup shows every card.
       sources: [demoGit, github, jira, cal, ...SOURCES.filter((x) => !['git', 'github', 'jira', 'cal'].includes(x.id))],
       secrets: demoSecrets(),
+      workspaceGit: demoWorkspaceGit(),
+      workspaceProbe: demoProbe,
       fetchImpl: demoFetch(),
       cliToken: async () => 'demo-not-a-real-token',
       // Made-up folders for the first-run screen, so the demo never looks at your disk.

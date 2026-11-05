@@ -8,6 +8,7 @@ import {
 import { chatOpen, closeChat, initChat, onChatEvent, toggleChat } from './chat.js';
 import { closeGuide, guideOpen, guideWide, initGuide, loadShots, onGuideEvent, openGuide, toggleGuide, toggleGuideWide } from './guide.js';
 import { bindOverview, overviewData, overviewHTML } from './overview.js';
+import { initWork } from './work.js';
 import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
 import { sourceMatches } from './source-search.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
@@ -37,6 +38,8 @@ const URG = {
   later: { label: 'Later', c: 'var(--later)' },
 };
 const VIEWS = [['all', 'All', '◎'], ['now', 'Now'], ['today', 'Today'], ['later', 'Later'], ['snoozed', 'Snoozed', '☾'], ['done', 'Done', '✓']];
+const WORK_VIEWS = [['board', 'Board', '▦', 'b'], ['worktrees', 'Worktrees & slots', '⎇', 'w']];
+const isWork = (v) => WORK_VIEWS.some(([k]) => k === v);
 const HEADINGS = { overview: 'Overview', all: 'Needs me', now: 'Now', today: 'Today', later: 'Later', snoozed: 'Snoozed', done: 'Done' };
 const COMING = [];
 
@@ -67,6 +70,8 @@ const st = {
 
 const $ = (s) => document.querySelector(s);
 const byId = (id) => st.items.find((i) => i.id === id);
+// The Work views (board, worktrees & slots) draw into the same content area.
+const work = initWork({ root: () => $('#list'), currentView: () => st.view, copy });
 
 function matches(i, q) {
   const hay = `${i.title} ${plain(i.why)} ${Object.values(i.meta?.fields ?? {}).join(' ')}`.toLowerCase();
@@ -74,7 +79,7 @@ function matches(i, q) {
 }
 
 function visible(view = st.view) {
-  if (view === 'overview') return [];
+  if (view === 'overview' || isWork(view)) return [];
   return st.items.filter((i) => {
     if (st.hidden.has(i.source)) return false;
     if (view === 'done') return i.status === 'done';
@@ -108,6 +113,8 @@ function renderNav() {
     const count = visible(k).length;
     return `<button class="${st.view === k ? 'active' : ''}" data-view="${k}" aria-current="${st.view === k}" title="${label} (${n + 1})" aria-label="${label}${count ? `, ${count}` : ''}">${mark}<span class="rl">${label}</span><kbd class="hint">${n + 1}</kbd><span class="count">${count || ''}</span></button>`;
   }).join('');
+
+  $('#work').innerHTML = WORK_VIEWS.map(([k, label, icon, key]) => `<button class="${st.view === k ? 'active' : ''}" data-view="${k}" aria-current="${st.view === k}" title="${label} (${key})" aria-label="${label}"><span class="ico" aria-hidden="true">${icon}</span><span class="rl">${label}</span><kbd class="hint">${key}</kbd><span class="count"></span></button>`).join('');
 
   const real = st.sources.map((s) => {
     const info = srcInfo(s.id);
@@ -218,6 +225,8 @@ function renderOverview() {
 
 function render() {
   renderNav();
+  $('#list').classList.toggle('wide', isWork(st.view));
+  if (isWork(st.view)) return work.render(st.view);
   if (st.view === 'overview') return renderOverview();
   const list = ordered();
   const idx = selIndex(list);
@@ -645,6 +654,7 @@ function commands() {
   return [
     { sec: 'Go to' },
     { label: 'Go to Overview', k: '0', run: () => setView('overview') },
+    ...WORK_VIEWS.map(([v, l, , k]) => ({ label: `Go to ${l}`, k, run: () => setView(v) })),
     ...VIEWS.map(([v, l], n) => ({ label: `Go to ${l}`, k: String(n + 1), run: () => setView(v) })),
     { sec: 'Actions' },
     { label: 'Refresh all sources', k: 'r', run: refresh },
@@ -1545,6 +1555,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (st.view === 'overview' && ['j', 'k', 'ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); return setView('all'); }
+  if (isWork(st.view) && ['j', 'k', 'ArrowDown', 'ArrowUp', 'Enter', 'x', 's', 'u', 'c', 'o', 'R'].includes(e.key)) return; // no item list here
+  if (isWork(st.view) && e.key === 'r') return work.refresh(st.view);
   const list = ordered();
   const idx = selIndex(list);
   const sel = list[idx];
@@ -1570,6 +1582,8 @@ document.addEventListener('keydown', (e) => {
     case 'p': cyclePalette(); return;
     case '/': e.preventDefault(); return openPalette();
     case '?': return openOverlay('#helpScrim');
+    case 'b': return setView('board');
+    case 'w': return setView('worktrees');
     default: {
       if (e.key === '0') return setView('overview');
       const v = VIEWS[+e.key - 1]?.[0];
