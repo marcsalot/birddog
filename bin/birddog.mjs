@@ -24,6 +24,9 @@ const HELP = `
     birddog notify --on     …and switch notifications on first
     birddog notify --test   show one test notification and exit
 
+    birddog slot status     dev slots: run a copy of your app per worktree (see "birddog slot help")
+    birddog skill install launch-site   add the launch-site skill to Claude Code (~/.claude/skills)
+
     birddog secret set <name>      store a secret in your OS keychain (asks for it, hidden; or pipe it in)
     birddog secret delete <name>   remove it
 
@@ -182,6 +185,17 @@ async function notifyCommand(args) {
 }
 
 async function main() {
+  // Subcommands with their own flags, before the dashboard's option parser sees them.
+  if (process.argv[2] === 'slot') {
+    const { slotCommand } = await import('../src/launch.mjs');
+    process.exitCode = await slotCommand(process.argv.slice(3));
+    return;
+  }
+  if (process.argv[2] === 'skill') {
+    const { skillCommand } = await import('../src/skills.mjs');
+    process.exitCode = await skillCommand(process.argv.slice(3));
+    return;
+  }
   let args;
   let positionals;
   try {

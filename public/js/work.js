@@ -20,6 +20,7 @@ const copyBtn = (cmd, label, what = 'command') => (cmd ? `<button class="btn sma
 const DEV_STATE = {
   running: { icon: '●', word: 'Running', cls: 'ok' },
   claimed: { icon: '◐', word: 'Claimed', cls: 'busy' },
+  starting: { icon: '◌', word: 'Starting', cls: 'busy' },
   stale: { icon: '⚠', word: 'Stale lock', cls: 'warn' },
   free: { icon: '○', word: 'Free', cls: 'free' },
 };
@@ -146,7 +147,8 @@ function devSlotHTML(s, ws, ui) {
       ${s.state === 'stale' ? `<div class="w-msg bad">The lock file names processes that have stopped. Delete <code>${esc(s.lockFile)}</code> if the slot is free.</div>` : ''}
     </div>
     <div class="w-row">${s.url && s.state === 'running' ? `<a class="btn small" href="${esc(s.url)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
-      ${s.claim ? `<button class="btn small" data-w="release" data-kind="dev" data-id="${esc(s.id)}">Release</button>` : `<button class="btn small" data-w="claim" data-kind="dev" data-id="${esc(s.id)}">Claim…</button>`}</div>
+      ${copyBtn(s.commands?.restart, 'Restart', 'restart command')}${copyBtn(s.commands?.stop, 'Stop', 'stop command')}
+      ${s.claim ? `<button class="btn small" data-w="release" data-kind="dev" data-id="${esc(s.id)}">Release</button>` : s.commands?.stop ? '' : `<button class="btn small" data-w="claim" data-kind="dev" data-id="${esc(s.id)}">Claim…</button>`}</div>
     ${open ? claimForm('dev', s.id, ws, ui.claimMsg) : ''}
   </div>`;
 }
@@ -177,7 +179,7 @@ function worktreeRowHTML(w, ws) {
     <td>${ab}</td>
     <td>${w.lastCommitAt ? esc(relTime(w.lastCommitAt)) : '—'}${w.lastSubject ? `<div class="faint clip" title="${esc(w.lastSubject)}">${esc(w.lastSubject)}</div>` : ''}</td>
     <td>${w.slot ? `<span class="w-badge dev">▶ ${esc(w.slot.label)}</span>` : ''}</td>
-    <td class="w-cmds">${copyBtn(w.commands.open, 'Open', 'editor command')}${copyBtn(w.commands.cd, 'cd', 'cd command')}${copyBtn(w.commands.remove, 'Remove…', 'remove command')}${copyBtn(w.commands.prune, 'Prune', 'prune command')}</td>
+    <td class="w-cmds">${copyBtn(w.commands.slot, 'Start in a slot', 'start command')}${copyBtn(w.commands.open, 'Open', 'editor command')}${copyBtn(w.commands.cd, 'cd', 'cd command')}${copyBtn(w.commands.remove, 'Remove…', 'remove command')}${copyBtn(w.commands.prune, 'Prune', 'prune command')}</td>
   </tr>${hints.length || w.error ? `<tr class="w-hint-row"><td colspan="7">${w.error ? `<span class="w-msg bad">${esc(w.error)}</span>` : ''}${hints.map((h) => `<span class="w-hint"><span aria-hidden="true">⚑</span> ${esc(h)}</span>`).join('')}</td></tr>` : ''}`;
 }
 
@@ -192,7 +194,7 @@ export function workspaceHTML(ws, ui = {}) {
   const settings = ui.settingsOpen ? workspaceSettingsHTML(ui.draft ?? ws.settings, ui.msg) : '';
   const warn = ws.warnings?.length ? `<div class="w-error" role="alert">${ws.warnings.map(esc).join('<br>')}</div>` : '';
 
-  const dev = `<section class="w-section" aria-labelledby="w-dev"><h2 id="w-dev">Dev slots <span class="faint">on this machine</span></h2>
+  const dev = `<section class="w-section" aria-labelledby="w-dev"><h2 id="w-dev">Dev slots <span class="faint">on this machine${ws.launchSite ? ` · from <code>${esc(ws.launchSite)}</code>` : ''}</span></h2>
     <div class="slots">${ws.devSlots.map((s) => devSlotHTML(s, ws, ui)).join('') || '<div class="faint">No dev slots. Add some in “Set up slots”.</div>'}</div></section>`;
   const qa = ws.qaSlots.length
     ? `<section class="w-section" aria-labelledby="w-qa"><h2 id="w-qa">QA slots ${qaUp ? `<span class="faint">${qaUp} answering</span>` : ''}</h2>

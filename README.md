@@ -501,6 +501,54 @@ The avatar at the far right of the top bar opens the **account menu**: who you'r
 
 Its screenshots come from `npm run screenshots`, a [Playwright](https://playwright.dev) script that starts Birddog in `--demo` mode (made-up data only) and captures light and dark versions into `public/guide/`. Playwright is a **devDependency**; the published package still has no runtime dependencies. It needs a Chromium: `npx playwright install chromium`, or point `BIRDDOG_CHROMIUM` at one.
 
+## Launch slots
+
+Run several copies of your app at once, one per git worktree, each in its own **slot** (a set of ports plus a lock file), so they never collide and everyone can see what's running:
+
+```bash
+birddog slot start --worktree PROJ-123   # claim the first free slot, build, start, wait until ready
+birddog slot status                      # every slot: ports, who holds it, free or busy
+birddog slot restart --service web       # restart one service in the slot you hold
+birddog slot stop                        # stop yours (the checkout you're in by default)
+birddog slot cleanup                     # stop every slot the locks record
+```
+
+Settings go in `launch-site.json` at the top of your repo (commit it; every worktree finds it through the main checkout):
+
+```json
+{
+  "worktreeRoot": "..",
+  "slots": [
+    { "name": "dev1", "ports": { "api": 5010, "web": 5173 } },
+    { "name": "dev2", "ports": { "api": 5012, "web": 5174 } }
+  ],
+  "build": [{ "cwd": ".", "command": "npm ci" }],
+  "services": {
+    "api": { "cwd": "api", "command": "npm start", "env": { "PORT": "{api}" }, "timeoutSec": 120 },
+    "web": { "cwd": "web", "command": "npm run dev -- --port {web} --strictPort", "env": { "API_URL": "http://localhost:{api}" } }
+  }
+}
+```
+
+`{api}`, `{web}` (any port name), `{slot}`, `{worktree}` and `{worktree_path}` are filled in per slot. Each service waits on the port named by its `port` field (default: its own name).
+
+How it stays safe with several people or agents launching at once:
+
+- A slot is free only with **no lock and none of its ports answering**. Claiming creates the lock exclusively, so two launches can't both win.
+- Services start together and are polled together. One that exits before opening its port fails at once, with the end of its log.
+- Anything that fails releases the claim (before launch) or stops what was started. Stop kills only the process trees the lock records, checks the ports went quiet, and only then releases the lock. A port held by something else is reported, never killed.
+- Locks are `key=value` lines (`worktree`, `worktree_path`, `slot`, `status`, `<service>_pid`, `ports`, `timestamp`, `heartbeat`) in `lockDir` (default: the worktree root); logs are in `lockDir/.launch-site/logs/`. A lock with nothing running, or `starting` for longer than `staleStartingSec` (300), is cleared on the next start.
+
+**Worktrees & slots** reads the same file and locks: its dev slots become your launch slots (Running, Starting, Stale lock), and each worktree that isn't running gets **Start in a slot**, which copies the command. Locks written by other launch scripts in the same `key=value` format show up too.
+
+### The launch-site skill for Claude Code
+
+```bash
+birddog skill install launch-site
+```
+
+This copies the skill to `~/.claude/skills/launch-site` (`--project` puts it in this repo's `.claude/skills` instead). Then say *"launch the site for PROJ-123"*, *"restart the API"*, *"what slots are running?"* or *"stop the site"*. Claude runs `birddog slot` for you, explains failures from the logs, and never kills processes itself. In a repo without `launch-site.json`, it offers to draft one from what it finds (`package.json`, `.csproj`, `go.mod`) and writes it only after you agree.
+
 ## Ticket board
 
 **Board** (`b`) shows your Jira tickets in delivery swimlanes:

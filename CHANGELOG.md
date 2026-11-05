@@ -4,6 +4,13 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-11-05
+
+### Added
+- **Launch slots** (`birddog slot start | stop | restart | status | cleanup`): run several copies of your app at once, one per git worktree, each in its own set of ports with a lock file. Settings in `launch-site.json`. Claims are exclusive (O_EXCL), a slot is free only with no lock and quiet ports, services start and are polled together (one that exits early fails at once, with its log), failures release or tear down, and stop kills only the recorded process trees, then verifies the ports before releasing the lock. Stale locks are cleared on the next start. Works on macOS, Linux and Windows.
+- **The launch-site skill for Claude Code**, shipped in `skills/launch-site` and installed with `birddog skill install launch-site` (`--project` for this repo only). It drives `birddog slot`, explains failures from the logs, never kills processes itself, and offers to draft a `launch-site.json`.
+- **Worktrees & slots reads launch slots**: with a `launch-site.json` in a repo (or `workspace.launchSite`), the dev slots are its slots, with Starting / Running / Stale lock from the locks, Stop and Restart commands, and **Start in a slot** on each idle worktree. Locks that keep the worktree's name in `worktree` and its folder in `worktree_path` are understood.
+
 ## [1.15.0] - 2026-11-05
 
 ### Added

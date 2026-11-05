@@ -71,8 +71,11 @@ describe('workspace helpers', () => {
 
   it('reads lock files as key=value or JSON', () => {
     const kv = parseLock('# my launcher\nworktree=C:\\code\\app-PROJ-1\nbranch = feature/PROJ-1\napi_pid=4242\nweb_pid: 4343\nheartbeat=2026-11-05T11:59:00Z\n');
-    assert.deepEqual(lockFacts(kv), { worktree: 'C:\\code\\app-PROJ-1', branch: 'feature/PROJ-1', ticket: null, pids: [4242, 4343], heartbeatAt: Date.parse('2026-11-05T11:59:00Z') });
-    assert.deepEqual(lockFacts(parseLock('{"path":"/r/x","pid":12,"ticket":"A-1","updated":1793880000}')), { worktree: '/r/x', branch: null, ticket: 'A-1', pids: [12], heartbeatAt: 1793880000000 });
+    assert.deepEqual(lockFacts(kv), { worktree: 'C:\\code\\app-PROJ-1', name: null, status: null, branch: 'feature/PROJ-1', ticket: null, pids: [4242, 4343], heartbeatAt: Date.parse('2026-11-05T11:59:00Z') });
+    assert.deepEqual(lockFacts(parseLock('{"path":"/r/x","pid":12,"ticket":"A-1","updated":1793880000}')), { worktree: '/r/x', name: null, status: null, branch: null, ticket: 'A-1', pids: [12], heartbeatAt: 1793880000000 });
+    // launch-site locks: the worktree's name in "worktree", its folder in "worktree_path"
+    const ls = lockFacts(parseLock('worktree=PROJ-7\nworktree_path=/r/app-PROJ-7\nslot=dev1\nstatus=starting\napi_pid=claiming\nweb_pid=55\n'));
+    assert.deepEqual([ls.worktree, ls.name, ls.status, ls.pids], ['/r/app-PROJ-7', 'PROJ-7', 'starting', [55]]);
     assert.deepEqual(parseLock('{broken'), {});
     assert.deepEqual(parseLock(''), {});
   });

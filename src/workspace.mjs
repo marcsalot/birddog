@@ -15,11 +15,13 @@
 // this ticket" are offered for you to copy and run. Slot claims live in this
 // machine's config folder (slots.json); they are your notes, not a shared lock.
 
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { expandHome, tildify } from './config.mjs';
 import { findRepos, parseStatus, runGit, shellQuote } from './sources/git.mjs';
+import { CONFIG_FILE as LAUNCH_FILE, loadLaunchConfig, lockPath as launchLockPath } from './launch.mjs';
 import { readJson, writeJson } from './store.mjs';
 
 export const DEFAULT_TICKET_PATTERN = '[A-Z][A-Z0-9]+-\\d+';
@@ -84,7 +86,9 @@ export function normalizeWorkspace(input = {}) {
   if (versionPath && (!versionPath.startsWith('/') || versionPath.length > 200 || /\s/.test(versionPath))) throw new TypeError('The version path starts with "/", like /api/version');
   const label = String(q.label ?? 'QA {n}').trim() || 'QA {n}';
   if (label.length > 30 || !label.includes('{n}')) throw new TypeError('The QA slot name needs {n}, like "QA {n}"');
-  return { repos, ticketPattern, branchPrefix, devSlots, qa: { count, pattern, versionPath, label } };
+  const launchSite = String(input.launchSite ?? '').trim();
+  if (launchSite.length > 1024) throw new TypeError('The launch-site.json path is too long');
+  return { repos, ticketPattern, branchPrefix, devSlots, launchSite: launchSite ? tildify(expandHome(launchSite)) : '', qa: { count, pattern, versionPath, label } };
 }
 
 /** Settings with defaults; bad config falls back to defaults rather than breaking the page. */
@@ -147,8 +151,12 @@ export function lockFacts(kv) {
   const pids = Object.entries(kv).filter(([k]) => k === 'pid' || k.endsWith('_pid') || k.endsWith('pid')).map(([, v]) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
   const when = kv.heartbeat ?? kv.updated ?? kv.updated_at ?? kv.started ?? kv.started_at ?? null;
   const at = when ? (/^\d{9,13}$/.test(when) ? Number(when) * (when.length <= 10 ? 1000 : 1) : Date.parse(when)) : NaN;
+  // launch-site locks keep the worktree's name in "worktree" and its folder in "worktree_path".
+  const looksLikePath = (v) => typeof v === 'string' && /[\\/]/.test(v);
   return {
-    worktree: kv.worktree ?? kv.path ?? kv.cwd ?? kv.dir ?? null,
+    worktree: kv.worktree_path ?? kv.path ?? kv.cwd ?? kv.dir ?? (looksLikePath(kv.worktree) ? kv.worktree : null),
+    name: kv.worktree && !looksLikePath(kv.worktree) ? kv.worktree : null,
+    status: kv.status ?? null,
     branch: kv.branch ?? null,
     ticket: kv.ticket ?? null,
     pids,
@@ -229,6 +237,7 @@ export const realGit = {
     };
   },
   readFile: (file) => fs.readFile(expandHome(file), 'utf8'),
+  exists: (file) => existsSync(file),
 };
 
 // ---------------------------------------------------------------------------
@@ -264,6 +273,7 @@ export function createWorkspace({ dir, getConfig, fetchImpl = fetch, now = () =>
   let cache = null;
   let qaCache = null;
   let inflight = null;
+  let devIds = null; // slot ids last shown (from settings or launch-site.json)
 
   const loadClaims = async () => {
     const d = await readJson(claimsFile, { dev: {}, qa: {} });
@@ -348,7 +358,19 @@ export function createWorkspace({ dir, getConfig, fetchImpl = fetch, now = () =>
     }
     const byPath = new Map(repos.flatMap((r) => r.worktrees.map((w) => [path.resolve(w.path), w])));
 
-    const devSlots = await Promise.all(settings.devSlots.map(async (s) => {
+    // Dev slots come from launch-site.json when there is one (set, or found in a repo's main checkout).
+    let slotDefs = settings.devSlots;
+    let launch = null;
+    const launchFile = settings.launchSite ? expandHome(settings.launchSite) : repos.map((r) => path.join(r.path, LAUNCH_FILE)).find((f) => git.exists?.(f));
+    if (launchFile) {
+      try {
+        launch = await loadLaunchConfig(launchFile);
+        slotDefs = launch.slots.map((x) => ({ id: x.name, label: x.name, ports: Object.values(x.ports), url: `http://localhost:${x.ports.web ?? Object.values(x.ports).at(-1)}`, lockFile: launchLockPath(launch, x) }));
+      } catch (e) { warn(`${tildify(launchFile)}: ${e.message}`); }
+    }
+
+    devIds = slotDefs.map((x) => x.id);
+    const devSlots = await Promise.all(slotDefs.map(async (s) => {
       const claim = claims.dev[s.id] ?? null;
       let lock = null;
       if (s.lockFile) {
@@ -357,17 +379,18 @@ export function createWorkspace({ dir, getConfig, fetchImpl = fetch, now = () =>
       const listening = (await Promise.all(s.ports.map((p) => probe(p).catch(() => false)))).filter(Boolean).length;
       const pidStates = lock ? lock.pids.map(alive) : [];
       const pidsDead = pidStates.length > 0 && pidStates.every((x) => x === false);
-      const state = lock ? (pidsDead && !listening ? 'stale' : 'running')
+      const state = lock ? (pidsDead && !listening ? 'stale' : ['starting', 'restarting'].includes(lock.status) && !listening ? 'starting' : 'running')
         : listening ? 'running' : claim ? 'claimed' : 'free';
       const worktreePath = lock?.worktree ?? claim?.worktree ?? null;
       const wt = worktreePath ? byPath.get(path.resolve(expandHome(worktreePath))) : null;
-      const ticket = (lock?.ticket && keyOf(lock.ticket)) ?? keyOf(lock?.branch) ?? claim?.ticket ?? wt?.ticket ?? null;
+      const ticket = (lock?.ticket && keyOf(lock.ticket)) ?? keyOf(lock?.branch) ?? keyOf(lock?.name) ?? claim?.ticket ?? wt?.ticket ?? null;
       return {
         id: s.id, label: s.label, ports: s.ports, url: s.url || null, state, listening,
         from: lock ? 'lock file' : listening ? 'ports' : claim ? 'you' : null,
         worktree: worktreePath ? tildify(expandHome(worktreePath)) : null, branch: lock?.branch ?? wt?.branch ?? null, ticket,
         heartbeatAt: lock?.heartbeatAt ? new Date(lock.heartbeatAt).toISOString() : null,
         claim, lockFile: s.lockFile || null,
+        ...(launch ? { commands: lock ? { stop: `birddog slot stop --worktree ${q(worktreePath ?? lock.name ?? '')}`, restart: `birddog slot restart --worktree ${q(worktreePath ?? lock.name ?? '')}` } : {} } : {}),
       };
     }));
     // A worktree knows the dev slot it runs in.
@@ -376,8 +399,14 @@ export function createWorkspace({ dir, getConfig, fetchImpl = fetch, now = () =>
       if (w) w.slot = { id: s.id, label: s.label, state: s.state };
     }
 
+    // With launch slots, a worktree that isn't running gets a "start it in a slot" command.
+    if (launch) {
+      const running = new Set(devSlots.map((d) => d.worktree && path.resolve(expandHome(d.worktree))).filter(Boolean));
+      for (const r of repos) for (const w of r.worktrees) if (!running.has(path.resolve(w.path))) w.commands.slot = `birddog slot start --worktree ${q(w.path)}`;
+    }
+
     const qa = await qaSlots(settings, claims);
-    const ws = { settings, repos, devSlots, qaSlots: qa, warnings, refreshedAt: new Date(now()).toISOString() };
+    const ws = { settings, repos, devSlots, launchSite: launch ? tildify(launch.file) : null, qaSlots: qa, warnings, refreshedAt: new Date(now()).toISOString() };
     return { ...ws, links: ticketLinks(ws) };
   }
 
@@ -406,7 +435,7 @@ export function createWorkspace({ dir, getConfig, fetchImpl = fetch, now = () =>
       const claims = await loadClaims();
       let rec;
       if (kind === 'dev') {
-        if (!settings.devSlots.some((s) => s.id === id)) throw new SlotError(`No dev slot "${id}"`);
+        if (!(devIds ?? settings.devSlots.map((s) => s.id)).includes(id)) throw new SlotError(`No dev slot "${id}"`);
         const worktree = text(body.worktree, 1024, 'The worktree path');
         rec = { worktree: worktree ? tildify(expandHome(worktree)) : null, ticket: validTicket(body.ticket, settings), note: text(body.note, 200, 'The note') };
         if (!rec.worktree && !rec.ticket) throw new SlotError('Pick a worktree or enter a ticket for this slot');
