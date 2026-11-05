@@ -17,6 +17,7 @@ import { atlassianSite, googleAccount, graphAccount } from './sources/calendar-a
 import { AuthError, checkAuthConfig, createOidc, isAllowed } from './auth/oidc.mjs';
 import { createSessions } from './auth/session.mjs';
 import { ChatError, createChat } from './chat.mjs';
+import { createMemory } from './memory.mjs';
 import { Collector } from './collector.mjs';
 import { createHistory } from './history.mjs';
 import { createNotifier } from './notify.mjs';
@@ -389,7 +390,8 @@ export async function createBirddog({
   // ---- Ask Fetch (chat) ----
   const chat = createChat({
     app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; }, replies },
-    secrets, fetchImpl, version: VERSION, now,
+    secrets, fetchImpl, version: VERSION, now, log,
+    memory: createMemory({ dir, ...(now ? { now } : {}) }),
     getPrefs: () => triage.prefs,
     setPrefs: (p) => triage.setPrefs(p),
     getConfig: () => config,
@@ -579,7 +581,12 @@ export async function createBirddog({
     }],
     ['POST', /^\/api\/chat\/setup$/, chatRoute((_m, body) => chat.setup(body))],
     ['DELETE', /^\/api\/chat\/setup$/, chatRoute(() => chat.turnOff())],
-    ['POST', /^\/api\/chat\/reset$/, (_m, body) => { chat.reset(body.sessionId); return { ok: true }; }],
+    ['POST', /^\/api\/chat\/reset$/, async (_m, body) => { await chat.reset(body.sessionId); return { ok: true }; }],
+    ['GET', /^\/api\/chat\/conversations\/([^/]+)$/, chatRoute((m) => chat.conversation(decodeURIComponent(m[1])))],
+    ['GET', /^\/api\/chat\/boundaries$/, () => chat.boundaries()],
+    ['GET', /^\/api\/chat\/memory$/, async () => ({ notes: await chat.memory.list() })],
+    ['DELETE', /^\/api\/chat\/memory$/, async () => ({ notes: await chat.memory.forgetAll() })],
+    ['DELETE', /^\/api\/chat\/memory\/([^/]+)$/, chatRoute(async (m) => ({ notes: await chat.memory.forget(decodeURIComponent(m[1])) }))],
     ['POST', /^\/api\/notifications\/claim$/, (_m, body) => ({ events: notifier.claim({ canShow: body.canShow !== false }) })],
     ['POST', /^\/api\/notifications\/test$/, asBadRequest(async (_m, body) => notifier.test(body.channel === 'system' ? 'system' : undefined))],
     ['GET', /^\/api\/notifications\/kinds$/, () => ({ kinds: notifyKinds() })],

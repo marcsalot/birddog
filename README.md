@@ -518,10 +518,12 @@ Press the **✦** button in the bottom-right corner (or `a`) to ask **Fetch**, B
 
 - **Off until you turn it on.** It needs your own [Anthropic API key](https://console.anthropic.com/settings/keys), and you have to tick **"I understand that inbox content is sent to Anthropic"** first. To answer, Fetch sends your question and the items it looks up (titles, "why" lines, fields, links) to Anthropic's API. Nothing is sent before you turn it on. **Turn off** forgets the key.
 - **Your key stays in your keychain** (`anthropic-api-key`), or in `ANTHROPIC_API_KEY` in Docker. It never goes into config.json, API responses or logs.
-- **It uses Birddog's own MCP tools.** The model reads with `list_items`, `get_item` and `list_sources`, and the panel shows which ones ran. Tool inputs are checked against their schemas before anything runs.
+- **It reads every source you've connected.** The model uses Birddog's own MCP tools: `list_items` (any source, filtered by source, urgency, status or words with `query`), `get_item` and `list_sources`, and the panel shows which ones ran. Tool inputs are checked against their schemas before anything runs.
 - **It asks before it changes anything.** `mark_done`, `snooze` and `restore` stop the answer and show a **Confirm / Cancel** card. Only Birddog's own list changes, never GitHub, Jira or git.
 - **It can draft a reply, never send one on its own.** Once Slack has **Allow replies** on, ask *"reply to Priya that I'm free at 3"*: Fetch drafts it, and the card shows the **full text** and where it goes, with **Confirm and send / Cancel**. Nothing posts until you confirm.
-- **Model:** `claude-sonnet-5-5` by default. Override it with `"chat": { "model": "…" }` in config.json or `BIRDDOG_CHAT_MODEL`. Answers stream in. Birddog calls the Messages API with plain `fetch` (no SDK, still zero dependencies) and opts into Anthropic's server-side refusal fallback (`fallbacks: "default"`).
+- **Memory.** Say *"remember that Priya is my manager"* and Fetch keeps a short note; new conversations start with your notes. The **Memory** tab lists them, each with **Forget** (or **Forget everything**). Notes that look like a password, key or token are refused. Conversations are saved too, so a reload or restart picks up where you left off; **＋** starts a new one. Both stay on this computer (`memory.json` and `chat-history.json` in Birddog's folder, mode 600), and conversations are dropped after a week.
+- **Boundaries you can see.** The **Boundaries** tab lists what Fetch can read (your connected sources), what it can do, what needs your confirmation, and what it never does: see tokens or settings, change GitHub/Jira/git, send without you, reply where replies are off, browse the web, follow instructions written inside your items, or keep secrets. Birddog enforces these, not just the prompt: when Fetch tries to cross one, the call is refused and the chat shows **🛡 Boundary held** with the reason. **Try it** has questions that show it (*"Show me my GitHub token"*, *"Remember that my password is …"*).
+- **Model:** `claude-haiku-5-5` by default: fast, and the cheapest current model. For a bigger one set `"chat": { "model": "claude-sonnet-5-5" }` in config.json or `BIRDDOG_CHAT_MODEL`. Answers stream in. Birddog calls the Messages API with plain `fetch` (no SDK, still zero dependencies). On models that have it (not Haiku), it opts into Anthropic's server-side refusal fallback (`fallbacks: "default"`). Each conversation is append-only: its system prompt and tools are fixed when it starts, and the time travels with each question.
 - In `--demo`, a scripted stand-in answers instead, so you can try it with no key; nothing goes to Anthropic.
 
 ## Notifications
@@ -763,7 +765,11 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 | `GET` | `/api/history?days=14` | one row per day: open, now, today, later, done |
 | `GET` | `/api/chat/status` | whether Ask Fetch is on, and where the key comes from (never the key) |
 | `POST` / `DELETE` | `/api/chat/setup` | `{ "apiKey": "…", "consent": true }` turns it on; `DELETE` turns it off and forgets the key |
-| `POST` | `/api/chat` | `{ "sessionId"?, "message" }`: streams NDJSON events (`text`, `tool`, `confirm`, `error`, `done`) |
+| `POST` | `/api/chat` | `{ "sessionId"?, "message" }`: streams NDJSON events (`session`, `text`, `tool`, `confirm`, `boundary`, `memory`, `error`, `done`) |
+| `GET` | `/api/chat/conversations/:id` | a saved conversation, as the chat panel shows it (for picking up after a reload) |
+| `GET` | `/api/chat/boundaries` | what Fetch can read, can do, asks first about, and never does |
+| `GET` / `DELETE` | `/api/chat/memory` | Fetch's notes; `DELETE` forgets them all |
+| `DELETE` | `/api/chat/memory/:id` | forget one note |
 | `POST` | `/api/chat/confirm` | `{ "sessionId", "decisions": { "<id>": true } }`: answers pending changes, then streams the rest |
 | `POST` | `/api/notifications/claim` | `{ "canShow": true }`: new notifications for this tab (each is handed out once) |
 | `POST` | `/api/notifications/test` | queue a test notification, or `{ "channel": "system" }` to show one now |
@@ -826,7 +832,8 @@ docker-compose.yml     the dashboard on a volume, plus a demo profile
 .github/workflows/     CI: tests on Node 22 and 24, and inside the image
 src/mcp.mjs            MCP server (JSON-RPC over stdio)
 src/notify.mjs         notifications: what's news, filters, quiet hours, system notifications
-src/chat.mjs           Ask Fetch: Claude Messages API over fetch, MCP tools, confirm-before-change
+src/chat.mjs           Ask Fetch: Claude Messages API over fetch, MCP tools, confirm-before-change, boundaries
+src/memory.mjs         Fetch's notes and saved conversations (refuses secrets)
 src/history.mjs        the small per-day history behind the overview chart
 public/js/overview.js  the overview page: hand-rolled SVG charts and dials
 public/js/guide.js     the user guide rail (content and search)
@@ -852,6 +859,7 @@ test/                  node:test suites
 10. ✅ Sources A–Z with search, top-right account menu, Fetch the floating assistant (1.10)
 11. ✅ One-click sign-ins through Birddog's own public apps, Sign in with Linear and PagerDuty (1.11)
 12. ✅ Reply from Birddog: Slack DMs and mentions, opt-in, with undo; Fetch drafts, MCP opt-in (1.12)
+13. ✅ Fetch on Haiku, with memory, every source, and visible, enforced boundaries (1.13)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Teams, Discord, Google Chat) and comments (GitHub/GitLab PRs, Jira).
 

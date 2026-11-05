@@ -33,12 +33,13 @@ const TOOLS = [
   {
     name: 'list_items',
     title: 'What needs me?',
-    description: 'List what needs the user\'s attention across local git, GitHub, Jira and calendar, most urgent first. Each item says why it is there. Filter by urgency (now, today, later), source (git, github, jira, cal) or status.',
+    description: 'List what needs the user\'s attention across every connected source (git, GitHub, GitLab, Jira, Linear, Slack, calendar and the rest; list_sources says which are on), most urgent first. Each item says why it is there. Filter by urgency (now, today, later), source id, status, or words in the item (query).',
     inputSchema: {
       type: 'object',
       properties: {
         urgency: { type: 'string', enum: URGENCY, description: 'Only this urgency group' },
-        source: { type: 'string', description: 'Only this source id: git, github, jira or cal' },
+        source: { type: 'string', description: 'Only this source id, e.g. git, github, gitlab, jira, linear, slack, cal (see list_sources)' },
+        query: { type: 'string', description: 'Only items whose title, why line or fields contain these words (case-insensitive)' },
         status: { type: 'string', enum: STATUS, description: 'open (default): not done or snoozed; all: everything' },
         limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: 'At most this many items (default 50)' },
       },
@@ -149,6 +150,13 @@ const publicSource = (s) => ({
   summary: s.summary,
 });
 
+/** Every word of the query appears somewhere in the item (title, why, source, fields). */
+function matches(item, query) {
+  if (query === undefined || query === null || !String(query).trim()) return true;
+  const hay = [item.title, item.why, item.source, item.kind, ...Object.entries(item.fields ?? {}).flat()].join(' ').toLowerCase();
+  return String(query).toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+}
+
 const line = (i) => `- [${i.urgency}${i.status !== 'open' ? `, ${i.status}` : ''}] ${i.title}\n  ${i.why}${i.stale ? ' (stale data)' : ''}\n  id: ${i.id}${i.url ? `\n  ${i.url}` : ''}`;
 
 /**
@@ -197,7 +205,8 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
       const status = a.status ?? 'open';
       const list = items
         .filter((i) => (status === 'all' || i.status === status) && (!a.urgency || i.urgency === a.urgency) && (!a.source || i.source === a.source))
-        .map(publicItem);
+        .map(publicItem)
+        .filter((i) => matches(i, a.query));
       const shown = list.slice(0, limit);
       const stale = sources.filter((s) => s.status === 'stale');
       const head = shown.length
@@ -253,7 +262,7 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'birddog', title: 'Birddog', version },
-          instructions: 'Birddog is the user\'s local "what needs me next?" inbox across git, GitHub, Jira and calendar. Use list_items to see what needs them (each item explains why), get_item for details, and mark_done or snooze only when the user asks. Triage only changes Birddog\'s own list.',
+          instructions: 'Birddog is the user\'s local "what needs me next?" inbox across every source they connect (git, GitHub, GitLab, Jira, Linear, Slack, calendar and more). Use list_items to see what needs them (each item explains why), get_item for details, and mark_done or snooze only when the user asks. Triage only changes Birddog\'s own list.',
         };
       }
       case 'ping': return {};

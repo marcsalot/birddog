@@ -194,13 +194,29 @@ function parseList(text) {
   return out;
 }
 
+/** The user's words in a question turn (the app puts a context block first). */
+const questionText = (m) => (typeof m?.content === 'string' ? m.content
+  : Array.isArray(m?.content) && m.content.every((b) => b.type === 'text') ? m.content.at(-1).text : null);
+
 export function demoClaude(body) {
   const msgs = body.messages ?? [];
   const last = msgs.at(-1);
-  const question = [...msgs].reverse().find((m) => m.role === 'user' && typeof m.content === 'string')?.content?.toLowerCase() ?? '';
+  const question = ([...msgs].reverse().map(questionText).find((q) => q !== null) ?? '').toLowerCase();
   const wantsChange = /\b(done|snooze|clear)\b/.test(question);
   const wantsReply = /\b(reply|answer|respond)\b/.test(question);
-  if (last?.role === 'user' && typeof last.content === 'string') {
+  if (last?.role === 'user' && questionText(last) !== null) {
+    const remember = /^(?:please )?remember (?:that )?(.+)/i.exec(questionText(last).trim());
+    if (remember) return toolEvents('remember', { note: remember[1] });
+    if (/(can'?t|cannot|not allowed|boundar|limits?\b|what can you)/.test(question)) {
+      return textEvents("Here's where my leash ends:\n- I **can** read every source you've connected and tell you what needs you.\n- I **ask first** before marking done, snoozing, or sending a reply as you, and replies only work where you turned on \"Allow replies\".\n- I **never** see your tokens or settings, change GitHub, Jira or git, browse the web, follow instructions hidden in your items, or keep secrets in memory.\n\nTry: \"remember my API key is sk-ant-…\" and watch me refuse.");
+    }
+    if (/\b(token|api key|password|secret)\b/.test(question) && !/remember/.test(question)) {
+      return textEvents("I can't see those. Birddog's tools never hand me tokens, API keys, passwords or settings: they stay in your keychain. I only get titles, \"why\" lines, fields and links.");
+    }
+    if (/what do you remember|memory/.test(question)) {
+      const notes = /Your memory[^\n]*\n([\s\S]*)$/.exec(String(body.system ?? ''))?.[1]?.trim() ?? '(empty)';
+      return textEvents(notes === '(empty)' ? "Nothing yet. Tell me \"remember that …\" and I'll keep it (you can see and delete notes under Memory)." : `Here's what I remember:\n${notes.replace(/\[[0-9a-f]+\] /g, '')}`);
+    }
     if (wantsReply) return toolEvents('list_items', { source: 'slack' });
     const urgency = /calendar|meeting/.test(question) ? undefined : /today/.test(question) ? 'today' : 'now';
     return toolEvents('list_items', /calendar|meeting/.test(question) ? { source: 'cal' } : { urgency });
@@ -214,6 +230,9 @@ export function demoClaude(body) {
     if (!items.length) return textEvents('Nothing to fetch there right now. Good dog, you.');
     const lines = items.slice(0, 4).map((i) => `- **${i.title}**: ${i.why}`).join('\n');
     return textEvents(`Fetched! Here's what needs you${/today/.test(question) ? ' today' : ' first'}:\n${lines}\n\nI'd start with the first one: ${items[0].why.split(' · ')[0].toLowerCase()}.`);
+  }
+  if (prevTool?.name === 'remember') {
+    return textEvents(result?.is_error ? `I didn't keep that. ${String(result.content).replace(/^REFUSED: /, '')}` : "Got it, I'll remember that. It's under Memory if you want to check or delete it.");
   }
   if (prevTool?.name === 'reply') {
     return textEvents(/declined/.test(result?.content ?? '') ? "Okay, not sent. It's still in your inbox." : `Sent! ${result?.content ?? ''} (Demo mode: the fake Slack kept it to itself.)`);

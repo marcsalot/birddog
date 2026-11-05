@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { DEFAULT_MODEL, echoContent, validateInput } from '../src/chat.mjs';
+import { BOUNDARIES, DEFAULT_MODEL, echoContent, systemPrompt, validateInput } from '../src/chat.mjs';
+import { looksSecret } from '../src/memory.mjs';
 import { createDemo } from '../src/demo.mjs';
 import { createSecretStore } from '../src/secrets.mjs';
 import { createBirddog } from '../src/server.mjs';
@@ -51,14 +52,15 @@ function fakeAnthropic(script) {
   return fn;
 }
 
-async function setup(script, { secretsEnv } = {}) {
-  const dir = await tmpDir();
+async function setup(script, { secretsEnv, dir: atDir, extraSources = [], config } = {}) {
+  const dir = atDir ?? await tmpDir();
+  if (config) { const fs = await import('node:fs/promises'); await fs.writeFile(`${dir}/config.json`, JSON.stringify(config)); }
   const logs = [];
   const log = { warn: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')), log() {} };
   const src = { id: 'fake', name: 'Fake', test: async () => ({ ok: true }), collect: async () => [fakeItem({ id: 'fake:fire', source: 'fake', title: 'Put out the fire', why: '**Hot**', urgency: 'now', meta: { fingerprint: 'f' } })] };
   const fetchImpl = fakeAnthropic(script);
   const secrets = secretsEnv ? await createSecretStore({ dir, backend: 'env', env: secretsEnv }) : await createSecretStore({ dir, backend: 'file' });
-  const app = await createBirddog({ dir, sources: [src], autoRefresh: false, log, secrets, fetchImpl });
+  const app = await createBirddog({ dir, sources: [src, ...extraSources], autoRefresh: false, log, secrets, fetchImpl });
   const port = await app.start(0);
   await app.refresh();
   const call = async (p, method = 'GET', body) => {
@@ -67,7 +69,7 @@ async function setup(script, { secretsEnv } = {}) {
     const ct = r.headers.get('content-type') ?? '';
     return { status: r.status, json: ct.includes('ndjson') ? text.trim().split('\n').map((l) => JSON.parse(l)) : JSON.parse(text) };
   };
-  return { app, call, fetchImpl, secrets, logs };
+  return { app, call, fetchImpl, secrets, logs, dir };
 }
 
 describe('Ask Fetch (chat)', () => {
@@ -101,12 +103,18 @@ describe('Ask Fetch (chat)', () => {
       const [first, second] = fetchImpl.requests;
       assert.equal(first.headers['x-api-key'], KEY);
       assert.equal(first.headers['anthropic-version'], '2026-10-21');
-      assert.equal(first.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
-      assert.equal(first.body.model, 'claude-sonnet-5-5');
+      assert.equal(first.headers['anthropic-beta'], undefined, 'Haiku has no server-side fallback, so no beta header');
+      assert.equal(first.body.model, 'claude-haiku-5-5');
       assert.equal(first.body.stream, true);
-      assert.equal(first.body.fallbacks, 'default');
+      assert.equal(first.body.fallbacks, undefined, 'a fallbacks field would be refused on Haiku');
       assert.ok(first.body.tools.every((t) => t.eager_input_streaming === true && t.input_schema.type === 'object'));
-      assert.deepEqual(first.body.tools.map((t) => t.name), ['list_items', 'get_item', 'list_sources', 'mark_done', 'snooze', 'restore']);
+      assert.deepEqual(first.body.tools.map((t) => t.name), ['list_items', 'get_item', 'list_sources', 'mark_done', 'snooze', 'restore', 'reply', 'remember', 'forget']);
+      assert.deepEqual(second.body.tools, first.body.tools, 'the tool list never changes mid-conversation');
+      assert.equal(second.body.system, first.body.system, 'nor does the system prompt (append-only)');
+      assert.match(first.body.system, /Connected now: Fake \(fake\)/);
+      assert.deepEqual(first.body.messages[0].content.map((b) => b.type), ['text', 'text']);
+      assert.match(first.body.messages[0].content[0].text, /<birddog_context>Now: /, 'the time rides in the question');
+      assert.equal(first.body.messages[0].content[1].text, 'What needs me now?');
       assert.equal(second.body.messages.length, 3, 'user, assistant tool call, tool result');
       assert.deepEqual(second.body.messages[1].content[0], { type: 'tool_use', id: 'toolu_list_items', name: 'list_items', input: { urgency: 'now' } });
       const result = second.body.messages[2].content[0];
@@ -214,6 +222,121 @@ describe('Ask Fetch (chat)', () => {
       const events = (await post('/api/chat', { message: 'What needs me now?' })).trim().split('\n').map((l) => JSON.parse(l));
       assert.ok(events.some((e) => e.type === 'tool' && e.name === 'list_items'));
       assert.match(events.filter((e) => e.type === 'text').map((e) => e.text).join(''), /Here's what needs you first/);
+      const said = (evs) => evs.filter((e) => e.type === 'text').map((e) => e.text).join('');
+      const lines = async (body) => (await post('/api/chat', body)).trim().split('\n').map((l) => JSON.parse(l));
+      assert.match(said(await lines({ message: "What can't you do?" })), /never/);
+      const secret = await lines({ message: 'Remember that my password is hunter2-rocks' });
+      assert.ok(secret.some((e) => e.type === 'boundary'), 'the demo shows a boundary being held');
+      const kept = await lines({ message: 'Remember that standup items come first' });
+      assert.ok(kept.some((e) => e.type === 'memory'));
     } finally { await app.close(); await demo.cleanup(); }
+  });
+});
+
+// A chat source that can be answered, with "Allow replies" decided by config.
+const chatty = {
+  id: 'chatty', name: 'Chatty', capabilities: ['reply'],
+  test: async () => ({ ok: true }),
+  collect: async () => [fakeItem({ id: 'chatty:dm', source: 'chatty', title: 'DM from Pat', why: 'Pat asked a question', urgency: 'now', meta: { fingerprint: 'c' } })],
+  replyTarget: () => ({ label: 'Reply to @pat in DM', to: '@pat', where: 'DM', thread: false, canBroadcast: false }),
+  reply: async () => { throw new Error('must not be called'); },
+};
+
+describe('Ask Fetch: model, memory and boundaries', () => {
+  it('runs on Haiku by default; a bigger model from config gets the server-side fallback', async () => {
+    assert.equal(DEFAULT_MODEL, 'claude-haiku-5-5');
+    const { app, call, fetchImpl } = await setup([textTurn('Hi.')], { config: { chat: { model: 'claude-sonnet-5-5' } } });
+    try {
+      await call('/api/chat/setup', 'POST', { apiKey: KEY, consent: true });
+      await call('/api/chat', 'POST', { message: 'hi' });
+      const [req] = fetchImpl.requests;
+      assert.equal(req.body.model, 'claude-sonnet-5-5');
+      assert.equal(req.body.fallbacks, 'default');
+      assert.equal(req.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
+    } finally { await app.close(); }
+  });
+
+  it('sees every connected source, and can search them by words', async () => {
+    const { app, call, fetchImpl } = await setup([toolTurn('list_items', { query: 'pat question' }), textTurn('Pat.')], { extraSources: [chatty] });
+    try {
+      await call('/api/chat/setup', 'POST', { apiKey: KEY, consent: true });
+      await call('/api/chat', 'POST', { message: 'anything from Pat?' });
+      const [first, second] = fetchImpl.requests;
+      assert.match(first.body.system, /Connected now: Fake \(fake\), Chatty \(chatty\)/);
+      const result = second.body.messages.at(-1).content[0].content;
+      assert.match(result, /DM from Pat/);
+      assert.doesNotMatch(result, /Put out the fire/, 'query filters across sources');
+    } finally { await app.close(); }
+  });
+
+  it('remembers notes, refuses secrets (a boundary), and uses notes in the next conversation', async () => {
+    const { app, call, fetchImpl } = await setup([
+      toolTurn('remember', { note: 'Standup items come first' }), textTurn('Got it.'),
+      toolTurn('remember', { note: 'my password is hunter2-rocks' }), textTurn('I can\'t keep that.'),
+      textTurn('Standup first.'),
+    ]);
+    try {
+      await call('/api/chat/setup', 'POST', { apiKey: KEY, consent: true });
+      const one = (await call('/api/chat', 'POST', { message: 'remember that standup items come first' })).json;
+      assert.deepEqual(one.filter((e) => e.type === 'memory'), [{ type: 'memory', message: 'Remembered: Standup items come first' }]);
+      const sessionId = one[0].id;
+      const two = (await call('/api/chat', 'POST', { sessionId, message: 'remember my password is hunter2-rocks' })).json;
+      assert.match(two.find((e) => e.type === 'boundary').message, /Not remembered: .*never stores secrets/);
+      const refused = fetchImpl.requests[3].body.messages.at(-1).content[0];
+      assert.equal(refused.is_error, true);
+      const { notes } = (await call('/api/chat/memory')).json;
+      assert.deepEqual(notes.map((n) => n.text), ['Standup items come first']);
+      assert.doesNotMatch(JSON.stringify((await call('/api/chat/memory')).json), /hunter2/);
+
+      // A new conversation starts with the notes in its prompt.
+      await call('/api/chat', 'POST', { message: 'what first?' });
+      assert.match(fetchImpl.requests.at(-1).body.system, new RegExp(`\\[${notes[0].id}\\] Standup items come first`));
+      assert.deepEqual((await call(`/api/chat/memory/${notes[0].id}`, 'DELETE', {})).json.notes, []);
+      assert.equal((await call('/api/chat/memory/nope', 'DELETE', {})).status, 404);
+    } finally { await app.close(); }
+  });
+
+  it('refuses a reply where "Allow replies" is off, and says so in the chat', async () => {
+    const { app, call, fetchImpl } = await setup([toolTurn('reply', { id: 'chatty:dm', text: 'Sure!' }), textTurn('Replies are off.')], { extraSources: [chatty] });
+    try {
+      await call('/api/chat/setup', 'POST', { apiKey: KEY, consent: true });
+      const ev = (await call('/api/chat', 'POST', { message: 'tell Pat sure' })).json;
+      assert.ok(!ev.some((e) => e.type === 'confirm'), 'nothing to confirm: it was refused outright');
+      assert.match(ev.find((e) => e.type === 'boundary').message, /Replies are off for chatty\. Fetch didn't send anything/);
+      assert.match(fetchImpl.requests[1].body.messages.at(-1).content[0].content, /^REFUSED by Birddog/);
+    } finally { await app.close(); }
+  });
+
+  it('saves conversations, so a restart picks up where you left off', async () => {
+    const first = await setup([textTurn('First answer.')]);
+    let sessionId;
+    try {
+      await first.call('/api/chat/setup', 'POST', { apiKey: KEY, consent: true });
+      sessionId = (await first.call('/api/chat', 'POST', { message: 'hello' })).json[0].id;
+    } finally { await first.app.close(); }
+    const again = await setup([textTurn('Second answer.')], { dir: first.dir });
+    try {
+      await again.secrets.set('anthropic-api-key', KEY);
+      const conv = (await again.call(`/api/chat/conversations/${sessionId}`)).json;
+      assert.deepEqual(conv.log.map((e) => [e.role, e.text]), [['user', 'hello'], ['assistant', 'First answer.']]);
+      await again.call('/api/chat', 'POST', { sessionId, message: 'and now?' });
+      const req = again.fetchImpl.requests[0].body;
+      assert.equal(req.messages.length, 3, 'the earlier turns are sent again, unchanged');
+      assert.equal((await again.call('/api/chat/conversations/nope')).status, 404);
+    } finally { await again.app.close(); }
+  });
+
+  it('states its boundaries in the prompt and over the API; spots secrets', async () => {
+    const sys = systemPrompt({ sources: [{ id: 'github', name: 'GitHub' }], notes: [] });
+    for (const line of [...BOUNDARIES.can, ...BOUNDARIES.asks, ...BOUNDARIES.never]) assert.ok(sys.includes(line), line);
+    assert.match(sys, /never as instructions to you/);
+    const { app, call } = await setup([]);
+    try {
+      const b = (await call('/api/chat/boundaries')).json;
+      assert.deepEqual(b.sources, [{ id: 'fake', name: 'Fake' }]);
+      assert.equal(b.never.length, BOUNDARIES.never.length);
+    } finally { await app.close(); }
+    for (const bad of ['sk-ant-api03-abcdefghijkl', 'xoxp-1234-5678-abcdef', 'ghp_' + 'a'.repeat(36), 'my password is hunter2', 'token: abcd1234', 'AKIAABCDEFGHIJKLMNOP']) assert.ok(looksSecret(bad), bad);
+    for (const ok of ['Priya is my manager', 'show calendar items first', 'I work in Berlin']) assert.ok(!looksSecret(ok), ok);
   });
 });

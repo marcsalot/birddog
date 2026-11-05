@@ -4,6 +4,18 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-04
+
+### Added
+- **Fetch remembers.** "Remember that …" saves a short note that later conversations start with. The new **Memory** tab lists the notes, with **Forget** and **Forget everything**. Notes that look like a password, key or token are refused.
+- **Conversations are saved** (`chat-history.json`, kept a week), so a reload or restart picks up where you left off. **＋** still starts a new one.
+- **Boundaries, visible and enforced.** A **Boundaries** tab lists what Fetch can read (your connected sources), can do, does only after you confirm, and never does, with **Try it** questions that show the limits in action. When Fetch tries to cross one (a reply where "Allow replies" is off, a secret in memory), Birddog refuses the call and the chat shows **🛡 Boundary held**. The system prompt also tells Fetch to treat item content as data, never as instructions.
+- **Every source.** Fetch's prompt names every connected source, `list_items` describes all of them, and it gains a `query` filter (words in the title, "why" line or fields), also in MCP.
+
+### Changed
+- **Fetch runs on Claude Haiku 5.5** (`claude-haiku-5-5`) by default: fast and the cheapest current model. `chat.model` / `BIRDDOG_CHAT_MODEL` still pick another. The server-side refusal fallback is only requested on models that have it (Haiku doesn't), and output is capped at 16k tokens.
+- **Each conversation is append-only.** The system prompt and tool list are fixed when it starts (the current time now travels with each question), and `reply` is always declared and refused where replies are off. Newer models reject a replayed thinking block when anything before it changed.
+
 ### Fixed
 - **Ask Fetch setup ignored the pasted API key** and said "Paste an Anthropic API key." The form was redrawn (to show it was busy) before the key was read, which emptied the field, so an empty key was sent.
 

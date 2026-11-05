@@ -116,10 +116,12 @@ export const SECTIONS = [
       </ul>`,
   },
   {
-    id: 'chat', title: 'Ask Fetch (chat)', words: 'chat ask claude anthropic api key question assistant ai',
+    id: 'chat', title: 'Ask Fetch (chat)', words: 'chat ask claude anthropic api key question assistant ai haiku memory remember forget boundaries limits',
     html: `${shot('chat', 'Ask Fetch answering "What needs me now?" from the inbox')}
       <p>Press ${keys('a')}, or the ✦ button in the bottom-right corner, and ask in plain words: <i>What needs me now? What's due tomorrow? Which PRs need work?</i> <b>Fetch</b>, Birddog's assistant (the dog that fetches answers), replies from your own items, and can mark things done or snooze them. It always asks you to <b>Confirm</b> first.</p>
-      <p><b>Before you turn it on:</b> answers come from Claude, through your own Anthropic API key, and your question plus the items it looks up (titles, "why" lines, fields, links) are sent to Anthropic. It stays off until you add a key and agree to that. <b>Turn off</b> forgets the key.</p>`,
+      <p><b>Before you turn it on:</b> answers come from Claude, through your own Anthropic API key, and your question plus the items it looks up (titles, "why" lines, fields, links) are sent to Anthropic. It stays off until you add a key and agree to that. <b>Turn off</b> forgets the key.</p>
+      <p><b>Memory:</b> say <i>"remember that Priya is my manager"</i> and Fetch keeps it for later conversations. The <b>Memory</b> tab shows each note with <b>Forget</b>. Conversations are saved too, so a reload picks up where you left off; ＋ starts fresh. Secrets are never stored.</p>
+      <p><b>Boundaries:</b> the <b>Boundaries</b> tab says what Fetch can read (every source you've connected), what it asks first about, and what it never does. Birddog enforces them: when Fetch tries to cross one, you see <b>🛡 Boundary held</b> in the chat. It runs on Claude Haiku by default, the cheapest model.</p>`,
   },
   {
     id: 'docker', title: 'Docker', words: 'docker container compose volume repos env token port loopback',

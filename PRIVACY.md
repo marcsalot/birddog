@@ -69,8 +69,14 @@ Turning **Allow replies** off makes Birddog read-only again.
 
 The chat is off until you add your own Anthropic API key and agree to send inbox content. When you
 use it, your question and the items it looks up are sent to Anthropic's API under your key:
-titles, "why" lines, fields and links, but never tokens. Anthropic's own policies apply to that
-data. Turning the chat off forgets the key.
+titles, "why" lines, fields and links from any source you've connected, but never tokens. Anthropic's
+own policies apply to that data. Turning the chat off forgets the key and the saved conversations.
+
+**Memory.** Notes you ask Fetch to remember are kept in `memory.json`, and recent conversations in
+`chat-history.json`, both in Birddog's folder on your computer (readable only by you). Conversations
+are dropped after a week. Your notes are sent to Anthropic at the start of each new conversation,
+which is how Fetch remembers them. The Memory tab shows every note and deletes any of them. Notes
+that look like a password, key or token are refused and never saved.
 
 ## Removing access
 

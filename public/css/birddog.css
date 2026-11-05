@@ -152,6 +152,27 @@ main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .chat .msg-tool{font-size:12px;color:var(--muted)}
 .chat .msg-note{font-size:12px;color:var(--muted);font-style:italic}
 .chat .msg-err{font-size:13px;color:var(--now)}
+.chat .msg-boundary{font-size:12.5px;line-height:1.45;border:1px solid color-mix(in srgb,var(--ok) 50%,var(--line));background:color-mix(in srgb,var(--ok) 9%,var(--panel));border-radius:10px;padding:8px 10px}
+.chat .msg-boundary b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ok);margin-bottom:2px}
+.chat .msg-boundary b::before{content:"🛡 "}
+.chat .msg-boundary.inline{display:inline-block;padding:1px 7px;border-radius:999px}
+.chat .msg-boundary.inline b{display:inline;margin:0}
+.chat .msg-memory{font-size:12px;color:var(--muted)}
+.chat .msg-memory a{color:var(--muted)}
+.chat-tabs{display:flex;gap:4px;padding:0 16px 8px;border-bottom:1px solid var(--line)}
+.chat-tab{border:1px solid transparent;background:none;border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted)}
+.chat-tab:hover{color:var(--text)}
+.chat-tab.on{border-color:var(--line);background:var(--panel-2);color:var(--text);font-weight:600}
+.chat .chat-side{display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:1.5}
+.chat .chat-side p{margin:0 0 4px;color:var(--muted)}
+.chat .chat-side h4{margin:10px 0 0;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+.chat .chat-side ul{margin:0;padding-left:18px}
+.chat .chat-side .chips{display:flex;flex-wrap:wrap;gap:6px}
+.chat .chat-side button.chip{cursor:pointer;color:var(--text)}
+.chat .chat-side button.chip:hover{border-color:var(--accent)}
+.chat .chip.static{color:var(--text)}
+.chat .memory-list{list-style:none;padding:0!important;display:flex;flex-direction:column;gap:6px}
+.chat .memory-list li{display:flex;align-items:center;gap:8px;justify-content:space-between;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
 .chat .msg-confirm{border:1px solid color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 8%,var(--panel));border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
 .chat .msg-confirm.answered{opacity:.7}
 .chat .msg-confirm .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--warn);font-weight:700}
