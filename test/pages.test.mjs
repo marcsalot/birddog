@@ -43,9 +43,12 @@ describe('Pages build', () => {
   });
 
   it('writes the landing page, the app, assets and .nojekyll', async () => {
-    for (const f of ['index.html', '.nojekyll', 'favicon.svg', 'assets/screenshot.png', 'app/index.html', 'app/static-demo.js', 'app/js/app.js', 'app/css/birddog.css']) {
+    for (const f of ['index.html', '.nojekyll', 'favicon.svg', 'app/index.html', 'app/static-demo.js', 'app/js/app.js', 'app/css/birddog.css']) {
       await fs.access(path.join(out, f));
     }
+    // The images come from docs/, which the Docker image leaves out; copied whenever they exist.
+    const shot = new URL('../docs/screenshot.png', import.meta.url);
+    if (await fs.access(shot).then(() => true, () => false)) await fs.access(path.join(out, 'assets', 'screenshot.png'));
     const landing = await fs.readFile(path.join(out, 'index.html'), 'utf8');
     assert.doesNotMatch(landing, /\{\{/);
     assert.match(landing, new RegExp(`v${data.version.replace(/\./g, '\\.')}`));
