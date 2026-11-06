@@ -15,6 +15,7 @@ import { createGithubAuth } from './auth/github.mjs';
 import { appleClientSecret, createOAuth, OAuthError, PROVIDERS as OAUTH_PROVIDERS } from './auth/oauth.mjs';
 import { atlassianSite, googleAccount, graphAccount } from './sources/calendar-apis.mjs';
 import { AuthError, checkAuthConfig, createOidc, isAllowed } from './auth/oidc.mjs';
+import { createGithubLogin } from './auth/github-login.mjs';
 import { createSessions } from './auth/session.mjs';
 import { ChatError, createChat } from './chat.mjs';
 import { createMemory } from './memory.mjs';
@@ -264,6 +265,10 @@ export async function createBirddog({
         scopes: 'openid email name', responseMode: 'form_post',
         clientSecret: () => appleClientSecret({ teamId: auth.appleTeamId, keyId: auth.appleKeyId, clientId: auth.clientId, privateKey, now: now?.() ?? Date.now() }),
       });
+    } else if (auth.provider === 'github') {
+      // Sign in with GitHub: OAuth web flow (GitHub isn't OpenID Connect); the client secret is the OAuth app's.
+      const clientSecret = process.env.BIRDDOG_OIDC_CLIENT_SECRET || auth.clientSecret || (await secrets.get('oidc-client-secret')) || undefined;
+      oidc = createGithubLogin({ clientId: auth.clientId, clientSecret, webUrl: auth.githubUrl || 'https://github.com', allowedOrgs: auth.allowedOrgs ?? [], fetchImpl, now });
     } else {
       const clientSecret = process.env.BIRDDOG_OIDC_CLIENT_SECRET || auth.clientSecret || (await secrets.get('oidc-client-secret')) || undefined;
       oidc = createOidc({ issuer: auth.issuer, clientId: auth.clientId, clientSecret, scopes: auth.scopes, fetchImpl, now });
@@ -525,6 +530,11 @@ export async function createBirddog({
     teams: (p, token) => graphAccount({ fetchImpl, token }),
     mstodo: (p, token) => graphAccount({ fetchImpl, token }),
     msmail: (p, token) => graphAccount({ fetchImpl, token }),
+    azuredevops: async (p, token) => {
+      const r = await fetchImpl('https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1', { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } });
+      const u = await r.json().catch(() => ({}));
+      return { account: u.emailAddress ?? u.displayName ?? null };
+    },
     gtasks: async (p, token) => googleEmail(token),
     gmail: async (p, token) => googleEmail(token),
     atlassian: (p, token) => atlassianSite({ fetchImpl, token }),
@@ -559,6 +569,7 @@ export async function createBirddog({
     gtasks: { source: 'gtasks', on: () => ({}), uses: () => true, off: {} },
     gmail: { source: 'gmail', on: () => ({}), uses: () => true, off: {} },
     msmail: { source: 'outlook', on: () => ({}), uses: () => true, off: {} },
+    azuredevops: { source: 'azure', on: () => ({ auth: 'oauth' }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
   };
   /** After a sign-in, point the matching source at it and switch it on. */
   function useProvider(p, info) {
@@ -853,8 +864,9 @@ export async function createBirddog({
       if (url.pathname === '/auth/callback') {
         const { user, returnTo } = await oidc.callback(Object.fromEntries(url.searchParams));
         if (!isAllowed(auth, user)) {
-          log.warn?.(`birddog: refused sign-in for ${user.email ?? user.sub} (not in allowedEmails/allowedDomains)`);
-          return authPage(res, 403, 'Not on the list', `You signed in as ${user.email ?? 'an account with no email'}, but that account is not allowed to use this Birddog. Ask its owner to add you to auth.allowedEmails.`);
+          const who = user.login ? `@${user.login}` : user.email ?? 'an account with no email';
+          log.warn?.(`birddog: refused sign-in for ${user.login ? `@${user.login}` : user.email ?? user.sub} (not on the allow list)`);
+          return authPage(res, 403, 'Not on the list', `You signed in as ${who}, but that account is not allowed to use this Birddog. Ask its owner to add you to ${user.login ? 'auth.allowedLogins (or an organization in auth.allowedOrgs)' : 'auth.allowedEmails'}.`);
         }
         return redirect(res, safeReturnTo(returnTo), { 'set-cookie': sessions.issue(user) });
       }

@@ -35,7 +35,7 @@ export const SECTIONS = [
       <ul>
         <li><b>GitLab</b>: merge requests waiting for your review, your MRs with a failed pipeline or conflicts, and issues assigned to you. Use <i>Sign in with GitLab</i> (needs an application with the <code>read_api</code> scope) or a personal access token with <code>read_api</code>. Self-managed GitLab works too.</li>
         <li><b>Linear</b>: your open issues, ranked by due date, cycle end, blockers and priority. Needs a personal API key.</li>
-        <li><b>Azure DevOps</b>: pull requests you haven't voted on yet, and work items assigned to you. Needs a personal access token with <i>Work Items: Read</i> and <i>Code: Read</i>.</li>
+        <li><b>Azure DevOps</b>: pull requests you haven't voted on yet, and work items assigned to you. Use <i>Sign in with Azure DevOps</i> (your Microsoft work account, read-only), or a personal access token with <i>Work Items: Read</i> and <i>Code: Read</i>.</li>
         <li><b>Sentry</b>: unresolved errors assigned to you, with regressed and new ones first. Needs an auth token with <code>event:read</code> and <code>org:read</code>.</li>
         <li><b>PagerDuty</b>: incidents paged to you (triggered ones are <b>Now</b>), and when you're on call. Needs a user API token.</li>
         <li><b>Slack</b>: messages that mention you, and DMs waiting for your reply. Needs a user token (<code>xoxp-…</code>) from your own Slack app, with <code>search:read</code>, <code>im:read</code>, <code>im:history</code> and <code>users:read</code>. Add <code>chat:write</code> too if you want to <a href="#" data-guide-link="replies">reply from Birddog</a>.</li>

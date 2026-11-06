@@ -24,7 +24,7 @@ export function createSessions({ key, ttlMs = 7 * 86_400_000, secure = false, no
     name,
     /** Returns a Set-Cookie header value for this user. */
     issue(user) {
-      const payload = b64(JSON.stringify({ sub: user.sub, email: user.email, name: user.name ?? null, exp: now() + ttlMs }));
+      const payload = b64(JSON.stringify({ sub: user.sub, email: user.email, name: user.name ?? null, ...(user.login ? { login: user.login, orgs: user.orgs ?? [] } : {}), exp: now() + ttlMs }));
       return `${name}=${payload}.${sign(payload)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(ttlMs / 1000)}${secure ? '; Secure' : ''}`;
     },
     /** Returns the user from a Cookie header, or null if missing, forged or expired. */
@@ -39,7 +39,7 @@ export function createSessions({ key, ttlMs = 7 * 86_400_000, secure = false, no
       let data;
       try { data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { return null; }
       if (!(data.exp > now())) return null;
-      return { sub: data.sub, email: data.email, name: data.name };
+      return { sub: data.sub, email: data.email, name: data.name, ...(data.login ? { login: data.login, orgs: Array.isArray(data.orgs) ? data.orgs : [] } : {}) };
     },
     clear() {
       return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`;

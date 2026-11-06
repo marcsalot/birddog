@@ -86,6 +86,8 @@ if you want them. Self-managed GitLab users bring their own app; the built-in on
    - Under *Mobile and desktop applications*, also add `http://127.0.0.1/auth/oauth/microsoft/callback`,
      and for Microsoft Teams `http://localhost/auth/oauth/teams/callback` and
      `http://127.0.0.1/auth/oauth/teams/callback` (Teams signs in separately, with the same app),
+     for Azure DevOps `http://localhost/auth/oauth/azuredevops/callback` and
+     `http://127.0.0.1/auth/oauth/azuredevops/callback`,
      for Microsoft To Do `http://localhost/auth/oauth/mstodo/callback` and
      `http://127.0.0.1/auth/oauth/mstodo/callback`, and for Outlook mail
      `http://localhost/auth/oauth/msmail/callback` and `http://127.0.0.1/auth/oauth/msmail/callback`
@@ -96,7 +98,8 @@ if you want them. Self-managed GitLab users bring their own app; the built-in on
    - Under **Advanced settings**, set **Allow public client flows** to **Yes**. Save.
 4. **API permissions → Add a permission → Microsoft Graph → Delegated:** `User.Read`,
    `Calendars.Read` and `offline_access`, for Teams `Chat.Read` and `ChatMessage.Send`, and for
-   To Do `Tasks.Read` and `Tasks.ReadWrite`, and for Outlook mail `Mail.ReadBasic` and `Mail.Read`
+   To Do `Tasks.Read` and `Tasks.ReadWrite`; under **Azure DevOps** (not Microsoft Graph), the
+   delegated `vso.code` and `vso.work`; and for Outlook mail `Mail.ReadBasic` and `Mail.Read`
    (asked for only when someone turns on Read message text). Don't grant admin consent; users consent for
    themselves (Teams only asks for `ChatMessage.Send` once someone turns on Allow replies, To Do
    only asks for `Tasks.ReadWrite` once someone turns on Sync done). Teams chats need a work or

@@ -3,8 +3,10 @@
 //   • pull requests where you are a reviewer and haven't voted yet
 //   • open work items assigned to you, ranked like other tickets
 //
-// A personal access token with "Work Items: Read" and "Code: Read", kept in your
-// keychain. Read-only: GET, plus WIQL queries (which Azure only accepts as POST).
+// "Sign in with Azure DevOps" (the "azuredevops" sign-in on Birddog's Microsoft app, with
+// the read-only Azure DevOps scopes vso.code and vso.work), or a personal access token with
+// "Work Items: Read" and "Code: Read" kept in your keychain. Read-only: GET, plus WIQL
+// queries (which Azure only accepts as POST).
 
 import { createItem } from '../items.mjs';
 import { plural, rank } from '../rules.mjs';
@@ -21,6 +23,8 @@ export const setup = tokenSetup({
     { key: 'project', label: 'Project', placeholder: 'Payments' },
   ],
   token: { label: 'Personal access token (Work Items: Read, Code: Read)', help: 'https://learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate', placeholder: 'Paste your PAT' },
+  notes: 'Sign in with your work account, or use a personal access token. Either way, enter the organization and project.',
+  oauth: 'azuredevops',
 });
 
 const API = '7.1';
@@ -32,14 +36,23 @@ export function normalizeSettings(input = {}) {
   if (!SLUG.test(org)) throw new TypeError('Enter your Azure DevOps organization, like contoso');
   if (!SLUG.test(project)) throw new TypeError('Enter the project name');
   org = org.toLowerCase();
-  return { organization: org, project };
+  // auth is set by the sign-in (oauth) or by saving a token; a form without it keeps what's saved.
+  const auth = input.auth === 'oauth' || input.auth === 'token' ? { auth: input.auth } : {};
+  return { organization: org, project, ...auth };
 }
 
 async function client(config, ctx) {
-  if (!config.organization || !config.project) throw new Error('Add your Azure DevOps organization, project and a token in setup.');
-  const pat = await ctx.secret?.(secretFields.token);
-  if (!pat) throw new Error('Add an Azure DevOps personal access token in setup.');
-  const http = jsonClient({ fetchImpl: ctx.fetch ?? fetch, label: 'Azure DevOps', headers: { authorization: `Basic ${Buffer.from(`:${pat}`).toString('base64')}` }, fix: 'Check the token\'s scopes (Work Items: Read, Code: Read) and expiry in setup.' });
+  if (!config.organization || !config.project) throw new Error('Add your Azure DevOps organization and project in setup.');
+  let authorization;
+  if (config.auth === 'oauth') {
+    if (!ctx.oauth) throw new Error('Sign in with Azure DevOps in setup.');
+    authorization = `Bearer ${await ctx.oauth.accessToken('azuredevops')}`;
+  } else {
+    const pat = await ctx.secret?.(secretFields.token);
+    if (!pat) throw new Error('Sign in with Azure DevOps, or add a personal access token, in setup.');
+    authorization = `Basic ${Buffer.from(`:${pat}`).toString('base64')}`;
+  }
+  const http = jsonClient({ fetchImpl: ctx.fetch ?? fetch, label: 'Azure DevOps', headers: { authorization }, fix: config.auth === 'oauth' ? 'Sign in with Azure DevOps again in setup (your organization may also need to allow Microsoft Entra apps).' : 'Check the token\'s scopes (Work Items: Read, Code: Read) and expiry in setup.' });
   const org = `https://dev.azure.com/${encodeURIComponent(config.organization)}`;
   const proj = `${org}/${encodeURIComponent(config.project)}`;
   return { http, org, proj };

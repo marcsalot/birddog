@@ -54,6 +54,7 @@ export function defaultConfig() {
       scopes: 'openid email profile',
       allowedEmails: [],
       allowedDomains: [],
+      // provider: "github" (Sign in with GitHub) also takes allowedLogins, allowedOrgs and githubUrl.
       publicUrl: '',
       sessionDays: 7,
     },

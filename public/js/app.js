@@ -957,6 +957,7 @@ const READS = {
   mstodo: 'your Microsoft To Do lists and tasks (Tasks.Read; Tasks.ReadWrite only after you turn on Sync done)',
   gtasks: 'your Google Tasks lists and tasks (read-only; changing tasks only after you turn on Sync done)',
   gmail: 'the headers and labels of your mail (gmail.metadata): senders, subjects, Important and tabs, never message bodies',
+  azuredevops: 'your pull requests and work items in Azure DevOps (vso.code, vso.work: read only)',
   msmail: 'your mail\'s senders, subjects, flags and Focused/Other (Mail.ReadBasic), never message bodies',
 };
 const signInReady = (o) => !!o && o.canStore && o.configured && !(o.needsSecret && !o.hasSecret);
@@ -1212,7 +1213,7 @@ function tokenCardHTML(src) {
   const hasToken = !!src.secrets?.token;
   const viaOauth = setup.oauth && s.auth === 'oauth' && oauthState(setup.oauth)?.connected;
   const complete = setup.fields.filter((f) => !f.optional).every((f) => s[f.key]);
-  const connected = src.enabled && (viaOauth || ((hasToken || local) && complete));
+  const connected = src.enabled && complete && (viaOauth || hasToken || local); // a sign-in still needs the card's fields (Azure's organization)
   const { status, cls, label, msg, summary } = cardState(src, ui);
   if (connected && !ui.editing && status !== 'stale') {
     const how = local ? esc(setup.how ?? 'reading files on this computer') : viaOauth ? `signed in with ${esc(oauthState(setup.oauth).name)}` : envSecret(tokenName)?.from ? `token from <code>${esc(envSecret(tokenName).from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`;
@@ -1775,7 +1776,7 @@ document.addEventListener('keydown', (e) => {
 function renderMe(me) {
   st.me = me;
   const user = me?.authEnabled ? me.user : null;
-  const label = user ? (user.email ?? user.name ?? 'signed in') : null;
+  const label = user ? (user.email ?? (user.login ? `@${user.login}` : null) ?? user.name ?? 'signed in') : null;
   const btn = $('#meBtn');
   if (label) $('#meAvatar').textContent = label[0].toUpperCase();
   btn.title = label ? `Account: ${label}` : 'Account';
@@ -1787,7 +1788,7 @@ const acctOpen = () => !$('#acctMenu').hidden;
 function renderAcct() {
   const user = st.me?.authEnabled ? st.me.user : null;
   const who = user
-    ? `<div class="acct-who"><span class="avatar" aria-hidden="true">${esc((user.email ?? user.name ?? '?')[0].toUpperCase())}</span><div><b>${esc(user.name ?? user.email ?? 'Signed in')}</b>${user.email && user.name ? `<small>${esc(user.email)}</small>` : ''}</div></div>`
+    ? `<div class="acct-who"><span class="avatar" aria-hidden="true">${esc((user.email ?? user.name ?? '?')[0].toUpperCase())}</span><div><b>${esc(user.name ?? user.email ?? 'Signed in')}</b>${user.login ? `<small>@${esc(user.login)} on GitHub</small>` : user.email && user.name ? `<small>${esc(user.email)}</small>` : ''}</div></div>`
     : '<div class="acct-who"><div><b>Just you, on this computer</b><small>No sign-in: Birddog only listens on this machine.</small></div></div>';
   const item = (a, label, k = '') => `<button role="menuitem" data-acct="${a}">${label}${k ? `<kbd>${k}</kbd>` : ''}</button>`;
   $('#acctMenu').innerHTML = `${who}<div class="acct-items">${item('prefs', 'Preferences…', ',')}${item('setup', 'Sources &amp; settings')}${user ? item('logout', 'Sign out') : ''}</div>`;

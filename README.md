@@ -188,7 +188,7 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **Calendar** | Meetings starting soon or later today, all-day events, from **every calendar you connect, in one list** | Sign in with Google and/or Microsoft, iCloud (app-specific password), Thunderbird's calendars on this computer, and any iCal link or `.ics` file |
 | **GitLab** | MRs to review, your MRs with failed pipelines or conflicts, assigned issues | Sign in with GitLab, or a `read_api` token |
 | **Linear** | Your issues: overdue, cycle ending, blocked, urgent | Personal API key |
-| **Azure DevOps** | PRs you haven't voted on, work items assigned to you | PAT with Work Items: Read, Code: Read |
+| **Azure DevOps** | PRs you haven't voted on, work items assigned to you | Sign in with Azure DevOps (Microsoft Entra, read-only `vso.code` + `vso.work`), or a PAT with Work Items: Read, Code: Read |
 | **Sentry** | New and regressed errors assigned to you | Auth token with `event:read`, `org:read` |
 | **PagerDuty** | Incidents paged to you (**Now**), your on-call shifts | User API token |
 | **Slack** | Mentions, and DMs waiting for your reply. Can reply, opt-in | User token with `search:read`, `im:read`, `im:history`, `users:read`; `chat:write` to reply. Fastest setup: create the app from [docs/slack-app-manifest.json](docs/slack-app-manifest.json) |
@@ -826,7 +826,7 @@ Mentions come from GitHub notifications, which fine-grained personal access toke
 
 ## Login for the dashboard (SSO)
 
-Off by default: on `127.0.0.1` only you can reach Birddog. Turn it on when you run Birddog somewhere shared, such as a home server or a VM behind a reverse proxy. It works with any OpenID Connect provider: Google, Okta, Microsoft Entra ID, Auth0, Keycloak, Authentik, …
+Off by default: on `127.0.0.1` only you can reach Birddog. Turn it on when you run Birddog somewhere shared, such as a home server or a VM behind a reverse proxy. It works with any OpenID Connect provider (Google, Okta, Microsoft Entra ID, Auth0, Keycloak, Authentik, …), with **GitHub**, and with **Sign in with Apple**.
 
 **Try it first without a provider:**
 
@@ -859,6 +859,26 @@ This starts a mock sign-in provider and a Birddog with login on at `http://127.0
    ```
 
    (or set `BIRDDOG_OIDC_CLIENT_SECRET`). Then restart Birddog. With login on you may also listen beyond localhost, e.g. `birddog --host 0.0.0.0`.
+
+**Sign in with GitHub** is the natural one for a team of developers. GitHub isn't an OpenID Connect provider, so set `"provider": "github"` instead of an issuer:
+
+1. GitHub → Settings → Developer settings → **OAuth Apps → New OAuth App** (or your organization's settings, to own it there). Callback URL: `https://your-host/auth/callback` (or `http://127.0.0.1:4747/auth/callback`). Generate a **client secret**.
+2. In `auth.json`:
+
+   ```json
+   {
+     "enabled": true,
+     "provider": "github",
+     "clientId": "Ov23li…",
+     "allowedOrgs": ["acme"],
+     "allowedLogins": ["sam-dev"],
+     "publicUrl": "https://birddog.example.com"
+   }
+   ```
+
+3. `pbpaste | birddog secret set oidc-client-secret` (the OAuth app's client secret), then restart.
+
+Who may sign in: **`allowedLogins`** (GitHub usernames), **`allowedOrgs`** (active members of these organizations; Birddog then also asks for `read:org`), and the usual `allowedEmails` / `allowedDomains` (matched against your primary, verified GitHub email). Organization membership is checked when you sign in, and the session lasts `sessionDays`. It asks GitHub for `read:user` and `user:email` (plus `read:org` with `allowedOrgs`), uses PKCE, and drops GitHub's token right after sign-in. For **GitHub Enterprise Server**, add `"githubUrl": "https://github.example.com"`.
 
 **Sign in with Apple** works too, as an optional provider for this login. It needs a **paid Apple Developer account**, a **Services ID** with Sign in with Apple enabled, a **registered domain**, and `publicUrl` on https (Apple doesn't accept localhost or http return URLs):
 
@@ -1107,6 +1127,7 @@ test/                  node:test suites
 18. ✅ Dynatrace, Grafana and Jenkins (private servers too), GitHub Projects, Confluence, and email triage with Gmail and Outlook (1.20)
 19. ✅ Read email in Birddog, or open it in your mail app (1.21)
 20. ✅ One Preferences window, a help menu, the guide's edge tab, fresh screenshots (1.22)
+21. ✅ Sign in with GitHub for the dashboard; Sign in with Azure DevOps (1.23)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Discord, Google Chat), Teams channel mentions (with admin consent) and comments (GitHub/GitLab PRs, Jira).
 

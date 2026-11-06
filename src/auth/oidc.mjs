@@ -39,11 +39,15 @@ async function getJson(fetchImpl, url, init) {
 export function checkAuthConfig(auth = {}) {
   if (!auth.enabled) return [];
   const problems = [];
-  if (auth.provider !== 'apple' && (!auth.issuer || !/^https?:\/\//.test(auth.issuer))) problems.push('auth.issuer must be your provider URL, e.g. https://accounts.google.com');
+  if (!['apple', 'github'].includes(auth.provider) && (!auth.issuer || !/^https?:\/\//.test(auth.issuer))) problems.push('auth.issuer must be your provider URL, e.g. https://accounts.google.com');
   if (!auth.clientId) problems.push('auth.clientId is required');
-  if (!auth.allowedEmails?.length && !auth.allowedDomains?.length) {
-    problems.push('auth.allowedEmails or auth.allowedDomains must say who may sign in (otherwise any account at your provider could)');
+  const github = auth.provider === 'github';
+  if (!auth.allowedEmails?.length && !auth.allowedDomains?.length && !(github && (auth.allowedLogins?.length || auth.allowedOrgs?.length))) {
+    problems.push(github
+      ? 'auth.allowedLogins, auth.allowedOrgs, auth.allowedEmails or auth.allowedDomains must say who may sign in (otherwise any GitHub account could)'
+      : 'auth.allowedEmails or auth.allowedDomains must say who may sign in (otherwise any account at your provider could)');
   }
+  if (github && auth.githubUrl && !/^https:\/\/[^/]+\/?$/.test(auth.githubUrl)) problems.push('auth.githubUrl must look like https://github.example.com (GitHub Enterprise Server; leave it out for github.com)');
   if (auth.publicUrl && !/^https?:\/\/[^/]+\/?$/.test(auth.publicUrl)) problems.push('auth.publicUrl must look like https://birddog.example.com (no path)');
   if (auth.provider === 'apple') {
     if (!auth.appleTeamId) problems.push('auth.appleTeamId is required for Sign in with Apple (your 10-character Team ID)');
@@ -55,6 +59,11 @@ export function checkAuthConfig(auth = {}) {
 
 /** Is this signed-in identity on the allow list? */
 export function isAllowed(auth, user) {
+  // GitHub sign-ins can also be allowed by username or organization (checked at sign-in).
+  if (auth.provider === 'github' && user?.login) {
+    if ((auth.allowedLogins ?? []).some((l) => String(l).toLowerCase() === String(user.login).toLowerCase())) return true;
+    if ((auth.allowedOrgs ?? []).some((o) => (user.orgs ?? []).includes(String(o).toLowerCase()))) return true;
+  }
   const email = String(user?.email ?? '').toLowerCase();
   if (!email) return false;
   if ((auth.allowedEmails ?? []).some((e) => e.toLowerCase() === email)) return true;

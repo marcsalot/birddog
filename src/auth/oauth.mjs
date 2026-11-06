@@ -97,6 +97,20 @@ export const PROVIDERS = {
     register: 'https://console.cloud.google.com/apis/credentials',
   },
   // Mail, headers only: Gmail's metadata scope and Microsoft's Mail.ReadBasic never include bodies.
+  // Azure DevOps through Microsoft Entra: its own sign-in on the Microsoft app (Entra issues
+  // one token per resource), with Azure DevOps' read-only scopes.
+  azuredevops: {
+    name: 'Azure DevOps',
+    app: 'microsoft',
+    authorize: (c) => `https://login.microsoftonline.com/${encodeURIComponent(c.tenant || 'common')}/oauth2/v2.0/authorize`,
+    token: (c) => `https://login.microsoftonline.com/${encodeURIComponent(c.tenant || 'common')}/oauth2/v2.0/token`,
+    revoke: null,
+    scopes: ['offline_access', '499b84ac-1321-427f-aa17-267ca6975798/vso.code', '499b84ac-1321-427f-aa17-267ca6975798/vso.work'],
+    extra: {},
+    secret: 'none',
+    tokenBody: 'form',
+    register: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
+  },
   gmail: {
     name: 'Gmail',
     app: 'google',

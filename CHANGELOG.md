@@ -4,6 +4,15 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-11-06
+
+### Added
+- **Sign in with GitHub** for the dashboard (`auth.provider: "github"`): GitHub's OAuth web flow with PKCE (GitHub isn't OpenID Connect). Allow people by `allowedLogins` (usernames), `allowedOrgs` (active organization members; asks for `read:org` only then), or the usual emails and domains (primary verified email only). GitHub Enterprise Server via `auth.githubUrl`. The session carries the login and orgs; GitHub's token is dropped after sign-in.
+- **Sign in with Azure DevOps**: Microsoft Entra on Birddog's Microsoft app, with Azure DevOps' read-only `vso.code` and `vso.work`. The PAT still works.
+
+### Fixed
+- A token card with a sign-in (Azure DevOps) waits for its required fields before it shows as connected.
+
 ## [1.22.0] - 2026-11-06
 
 ### Changed
