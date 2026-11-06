@@ -10,6 +10,8 @@ import { createBirddog } from '../src/server.mjs';
 import { buttonLabel, editorHTML, pickerHTML, scheduleText } from '../public/js/profiles.js';
 import { fakeItem, tmpDir } from './helpers.mjs';
 
+delete process.env.BIRDDOG_PROFILE; // these tests are about the real default, Auto
+
 const quiet = { warn() {}, error() {}, log() {} };
 // Local times, so the tests pass in any time zone.
 const at = (y, mo, d, h, mi = 0) => new Date(y, mo - 1, d, h, mi).getTime();

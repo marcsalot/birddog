@@ -44,17 +44,20 @@ const PREF_CHECKS = {
   emailOpen: (v) => ['birddog', 'web', 'apple-mail'].includes(v),
 };
 
+/** The profile that shows until you pick one: BIRDDOG_PROFILE (all, auto or a profile id), else auto. */
+export const defaultProfileChoice = (env = process.env) => (isChoice(env.BIRDDOG_PROFILE) ? env.BIRDDOG_PROFILE : 'auto');
+
 export class Triage {
   constructor({ dir, now = () => Date.now() }) {
     this.file = path.join(dir, 'state.json');
     this.now = now;
-    this.data = { version: 1, items: {}, prefs: { ...DEFAULT_PREFS } };
+    this.data = { version: 1, items: {}, prefs: { ...DEFAULT_PREFS, profile: defaultProfileChoice() } };
   }
 
   async load() {
     const d = await readJson(this.file, null);
     if (d) {
-      const prefs = { ...DEFAULT_PREFS, ...d.prefs };
+      const prefs = { ...DEFAULT_PREFS, profile: defaultProfileChoice(), ...d.prefs };
       try { prefs.notifications = normalizeNotify(d.prefs?.notifications ?? {}); } catch { prefs.notifications = { ...DEFAULT_NOTIFY }; }
       this.data = { version: 1, items: d.items ?? {}, prefs };
     }

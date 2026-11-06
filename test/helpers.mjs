@@ -6,6 +6,10 @@ import path from 'node:path';
 
 export const DAY = 86_400_000;
 
+// Tests see every source unless they're testing profiles: Auto would switch to Home
+// outside work hours and hide the tests' fake sources (it did, in CI at 18:08 UTC).
+process.env.BIRDDOG_PROFILE ??= 'all';
+
 export async function tmpDir(prefix = 'birddog-test-') {
   return fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
 }

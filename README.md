@@ -442,6 +442,8 @@ Every source keeps refreshing in the background, so switching is instant. A prof
 
 `"sources": null` means every source. Days run 0 = Sunday to 6 = Saturday.
 
+Until you pick a profile, Birddog uses **Auto**. Set `BIRDDOG_PROFILE` (`all`, `auto` or a profile id like `work`) to start somewhere else: handy for a container or an MCP setup that should always see everything. Once you pick one in the app, your choice wins.
+
 ## More sources
 
 Sources & settings lists every source A–Z, with a search box that matches names and kinds of thing (*calendar* finds Google, Microsoft, iCloud and iCal; *ci* finds GitHub Actions, GitLab pipelines and Azure).

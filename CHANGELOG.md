@@ -4,6 +4,14 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.23.1] - 2026-11-06
+
+### Added
+- `BIRDDOG_PROFILE` (`all`, `auto` or a profile id) sets which profile shows until you pick one.
+
+### Fixed
+- The test suite depended on the time of day: outside the default Work hours, Auto showed Home and hid the tests' sources (CI failed at 18:08 UTC). Tests now start on `all`, except the profile tests, and the suite passes in any time zone.
+
 ## [1.23.0] - 2026-11-06
 
 ### Added
