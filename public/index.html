@@ -50,16 +50,15 @@
       <button class="search" id="openPalette" aria-label="Search or run a command"><span aria-hidden="true">🔍</span><span>Search or run a command…</span><kbd>⌘K</kbd></button>
       <span class="updated" id="updated" aria-live="polite"></span>
       <button class="icon-btn" id="refresh" title="Refresh (r)" aria-label="Refresh"><span>⟳</span></button>
-      <button class="icon-btn notify-btn" id="notifyBtn" title="Notifications" aria-label="Notifications" aria-haspopup="dialog">🔕</button>
-      <button class="icon-btn" id="guideBtn" title="Guide (g)" aria-label="Guide (g)" aria-controls="guideRail" aria-expanded="false"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H10c1.1 0 2 .9 2 2v14c0-1.1-.9-2-2-2H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H14c-1.1 0-2 .9-2 2v14c0-1.1.9-2 2-2h4.5c.8 0 1.5-.7 1.5-1.5z"/></svg></button>
       <button class="appear-btn profile-btn" id="profileBtn" title="Profile (⇧P)" aria-haspopup="dialog" aria-expanded="false" aria-controls="profilePanel"><i aria-hidden="true">◑</i><span>Profile</span></button>
-      <button class="appear-btn" id="appearBtn" title="Appearance" aria-haspopup="dialog"><i></i><span>Appearance</span></button>
+      <button class="icon-btn help-btn" id="helpBtn" title="Help (guide, shortcuts, what's new)" aria-label="Help" aria-haspopup="menu" aria-expanded="false" aria-controls="helpMenu">?</button>
       <button class="avatar-btn" id="meBtn" title="Account" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenu"><span class="avatar" id="meAvatar" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M4.5 20c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></svg></span></button>
     </div>
     <div class="content" id="content"><div class="wrap" id="list" aria-live="polite"></div></div>
   </main>
 
   <aside class="guide" id="guideRail" aria-label="Guide" aria-hidden="true"></aside>
+  <button class="guide-tab" id="guideTab" aria-controls="guideRail" aria-expanded="false" title="Open the guide (g)" aria-label="Open the guide (g)"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H10c1.1 0 2 .9 2 2v14c0-1.1-.9-2-2-2H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H14c-1.1 0-2 .9-2 2v14c0-1.1.9-2 2-2h4.5c.8 0 1.5-.7 1.5-1.5z"/></svg><span>Guide</span></button>
 </div>
 
 <div class="keybar" aria-hidden="true"><span><kbd>j</kbd> <kbd>k</kbd> move</span><span><kbd>↵</kbd> details</span><span><kbd>x</kbd> done</span><span><kbd>s</kbd> snooze</span><span><kbd>z</kbd> undo</span><span><kbd>⇧R</kbd> reply</span><span><kbd>c</kbd> copy command</span><span><kbd>⌘K</kbd> commands</span></div>
@@ -83,7 +82,7 @@
   <div>Ask Fetch <kbd>a</kbd></div><div>Guide <kbd>g</kbd></div><div>Widen the guide <kbd>⇧G</kbd></div>
   <div>Overview <kbd>0</kbd></div><div>Menu <kbd>m</kbd></div>
   <div>Board <kbd>b</kbd></div><div>Worktrees &amp; slots <kbd>w</kbd></div>
-  <div>Switch profile <kbd>⇧P</kbd></div>
+  <div>Switch profile <kbd>⇧P</kbd></div><div>Preferences <kbd>,</kbd></div>
 </div></div></div>
 
 <div class="scrim" id="setupScrim"><div class="modal setup" role="dialog" aria-labelledby="setupTitle">
@@ -92,10 +91,13 @@
   <footer id="setupFoot"></footer>
 </div></div>
 
-<div class="appear" id="appear" role="dialog" aria-label="Appearance"></div>
 <div class="appear profile-panel" id="profilePanel" role="dialog" aria-label="Profiles"></div>
 <div class="acct" id="acctMenu" role="menu" aria-label="Account" hidden></div>
-<div class="appear notify-panel" id="notifyPanel" role="dialog" aria-label="Notifications"></div>
+<div class="acct help-menu" id="helpMenu" role="menu" aria-label="Help" hidden></div>
+<div class="scrim" id="prefsScrim"><div class="modal prefs" role="dialog" aria-labelledby="prefsTitle">
+  <header><h2 id="prefsTitle">Preferences</h2><button class="icon-btn" data-close aria-label="Close preferences">✕</button></header>
+  <div class="prefs-body"><nav class="prefs-nav" id="prefsNav" role="tablist" aria-label="Preference sections"></nav><section class="prefs-pane" id="prefsPane" role="tabpanel"></section></div>
+</div></div>
 <div class="toast" id="toast" role="status"><span id="toastMsg"></span><button id="undoBtn">Undo <kbd>z</kbd></button></div>
 </body>
 </html>

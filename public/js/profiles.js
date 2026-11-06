@@ -94,12 +94,14 @@ export function initProfiles({ changed, toast }) {
     if (isOpen() && !draft) render();
   }
   async function load() { try { update(await api.profiles()); } catch { /* keep the last view */ } }
-  async function open() {
+  /** Open the switcher, or the editor with open('edit'). */
+  async function open(mode) {
     draft = null; msg = null;
     panel.classList.add('open');
     btn.setAttribute('aria-expanded', 'true');
     render();
     await load();
+    if (mode === 'edit' && view) draft = structuredClone(view.list);
     render();
   }
   function close() {

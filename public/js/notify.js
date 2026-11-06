@@ -1,4 +1,5 @@
-// Desktop notifications: the 🔔 panel and showing notifications while a tab is open.
+// Desktop notifications: their settings (the Notifications section of Preferences) and
+// showing notifications while a tab is open.
 // The server decides what is news (and makes sure nothing is announced twice);
 // this tab asks for it every 20 seconds and shows it with the Notification API.
 
@@ -21,14 +22,16 @@ export function initNotify(options) {
   poll();
 }
 
-export const notifyPanelOpen = () => document.querySelector('#notifyPanel')?.classList.contains('open');
-export function closeNotifyPanel() { document.querySelector('#notifyPanel')?.classList.remove('open'); }
-export async function toggleNotifyPanel() {
-  if (notifyPanelOpen()) return closeNotifyPanel();
+/** Is the Notifications section of Preferences showing? */
+export const notifyPanelOpen = () => !!document.querySelector('#prefsScrim.open #notifyPanel');
+/** Fill the Notifications section (Preferences calls this when it shows it). */
+export async function renderNotifySettings() {
+  if (!ctx) return;
   if (!kinds.length) { try { kinds = (await ctx.api.notifyKinds()).kinds; } catch { kinds = []; } }
   render();
-  document.querySelector('#notifyPanel').classList.add('open');
 }
+/** "On", "Off" or "Snoozed until …", for menus. */
+export const notifySummary = () => (!settings?.enabled ? 'Off' : snoozed() ? `Snoozed until ${whenLabel(settings.snoozeUntil)}` : 'On');
 
 const snoozed = () => settings.snoozeUntil && Date.parse(settings.snoozeUntil) > Date.now();
 
@@ -63,6 +66,7 @@ function permissionLine() {
 
 function render() {
   const el = document.querySelector('#notifyPanel');
+  if (!el) return;
   const s = settings;
   const sources = ctx.sources();
   const check = (attr, on, label, extra = '') => `<label class="chk"><input type="checkbox" ${attr} ${on ? 'checked' : ''} ${extra}><span>${label}</span></label>`;

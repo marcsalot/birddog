@@ -757,3 +757,40 @@ a.tkey:hover{text-decoration:underline}
 .mail-pref select{margin-left:6px;font:inherit;padding:3px 6px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text)}
 .mail-head{margin:0}
 .mail-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.5;max-height:46vh;overflow:auto;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
+
+/* Help (?) button and menu, top right */
+.help-btn{font-weight:700;font-size:15px}
+.help-menu{right:64px}
+.help-menu hr,.acct hr{border:0;border-top:1px solid var(--line);margin:6px 0}
+.acct-items a[role=menuitem]{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;color:var(--text);text-decoration:none;font-size:13px}
+.acct-items a[role=menuitem]:hover,.acct-items a[role=menuitem]:focus{background:var(--panel-2);outline:none}
+
+/* The guide's tab on the right edge: the collapsed rail. Click it (or press g) to expand. */
+.guide-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:20;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 6px;border:1px solid var(--line);border-right:0;border-radius:10px 0 0 10px;background:var(--panel);color:var(--muted);box-shadow:var(--shadow);cursor:pointer}
+.guide-tab:hover,.guide-tab:focus-visible{color:var(--text);border-color:var(--accent)}
+.guide-tab span{writing-mode:vertical-rl;transform:rotate(180deg);font-size:12px;font-weight:600;letter-spacing:.04em}
+.guide-tab .ui-ico{width:16px;height:16px}
+body.guide-open .guide-tab{display:none}
+@media (max-width:760px){.guide-tab{display:none}}
+
+/* Preferences: one window, sections on the left */
+.modal.prefs{width:min(820px,94vw);height:min(640px,88vh);display:flex;flex-direction:column}
+.modal.prefs header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}
+.modal.prefs header h2{margin:0;font-size:17px}
+.prefs-body{flex:1;display:grid;grid-template-columns:180px minmax(0,1fr);min-height:0}
+.prefs-nav{display:flex;flex-direction:column;gap:2px;padding:12px;border-right:1px solid var(--line);background:var(--panel-2)}
+.prefs-nav button{text-align:left;padding:8px 10px;border-radius:8px;border:0;background:none;color:var(--text);font:inherit;font-size:14px;cursor:pointer}
+.prefs-nav button:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.prefs-nav button.on{background:color-mix(in srgb,var(--accent) 16%,transparent);font-weight:600}
+.prefs-pane{overflow:auto;padding:18px 22px}
+.prefs-pane h3{margin:0 0 12px;font-size:16px}
+.pref-help{font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5}
+.pref-row{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.pref-row.static{cursor:default;align-items:center;justify-content:space-between}
+.pref-row input{margin-top:3px}
+.pref-row span{display:flex;flex-direction:column;gap:2px;font-size:14px}
+.pref-row small{color:var(--muted);font-size:12px}
+.prefs-pane .np-in h3{margin-top:0}
+@media (max-width:760px){.prefs-body{grid-template-columns:1fr}.prefs-nav{flex-direction:row;overflow:auto;border-right:0;border-bottom:1px solid var(--line)}}
+.prefs-pane .notify-panel{width:auto;max-height:none;overflow:visible}
+.prefs-pane .appear-in{max-width:460px}

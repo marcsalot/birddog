@@ -611,9 +611,11 @@ Collapse it to icons with « or `m`. Counts stay visible as small badges (Now in
 
 ## User guide
 
-Press the book icon at the top right, or `g`, for the **guide**, a searchable rail on the right: getting started, sources, triage, shortcuts, notifications, chat, Docker and MCP. On wide screens it docks beside the page; on narrower ones it floats over it. It remembers whether you left it open, and `⌘K` → *Guide: …* jumps to a section.
+Press `g`, click the **Guide** tab on the right edge, or pick it from the **?** help menu at the top right, for the **guide**, a searchable rail on the right that you can widen (`⇧G`) or drag to any width: getting started, sources, triage, shortcuts, notifications, chat, Docker and MCP. On wide screens it docks beside the page; on narrower ones it floats over it. It remembers whether you left it open, and `⌘K` → *Guide: …* jumps to a section.
 
-The avatar at the far right of the top bar opens the **account menu**: who you're signed in as (with login on) or "just you, on this computer", Sources & settings, Appearance, keyboard shortcuts, and Sign out when login is on.
+The top right has three things: the **profile** switcher, **?** for help (the guide, keyboard shortcuts, the setup wizard, what's new, the README, the live demo, and where to report a problem), and the avatar for the **account menu** (who you're signed in as, or "just you, on this computer", Preferences, Sources & settings, and Sign out when login is on).
+
+**Preferences** (`,`, or the account menu) puts everything that's yours to choose in one window: **Appearance** (theme, light or dark), **Notifications**, **Profiles**, **Email** (where emails open), **Layout** (menu expanded, guide open at start, the next-step card, hidden sources) and **About** (version, where your data lives). Each change saves as you make it.
 
 Its screenshots come from `npm run screenshots`, a [Playwright](https://playwright.dev) script that starts Birddog in `--demo` mode (made-up data only) and captures light and dark versions into `public/guide/`. Playwright is a **devDependency**; the published package still has no runtime dependencies. It needs a Chromium: `npx playwright install chromium`, or point `BIRDDOG_CHROMIUM` at one.
 
@@ -747,7 +749,7 @@ Press the **✦** button in the bottom-right corner (or `a`) to ask **Fetch**, B
 
 ## Notifications
 
-Press 🔔 in the top bar and switch on **Tell me when something needs me now**. Birddog then announces each item that becomes **Now** (a review someone is waiting on, a meeting about to start, an overdue ticket) and each source that stops refreshing.
+Open **Preferences → Notifications** (`,`) and switch on **Tell me when something needs me now**. Birddog then announces each item that becomes **Now** (a review someone is waiting on, a meeting about to start, an overdue ticket) and each source that stops refreshing.
 
 - **Where:** in the browser while a Birddog tab is open, otherwise from the system: macOS notifications (via `osascript`), `notify-send` on Linux, a toast on Windows. You can also choose browser-only or system-only.
 - **Each thing at most once.** Birddog remembers what it announced in `notified.json`, across restarts. Whatever is already Now when you switch notifications on is taken as known, so you don't get a burst. A burst of more than three becomes one summary.
@@ -801,10 +803,12 @@ Your token stays in the keychain; replies, like reads, never put it in logs or A
 | `1`–`6` | All / Now / Today / Later / Snoozed / Done | `a` | Ask Fetch |
 | `t` | light / dark | `p` | next theme |
 | `⇧R` | reply (Slack DMs and mentions) | `⌘↵` | send the reply |
+| `,` | Preferences | `⇧P` | switch profile |
+| `b` | Board | `w` | Worktrees & slots |
 
 ## Themes
 
-Three palettes, each in light, dark or system mode: **Retriever gold** (default), **Electric violet** and **Sunset**. Pick one from **Appearance**, or press `p` to cycle.
+Three palettes, each in light, dark or system mode: **Retriever gold** (default), **Electric violet** and **Sunset**. Pick one in **Preferences → Appearance**, or press `p` to cycle.
 
 ## Sign in with GitHub
 
@@ -1102,6 +1106,7 @@ test/                  node:test suites
 17. ✅ Two-way task lists (To Do, Google Tasks, Todoist) and one unified calendar (1.19)
 18. ✅ Dynatrace, Grafana and Jenkins (private servers too), GitHub Projects, Confluence, and email triage with Gmail and Outlook (1.20)
 19. ✅ Read email in Birddog, or open it in your mail app (1.21)
+20. ✅ One Preferences window, a help menu, the guide's edge tab, fresh screenshots (1.22)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Discord, Google Chat), Teams channel mentions (with admin consent) and comments (GitHub/GitLab PRs, Jira).
 

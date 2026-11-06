@@ -46,7 +46,7 @@ export const SECTIONS = [
         <li><b>Calendar</b> reads every calendar you connect at once (Google, Outlook, iCloud, Thunderbird, iCal links) into one list; <b>Add a calendar</b> on its card adds another.</li>
         <li><b>Dynatrace</b>, <b>Grafana</b> and <b>Jenkins</b>: open problems, firing alerts and failing jobs. Grafana and Jenkins can be private servers: Birddog reaches whatever your computer can (office network or VPN), and allows plain http only on your own network.</li>
         <li><b>GitHub Projects</b> (items assigned to you on the boards you list) and <b>Confluence</b> (mentions, and tasks assigned to you).</li>
-        <li><b>Email</b> (Thunderbird, Gmail, Outlook) is sorted into <i>needs you</i>, <i>FYI</i> and <i>noise</i>: newsletters, robots and notification mail are counted, not listed. Each mail card has <b>Always important</b> and <b>Always noise</b> lists. Choose where an email opens: in Birddog (as plain text, no images or tracking), Gmail or Outlook on the web, or Apple Mail. Gmail and Outlook show the text in Birddog only after you turn on <b>Read message text</b> on their card.</li>
+        <li>${shot('email', 'An email read in Birddog, as plain text')}<b>Email</b> (Thunderbird, Gmail, Outlook) is sorted into <i>needs you</i>, <i>FYI</i> and <i>noise</i>: newsletters, robots and notification mail are counted, not listed. Each mail card has <b>Always important</b> and <b>Always noise</b> lists. Choose where an email opens: in Birddog (as plain text, no images or tracking), Gmail or Outlook on the web, or Apple Mail. Gmail and Outlook show the text in Birddog only after you turn on <b>Read message text</b> on their card.</li>
         <li><b>GitHub</b> also shows <b>failing Actions runs</b> on branches you pushed this week, and <b>Dependabot alerts</b> on those repos. Turn them off with <code>"actions": false</code> or <code>"security": false</code> under <code>sources.github</code>.</li>
       </ul>
       <p>In Docker, pass the tokens as <code>GITLAB_TOKEN</code>, <code>LINEAR_API_KEY</code>, <code>AZURE_DEVOPS_EXT_PAT</code>, <code>SENTRY_AUTH_TOKEN</code>, <code>BIRDDOG_PAGERDUTY_TOKEN</code>, <code>BIRDDOG_SLACK_TOKEN</code> or <code>BIRDDOG_DISCORD_TOKEN</code>.</p>`,
@@ -117,7 +117,7 @@ export const SECTIONS = [
   },
   {
     id: 'notifications', title: 'Notifications', words: 'notifications desktop alert bell quiet hours snooze all notify system',
-    html: `<p>Press 🔔 and switch on <b>Tell me when something needs me now</b>. Birddog then announces each item that becomes <b>Now</b> (a review someone is waiting on, a meeting about to start) and each source that stops working, <b>at most once</b>.</p>
+    html: `<p>Open <b>Preferences → Notifications</b> (${keys(',')}) and switch on <b>Tell me when something needs me now</b>. Birddog then announces each item that becomes <b>Now</b> (a review someone is waiting on, a meeting about to start) and each source that stops working, <b>at most once</b>.</p>
       <ul>
         <li>Notifications show in the browser while a Birddog tab is open, and from the system otherwise. You can pick one.</li>
         <li>Switch sources and kinds on and off, set <b>quiet hours</b>, or <b>snooze all</b> for an hour or until tomorrow.</li>
@@ -125,13 +125,19 @@ export const SECTIONS = [
       </ul>`,
   },
   {
+    id: 'prefs', title: 'Preferences and help', words: 'preferences settings options appearance theme dark light notifications email layout menu about version help question mark shortcuts what\'s new comma',
+    html: `${shot('prefs', 'Preferences: appearance, notifications, profiles, email, layout and about in one place')}
+      <p><b>Preferences</b> (${keys(',')}, or the account menu at the top right) has everything that's yours to choose in one window: <b>Appearance</b> (theme and light or dark), <b>Notifications</b>, <b>Profiles</b>, <b>Email</b> (where emails open), <b>Layout</b> (the menu, the guide, the next-step card, hidden sources) and <b>About</b>. Changes save as you make them.</p>
+      <p>The <b>?</b> at the top right opens help: this guide, the keyboard shortcuts, the setup wizard, what's new, and where to report a problem. The guide also has a tab on the right edge of the screen; click it or press ${keys('g')}.</p>`,
+  },
+  {
     id: 'profiles', title: 'Profiles (Work, Home)', words: 'profile profiles work home schedule auto switch filter hide sources focus weekend on call',
-    html: `<p>The <b>profile</b> button in the top bar (or ${keys('⇧P')}) picks which sources you see. <b>Work</b> shows every source, <b>Home</b> shows local git, GitHub, calendar, Discord, Thunderbird, Google Tasks and Todoist. <b>Auto</b> switches by schedule: Work on weekdays from 08:00 to 18:00, Home the rest of the time.</p>
+    html: `${shot('profiles', 'The profile switcher: Auto, Work, Home or every source')}<p>The <b>profile</b> button in the top bar (or ${keys('⇧P')}) picks which sources you see. <b>Work</b> shows every source, <b>Home</b> shows local git, GitHub, calendar, Discord, Thunderbird, Google Tasks and Todoist. <b>Auto</b> switches by schedule: Work on weekdays from 08:00 to 18:00, Home the rest of the time.</p>
       <p><b>Edit profiles</b> renames them, picks their sources and hours, turns notifications off for one, and adds your own (up to 12). Every source keeps refreshing, so switching is instant. A profile only changes what you see, what can notify you, and what Claude sees over MCP.</p>`,
   },
   {
     id: 'work', title: 'Board, worktrees and slots', words: 'board swimlane lane kanban jira status code review pass ready for deployment worktree git slot dev qa environment claim port lock version',
-    html: `<p><b>Board</b> (${keys('b')}) shows your Jira tickets in lanes: <b>In Progress</b>, <b>In Code Review</b>, <b>Code Review Pass</b> and <b>Ready for Deployment</b>. Each card says how long the ticket has sat in its status (⏳ after 3 days) and where it lives: its worktree, the dev slot running it, the QA slot it's on. <b>Lanes &amp; filter</b> renames lanes, picks which Jira statuses go in each, and whose tickets to show. Birddog never moves a ticket.</p>
+    html: `${shot('board', 'The ticket board: In Progress, In Code Review, Code Review Pass, Ready for Deployment')}<p><b>Board</b> (${keys('b')}) shows your Jira tickets in lanes: <b>In Progress</b>, <b>In Code Review</b>, <b>Code Review Pass</b> and <b>Ready for Deployment</b>. Each card says how long the ticket has sat in its status (⏳ after 3 days) and where it lives: its worktree, the dev slot running it, the QA slot it's on. <b>Lanes &amp; filter</b> renames lanes, picks which Jira statuses go in each, and whose tickets to show. Birddog never moves a ticket.</p>
       <p><b>Worktrees &amp; slots</b> (${keys('w')}) lists every git worktree with its ticket, changes and how far it is from main, your <b>dev slots</b> (running when their ports answer) and your <b>QA slots</b>. Give the QA slots an address pattern like <code>https://qa{n}.example.com</code> and a version path, and Birddog shows which branch each one runs. <b>Claim…</b> notes who has a slot and for which ticket; claims stay on this machine. The buttons copy git commands for you to run.</p>`,
   },
   {
@@ -177,7 +183,7 @@ export function initGuide(options) {
 
 function setGuide(open, { save = true, section } = {}) {
   document.body.classList.toggle('guide-open', open);
-  $('#guideBtn')?.setAttribute('aria-expanded', String(open));
+  $('#guideTab')?.setAttribute('aria-expanded', String(open));
   $('#guideRail')?.setAttribute('aria-hidden', String(!open));
   if (open) {
     loadShots();

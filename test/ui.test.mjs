@@ -15,7 +15,7 @@ describe('main menu rail', () => {
     assert.match(html, /<aside class="rail" id="rail" aria-label="Main menu">/);
     assert.match(html, /id="railToggle" aria-controls="rail" aria-expanded="true"/);
     assert.match(html, /id="menuBtn" aria-label="Menu \(m\)" aria-controls="rail"/);
-    for (const id of ['chatBtn', 'guideBtn', 'openSetup']) assert.match(html, new RegExp(`id="${id}"[^>]*aria-label="[^"]+"`), `${id} keeps a name when collapsed`);
+    for (const id of ['chatBtn', 'guideTab', 'helpBtn', 'openSetup']) assert.match(html, new RegExp(`id="${id}"[^>]*aria-label="[^"]+"`), `${id} keeps a name when collapsed`);
     assert.match(html, /<aside class="guide" id="guideRail"/, 'the guide rail lives in the same layout');
   });
 

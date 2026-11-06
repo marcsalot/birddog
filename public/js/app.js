@@ -3,14 +3,15 @@
 
 import { api } from './api.js';
 import {
-  PALETTE_NAMES, appearanceHTML, cyclePalette, initAppearance, setMode, setPalette, toggleTheme,
+  PALETTE_NAMES, cyclePalette, initAppearance, setMode, setPalette, toggleTheme,
 } from './appearance.js';
 import { chatOpen, closeChat, initChat, onChatEvent, toggleChat } from './chat.js';
 import { closeGuide, guideOpen, guideWide, initGuide, loadShots, onGuideEvent, openGuide, toggleGuide, toggleGuideWide } from './guide.js';
 import { bindOverview, overviewData, overviewHTML } from './overview.js';
 import { initWork } from './work.js';
 import { initProfiles } from './profiles.js';
-import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
+import { initNotify, notifySummary, poll as pollNotifications } from './notify.js';
+import { initPrefs } from './prefs.js';
 import { sourceMatches } from './source-search.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
 
@@ -328,6 +329,7 @@ async function refresh() {
 }
 
 function savePrefs(patch) {
+  st.prefs = { ...(st.prefs ?? {}), ...patch };
   api.savePrefs(patch).catch((err) => toast(`⚠ Could not save preference: ${esc(err.message)}`));
 }
 
@@ -447,7 +449,8 @@ async function loadMessage(i) {
       return;
     }
     const m = r.message;
-    box.innerHTML = `<dl class="kv mail-head"><dt>From</dt><dd>${esc(m.from)}</dd><dt>To</dt><dd>${esc(m.to)}</dd>${m.cc ? `<dt>Cc</dt><dd>${esc(m.cc)}</dd>` : ''}${m.date ? `<dt>Date</dt><dd>${esc(m.date)}</dd>` : ''}</dl>
+    const when = m.date && !Number.isNaN(Date.parse(m.date)) ? new Date(m.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : m.date;
+    box.innerHTML = `<dl class="kv mail-head">${i.meta?.fields?.From ? '' : `<dt>From</dt><dd>${esc(m.from)}</dd>`}<dt>To</dt><dd>${esc(m.to)}</dd>${m.cc ? `<dt>Cc</dt><dd>${esc(m.cc)}</dd>` : ''}${when ? `<dt>Sent</dt><dd>${esc(when)}</dd>` : ''}</dl>
       <div class="mail-text" tabindex="0" aria-label="Message text">${esc(m.text || '(no text)')}</div>
       <div class="msg">${m.html ? 'Shown as plain text: no images or tracking pixels load. ' : ''}${m.attachments?.length ? `Attachments: ${esc(m.attachments.join(', '))}.` : ''}</div>`;
   } catch (err) { box.innerHTML = `<div class="msg bad">${esc(err.message)}</div>`; }
@@ -719,15 +722,59 @@ function closeAll() {
   document.activeElement?.blur?.();
   document.querySelectorAll('.scrim.open').forEach((s) => s.classList.remove('open'));
   closeSnooze();
-  closeAppear();
-  closeNotifyPanel();
+  closeHelp();
 }
 const overlay = () => document.querySelector('.scrim.open');
 
-const appearOpen = () => $('#appear').classList.contains('open');
-function renderAppear() { $('#appear').innerHTML = appearanceHTML(); }
-function openAppear() { closeAll(); renderAppear(); $('#appear').classList.add('open'); }
-function closeAppear() { $('#appear').classList.remove('open'); }
+// ---------------------------------------------------------------------------
+// Preferences (one window: appearance, notifications, profiles, email, layout, about)
+
+const prefsUi = initPrefs({
+  api,
+  prefs: () => st.prefs,
+  action(a) {
+    if (a === 'edit-profiles') { closeAll(); return prof.open('edit'); }
+    if (a === 'setup') { closeAll(); return openSetup(); }
+    if (a === 'show-all') { setHidden([]); return prefsUi.render(); }
+    const [kind, v, on] = a.split(':');
+    if (kind === 'profile') return prof.pick(v);
+    if (kind === 'email') return setEmailOpen(v);
+    if (kind === 'layout') {
+      const yes = on === 'true';
+      if (v === 'railOpen') setRail(yes);
+      else if (v === 'guideOpen') { savePrefs({ guideOpen: yes }); }
+      else if (v === 'showNextStep') { savePrefs({ hideNextStep: !yes }); if (!yes) { st.nextStep = null; render(); } }
+    }
+  },
+});
+function openPrefs(section) { closeAll(); prefsUi.open(section); $('#prefsScrim').classList.add('open'); }
+
+// ---------------------------------------------------------------------------
+// Help menu (the ? top right): the guide, shortcuts, what's new, links
+
+const helpOpen = () => !$('#helpMenu').hidden;
+function openHelp() {
+  closeAcct();
+  const item = (a, label, k = '') => `<button role="menuitem" data-help="${a}">${label}${k ? `<kbd>${k}</kbd>` : ''}</button>`;
+  const link = (href, label) => `<a role="menuitem" href="${href}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`;
+  $('#helpMenu').innerHTML = `<div class="acct-items">${item('guide', guideOpen() ? 'Close the guide' : 'Open the guide', 'g')}${item('keys', 'Keyboard shortcuts', '?')}${item('tour', 'Run the setup wizard')}
+    <hr>${link('https://github.com/marcsalot/birddog/blob/main/CHANGELOG.md', 'What\'s new')}${link('https://github.com/marcsalot/birddog#readme', 'README')}${link('https://marcsalot.github.io/birddog/', 'Website and live demo')}${link('https://github.com/marcsalot/birddog/issues/new', 'Report a problem')}</div>`;
+  $('#helpMenu').hidden = false;
+  $('#helpBtn').setAttribute('aria-expanded', 'true');
+  $('#helpMenu [role=menuitem]')?.focus();
+}
+function closeHelp({ focus = false } = {}) {
+  if (!helpOpen()) return;
+  $('#helpMenu').hidden = true;
+  $('#helpBtn').setAttribute('aria-expanded', 'false');
+  if (focus) $('#helpBtn').focus();
+}
+function helpAction(a) {
+  closeHelp();
+  if (a === 'guide') return toggleGuide();
+  if (a === 'keys') return openOverlay('#helpScrim');
+  if (a === 'tour') return openWizard();
+}
 
 // ---------------------------------------------------------------------------
 // Command palette
@@ -745,8 +792,10 @@ function commands() {
     { label: 'Refresh all sources', k: 'r', run: refresh },
     ...(sel?.meta?.command ? [{ label: `Copy next step: ${sel.meta.command}`, k: 'c', run: () => copy(sel.meta.command, 'command') }] : []),
     { label: 'Toggle dark / light', k: 't', run: () => toggleTheme() },
-    { label: 'Appearance…', run: openAppear },
-    { label: 'Notifications…', run: () => toggleNotifyPanel() },
+    { label: 'Preferences…', k: ',', run: () => openPrefs() },
+    { label: 'Appearance…', run: () => openPrefs('appearance') },
+    { label: `Notifications… (${notifySummary()})`, run: () => openPrefs('notifications') },
+    { label: 'Help…', run: () => openHelp() },
     { label: 'Switch profile (Work, Home…)', k: 'P', run: () => prof.cycle() },
     ...Object.entries(EMAIL_OPEN).map(([k, v]) => ({ label: `Open emails in ${v}`, run: () => setEmailOpen(k) })),
     { label: 'Profiles…', run: () => prof.open() },
@@ -1615,40 +1664,33 @@ let resizeTimer = null;
 window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (st.view === 'overview') renderOverview(); }, 120); });
 $('#openSetup').onclick = () => { closeMobileRail(); openSetup(); };
 $('#refresh').onclick = refresh;
-$('#appearBtn').onclick = (e) => { e.stopPropagation(); appearOpen() ? closeAppear() : openAppear(); };
 $('#chatBtn').onclick = () => toggleChat();
 $('#railToggle').onclick = () => toggleRail();
 $('#menuBtn').onclick = () => openMobileRail();
 $('#railScrim').onclick = () => closeMobileRail();
-$('#guideBtn').onclick = () => toggleGuide();
+$('#guideTab').onclick = () => toggleGuide();
+$('#helpBtn').onclick = (e) => { e.stopPropagation(); helpOpen() ? closeHelp() : openHelp(); };
+$('#helpMenu').addEventListener('click', (e) => { const b = e.target.closest('[data-help]'); if (b) { e.stopPropagation(); helpAction(b.dataset.help); } else if (e.target.closest('a')) closeHelp(); });
 $('#meBtn').onclick = (e) => { e.stopPropagation(); acctOpen() ? closeAcct() : openAcct(); };
 $('#acctMenu').addEventListener('click', (e) => { const b = e.target.closest('[data-acct]'); if (b) { e.stopPropagation(); acctAction(b.dataset.acct); } });
-$('#acctMenu').addEventListener('keydown', (e) => {
-  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
-  e.preventDefault(); e.stopPropagation();
-  const items = [...document.querySelectorAll('#acctMenu [role=menuitem]')];
-  const i = items.indexOf(document.activeElement);
-  const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-  items[next]?.focus();
-});
+for (const menu of ['#acctMenu', '#helpMenu']) {
+  $(menu).addEventListener('keydown', (e) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault(); e.stopPropagation();
+    const items = [...document.querySelectorAll(`${menu} [role=menuitem]`)];
+    const i = items.indexOf(document.activeElement);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  });
+}
 for (const type of ['click', 'input', 'keydown', 'pointerdown', 'dblclick']) $('#guideRail').addEventListener(type, (e) => { if (onGuideEvent(e)) e.stopPropagation(); });
 for (const type of ['click', 'change', 'submit', 'keydown']) $('#chatPanel').addEventListener(type, (e) => { e.stopPropagation(); onChatEvent(e); });
-$('#notifyBtn').onclick = (e) => { e.stopPropagation(); closeAppear(); closeAcct(); toggleNotifyPanel(); };
-$('#notifyPanel').addEventListener('change', (e) => { onNotifyPanelEvent(e); });
-$('#notifyPanel').addEventListener('click', (e) => { e.stopPropagation(); onNotifyPanelEvent(e); });
 $('#undoBtn').onclick = runUndo;
 $('#pInput').addEventListener('input', () => { pSel = 0; renderPalette(); });
 $('#setupHead').addEventListener('input', (e) => { if (e.target.id === 'srcSearch') { st.srcQuery = e.target.value; filterCards(); } });
-$('#appear').onclick = (e) => {
-  e.stopPropagation();
-  const b = e.target.closest('[data-pal],[data-mode]');
-  if (!b) return;
-  if (b.dataset.pal) setPalette(b.dataset.pal); else setMode(b.dataset.mode);
-};
 document.addEventListener('mousedown', (e) => {
-  if (appearOpen() && !e.target.closest('#appear,#appearBtn')) closeAppear();
   if (acctOpen() && !e.target.closest('#acctMenu,#meBtn')) closeAcct();
-  if (notifyPanelOpen() && !e.target.closest('#notifyPanel,#notifyBtn')) closeNotifyPanel();
+  if (helpOpen() && !e.target.closest('#helpMenu,#helpBtn')) closeHelp();
 });
 
 document.addEventListener('change', (e) => {
@@ -1660,9 +1702,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (e.target.id === 'srcSearch' && e.target.value) { e.preventDefault(); e.target.value = ''; st.srcQuery = ''; return filterCards(); }
     if (acctOpen()) return closeAcct({ focus: true });
-    if (appearOpen()) return closeAppear();
+    if (helpOpen()) return closeHelp({ focus: true });
     if (prof.isOpen()) return prof.close();
-    if (notifyPanelOpen()) return closeNotifyPanel();
     if (chatOpen()) return closeChat();
     if (document.body.classList.contains('rail-mobile-open')) return closeMobileRail();
     if (overlay() || snoozeOpen()) return closeAll();
@@ -1711,6 +1752,7 @@ document.addEventListener('keydown', (e) => {
     // No toast here: it would replace a pending "Undo" toast, and the change is visible anyway.
     case 't': toggleTheme(); return;
     case 'p': cyclePalette(); return;
+    case ',': e.preventDefault(); return openPrefs();
     case 'P': e.preventDefault(); return prof.cycle();
     case '/': e.preventDefault(); return openPalette();
     case '?': return openOverlay('#helpScrim');
@@ -1748,10 +1790,10 @@ function renderAcct() {
     ? `<div class="acct-who"><span class="avatar" aria-hidden="true">${esc((user.email ?? user.name ?? '?')[0].toUpperCase())}</span><div><b>${esc(user.name ?? user.email ?? 'Signed in')}</b>${user.email && user.name ? `<small>${esc(user.email)}</small>` : ''}</div></div>`
     : '<div class="acct-who"><div><b>Just you, on this computer</b><small>No sign-in: Birddog only listens on this machine.</small></div></div>';
   const item = (a, label, k = '') => `<button role="menuitem" data-acct="${a}">${label}${k ? `<kbd>${k}</kbd>` : ''}</button>`;
-  $('#acctMenu').innerHTML = `${who}<div class="acct-items">${item('setup', 'Sources &amp; settings')}${item('appear', 'Appearance…', 'p')}${item('keys', 'Keyboard shortcuts', '?')}${user ? item('logout', 'Sign out') : ''}</div>`;
+  $('#acctMenu').innerHTML = `${who}<div class="acct-items">${item('prefs', 'Preferences…', ',')}${item('setup', 'Sources &amp; settings')}${user ? item('logout', 'Sign out') : ''}</div>`;
 }
 function openAcct() {
-  closeAppear(); closeNotifyPanel();
+  closeHelp();
   renderAcct();
   $('#acctMenu').hidden = false;
   $('#meBtn').setAttribute('aria-expanded', 'true');
@@ -1766,8 +1808,7 @@ function closeAcct({ focus = false } = {}) {
 function acctAction(a) {
   closeAcct();
   if (a === 'setup') return openSetup();
-  if (a === 'appear') return openAppear();
-  if (a === 'keys') return openOverlay('#helpScrim');
+  if (a === 'prefs') return openPrefs();
   if (a === 'logout') return signOut();
 }
 
@@ -1794,7 +1835,8 @@ async function boot() {
   let prefs = {};
   try { prefs = await api.prefs(); } catch { /* use defaults */ }
   api.me().then(renderMe).catch(() => {});
-  initAppearance({ prefs, save: savePrefs, changed: () => { if (appearOpen()) renderAppear(); loadShots(); } });
+  st.prefs = prefs;
+  initAppearance({ prefs, save: savePrefs, changed: () => { if (prefsUi.isOpen()) prefsUi.render(); loadShots(); } });
   initGuide({ open: !!prefs.guideOpen, width: prefs.guideWidth ?? null, save: (open) => savePrefs({ guideOpen: open }), saveWidth: (w) => savePrefs({ guideWidth: w }), theme: () => document.documentElement.dataset.theme });
   st.hidden = new Set(prefs.hiddenSources ?? []);
   st.emailOpen = prefs.emailOpen ?? 'birddog';

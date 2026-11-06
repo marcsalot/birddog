@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Screenshots for the user guide (public/guide/*.jpg), in light and dark.
+// Screenshots for the user guide (public/guide/*.jpg), in light and dark, plus the README's
+// screenshot (docs/screenshot.png) and animated tour (docs/demo.gif, needs ffmpeg).
 //
 //   npm run screenshots
 //
@@ -10,7 +11,7 @@
 // Needs a Chromium for Playwright: `npx playwright install chromium` (or set
 // BIRDDOG_CHROMIUM to a Chrome/Chromium executable).
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -63,7 +64,9 @@ const shots = [];
 
 try {
   for (const mode of ['light', 'dark']) {
-    const page = await browser.newPage({ viewport: VIEWPORT, colorScheme: mode, reducedMotion: 'reduce' });
+    const page = await browser.newPage({ viewport: VIEWPORT, colorScheme: mode, reducedMotion: 'reduce', permissions: ['notifications'] });
+    // Headless Chromium reports notifications as blocked whatever it's granted; show the normal state.
+    await page.addInitScript(() => { try { Object.defineProperty(Notification, 'permission', { get: () => 'granted' }); } catch { /* no Notification API */ } });
     const save = async (name) => {
       await page.evaluate(() => document.querySelector('#toast')?.classList.remove('show'));
       const file = path.join(OUT, `${name}-${mode}.jpg`);
@@ -96,6 +99,34 @@ try {
     await page.waitForFunction(() => /start with/.test(document.querySelector('#chatPanel .msg-bot')?.textContent ?? ''), null, { timeout: 15_000 });
     await page.waitForTimeout(200);
     await save('chat');
+    await page.keyboard.press('Escape');
+
+    // The board, the profile switcher, Preferences, and an email read in Birddog.
+    await page.keyboard.press('b');
+    await page.waitForSelector('.lane');
+    await page.waitForTimeout(300);
+    await save('board');
+    await page.keyboard.press('1');
+    await page.click('#profileBtn');
+    await page.waitForSelector('#profilePanel.open .pf-row');
+    await page.waitForTimeout(200);
+    await save('profiles');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press(',');
+    await page.waitForSelector('#prefsScrim.open');
+    await page.click('[data-pref-sec="notifications"]');
+    await page.check('[data-n="enabled"]').catch(() => {});
+    await page.waitForTimeout(400);
+    await save('prefs');
+    await page.click('[data-pref-sec="email"]');
+    await page.check('[data-pref-email="birddog"]');
+    await page.keyboard.press('Escape');
+    await page.click('.row:has-text("Can you approve the Q4 vendor invoice")');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#drawer.open .mail-text');
+    await page.waitForTimeout(300);
+    await save('email');
+    await page.keyboard.press('Escape');
 
     // The first-run screen, as a brand-new install shows it (demo folders, never your disk).
     await page.evaluate(() => fetch('/api/prefs', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seenSetup: false }) }));
@@ -107,8 +138,68 @@ try {
     await page.waitForSelector('.row');
     await page.close();
   }
+  await docsImages(browser, url);
   console.log(`\n  Saved ${shots.length} screenshots (demo data only):\n${shots.map((s) => `    ${s}`).join('\n')}\n`);
 } finally {
   await browser.close();
   child.kill('SIGTERM');
+}
+
+/** docs/screenshot.png (the README's picture) and docs/demo.gif (a short tour), in light mode. */
+async function docsImages(browserInstance, base) {
+  const DOCS = path.join(ROOT, 'docs');
+  const page = await browserInstance.newPage({ viewport: { width: 1280, height: 814 }, colorScheme: 'light', reducedMotion: 'reduce' });
+  const frames = fs.mkdtempSync(path.join(os.tmpdir(), 'birddog-frames-'));
+  const list = [];
+  const frame = async (seconds) => {
+    await page.evaluate(() => document.querySelector('#toast')?.classList.remove('show'));
+    const f = path.join(frames, `f${String(list.length).padStart(3, '0')}.png`);
+    await page.screenshot({ path: f });
+    list.push({ f, seconds });
+  };
+  try {
+    await page.goto(base);
+    await page.waitForSelector('.ov-grid');
+    await page.evaluate(() => document.querySelector('.viz-tip')?.setAttribute('hidden', ''));
+    await frame(2.2);
+    await page.keyboard.press('1');
+    await page.waitForSelector('.row');
+    await frame(1.6);
+    await page.keyboard.press('j');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#drawer.open');
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: path.join(DOCS, 'screenshot.png') });
+    shots.push('docs/screenshot.png');
+    await frame(2.4);
+    await page.keyboard.press('Escape');
+    await page.click('.row:has-text("Can you approve the Q4 vendor invoice")');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#drawer.open .mail-text');
+    await page.waitForTimeout(250);
+    await frame(2.4);
+    await page.keyboard.press('Escape');
+    await page.click('#profileBtn');
+    await page.waitForSelector('#profilePanel.open .pf-row');
+    await frame(1.4);
+    await page.click('[data-pf-pick="home"]');
+    await page.waitForTimeout(800);
+    await frame(2.0);
+    await page.evaluate(() => fetch('/api/prefs', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'all' }) }));
+    await page.keyboard.press('b');
+    await page.waitForSelector('.lane');
+    await page.waitForTimeout(300);
+    await frame(2.2);
+    await page.keyboard.press('w');
+    await page.waitForTimeout(800);
+    await frame(2.2);
+  } finally { await page.close(); }
+
+  const ff = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+  if (ff.error || ff.status !== 0) { console.log('  ffmpeg not found: skipped docs/demo.gif'); return; }
+  const concat = path.join(frames, 'list.txt');
+  fs.writeFileSync(concat, `${list.map((x) => `file '${x.f}'\nduration ${x.seconds}`).join('\n')}\nfile '${list.at(-1).f}'\n`);
+  const r = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', concat, '-vf', 'fps=8,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3', '-loop', '0', path.join(DOCS, 'demo.gif')], { stdio: 'inherit' });
+  if (r.status === 0) shots.push('docs/demo.gif');
+  fs.rmSync(frames, { recursive: true, force: true });
 }
