@@ -172,9 +172,10 @@ export function createNotifier({ dir, getSettings, system = showSystemNotificati
 
   /**
    * Look at a fresh snapshot (items already annotated with done/snoozed status).
+   * muted(event) → true marks an event as known without announcing it (profiles).
    * Returns the events that were queued for delivery.
    */
-  async function observe({ items, sources }) {
+  async function observe({ items, sources, muted = () => false }) {
     if (!loaded) await load();
     const settings = getSettings();
     const t = now();
@@ -188,6 +189,7 @@ export function createNotifier({ dir, getSettings, system = showSystemNotificati
       if (seen[e.key]) continue;
       seen[e.key] = t;
       if (baseline) continue;
+      if (muted(e)) continue; // outside the profile that's showing: known now, so switching later is no burst
       const why = suppressedBecause(settings, e, t);
       if (why) continue;
       const ev = { id: ++seq, at: t, ...e };

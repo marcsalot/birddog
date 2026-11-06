@@ -9,6 +9,7 @@ import { chatOpen, closeChat, initChat, onChatEvent, toggleChat } from './chat.j
 import { closeGuide, guideOpen, guideWide, initGuide, loadShots, onGuideEvent, openGuide, toggleGuide, toggleGuideWide } from './guide.js';
 import { bindOverview, overviewData, overviewHTML } from './overview.js';
 import { initWork } from './work.js';
+import { initProfiles } from './profiles.js';
 import { closeNotifyPanel, initNotify, notifyPanelOpen, onNotifyPanelEvent, poll as pollNotifications, toggleNotifyPanel } from './notify.js';
 import { sourceMatches } from './source-search.js';
 import { esc, plain, relTime, shortAge, shortUntil, snoozeChoices, whenLabel, whyHTML } from './format.js';
@@ -28,6 +29,8 @@ const SRC = {
   pagerduty: { short: 'PD', c: '#06ac38' },
   slack: { short: 'SL', c: '#611f69' },
   teams: { short: 'TM', c: '#5b5fc7' },
+  discord: { short: 'DC', c: '#5865f2' },
+  thunderbird: { short: 'TB', c: '#0a84ff' },
 };
 const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
 const sourceName = (id) => st.sources?.find((x) => x.id === id)?.name ?? id;
@@ -72,6 +75,7 @@ const $ = (s) => document.querySelector(s);
 const byId = (id) => st.items.find((i) => i.id === id);
 // The Work views (board, worktrees & slots) draw into the same content area.
 const work = initWork({ root: () => $('#list'), currentView: () => st.view, copy });
+const prof = initProfiles({ changed: () => load({ quiet: true }), toast: (h) => toast(h) });
 
 function matches(i, q) {
   const hay = `${i.title} ${plain(i.why)} ${Object.values(i.meta?.fields ?? {}).join(' ')}`.toLowerCase();
@@ -268,6 +272,7 @@ function applyData(data) {
   st.sources = [...data.sources].sort(byName);
   st.refreshedAt = data.refreshedAt;
   st.loaded = true;
+  prof.update(data.profile);
 }
 
 async function load({ quiet = false } = {}) {
@@ -662,6 +667,10 @@ function commands() {
     { label: 'Toggle dark / light', k: 't', run: () => toggleTheme() },
     { label: 'Appearance…', run: openAppear },
     { label: 'Notifications…', run: () => toggleNotifyPanel() },
+    { label: 'Switch profile (Work, Home…)', k: 'P', run: () => prof.cycle() },
+    { label: 'Profiles…', run: () => prof.open() },
+    { label: 'Profile: Auto (by schedule)', run: () => prof.pick('auto') },
+    { label: 'Profile: All sources', run: () => prof.pick('all') },
     { label: 'Ask Fetch (chat)…', k: 'a', run: () => toggleChat() },
     { label: guideOpen() ? 'Hide the guide' : 'Open the guide', k: 'g', run: () => toggleGuide() },
     { label: guideWide() ? 'Narrow the guide' : 'Widen the guide', k: 'G', run: () => { if (!guideOpen()) openGuide(); toggleGuideWide(); } },
@@ -1039,16 +1048,17 @@ function tokenCardHTML(src) {
   const s = src.settings ?? {};
   const setup = src.setup;
   const tokenName = src.secretNames?.token;
+  const local = !setup.token; // reads files on this computer (Thunderbird): nothing to paste
   const hasToken = !!src.secrets?.token;
   const viaOauth = setup.oauth && s.auth === 'oauth' && oauthState(setup.oauth)?.connected;
   const complete = setup.fields.filter((f) => !f.optional).every((f) => s[f.key]);
-  const connected = src.enabled && (viaOauth || (hasToken && complete));
+  const connected = src.enabled && (viaOauth || ((hasToken || local) && complete));
   const { status, cls, label, msg, summary } = cardState(src, ui);
   if (connected && !ui.editing && status !== 'stale') {
-    const how = viaOauth ? `signed in with ${esc(oauthState(setup.oauth).name)}` : envSecret(tokenName)?.from ? `token from <code>${esc(envSecret(tokenName).from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`;
+    const how = local ? 'reading files on this computer' : viaOauth ? `signed in with ${esc(oauthState(setup.oauth).name)}` : envSecret(tokenName)?.from ? `token from <code>${esc(envSecret(tokenName).from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`;
     return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
       <div class="msg">Connected, ${how}${summary}</div>${msg}${replySwitchHTML(src)}
-      <div class="row-btns"><button class="btn" data-edit="${src.id}">Change</button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button>${viaOauth ? `<button class="btn" data-oauth-off="${esc(setup.oauth)}">Disconnect</button>` : `<button class="btn" data-disconnect="${src.id}" ${ui.busy ? 'disabled' : ''}>Disconnect</button>`}</div></div>`;
+      <div class="row-btns"><button class="btn" data-edit="${src.id}">Change</button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button>${viaOauth ? `<button class="btn" data-oauth-off="${esc(setup.oauth)}">Disconnect</button>` : `<button class="btn" data-disconnect="${src.id}" ${ui.busy ? 'disabled' : ''}>${local ? 'Turn off' : 'Disconnect'}</button>`}</div></div>`;
   }
   const d = ui.draft ?? Object.fromEntries(setup.fields.map((f) => [f.key, s[f.key] ?? '']));
   const off = ui.busy ? 'disabled' : '';
@@ -1057,11 +1067,11 @@ function tokenCardHTML(src) {
     ${setup.oauth ? signInRow(setup.oauth, { label: `Sign in with ${src.name}` }) : ''}${setup.oauth && signInReady(oauthState(setup.oauth)) ? '<div class="msg or-token">Or use a token:</div>' : ''}
     <div class="fields">
       ${setup.fields.map((f) => `<label><span>${esc(f.label)}${f.optional ? ' <i>(optional)</i>' : ''}</span><input data-f="${src.id}.${esc(f.key)}" value="${esc(d[f.key] ?? '')}" placeholder="${esc(f.placeholder ?? '')}" autocomplete="off" spellcheck="false"></label>`).join('')}
-      ${env ? '' : `<label class="full"><span>${esc(setup.token.label)} · <a href="${esc(setup.token.help)}" target="_blank" rel="noopener noreferrer">how to get one ↗</a></span><input data-f="${src.id}.token" type="password" value="" placeholder="${hasToken ? `Saved in ${esc(st.setup.secretStore)} · leave blank to keep it` : esc(setup.token.placeholder ?? 'Paste your token')}" autocomplete="off"></label>`}
+      ${env || local ? '' : `<label class="full"><span>${esc(setup.token.label)} · <a href="${esc(setup.token.help)}" target="_blank" rel="noopener noreferrer">how to get one ↗</a></span><input data-f="${src.id}.token" type="password" value="" placeholder="${hasToken ? `Saved in ${esc(st.setup.secretStore)} · leave blank to keep it` : esc(setup.token.placeholder ?? 'Paste your token')}" autocomplete="off"></label>`}
     </div>
     ${setup.notes ? `<div class="msg">${esc(setup.notes)}</div>` : ''}
-    ${env ? envSecretHTML(tokenName, 'The token') : `<div class="msg">The token is stored in ${esc(st.setup.secretStore)}, never in config.json. Birddog only reads.</div>`}${msg}
-    <div class="row-btns"><button class="btn primary" data-connect="${src.id}" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? `<button class="btn" data-cancel="${src.id}">Cancel</button>` : ''}${hasToken ? `<button class="btn" data-disconnect="${src.id}" ${off}>Disconnect</button>` : ''}</div></div>`;
+    ${local ? msg : env ? envSecretHTML(tokenName, 'The token') : `<div class="msg">The token is stored in ${esc(st.setup.secretStore)}, never in config.json. Birddog only reads.</div>`}${local ? '' : msg}
+    <div class="row-btns"><button class="btn primary" data-connect="${src.id}" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? `<button class="btn" data-cancel="${src.id}">Cancel</button>` : ''}${hasToken ? `<button class="btn" data-disconnect="${src.id}" ${off}>Disconnect</button>` : local && src.enabled ? `<button class="btn" data-disconnect="${src.id}" ${off}>Turn off</button>` : ''}</div></div>`;
 }
 
 /** A source you can only reach through a sign-in (Microsoft Teams). */
@@ -1412,7 +1422,8 @@ async function disconnectCard(id) {
   try {
     st.setup = await api.disconnectSource(id);
     const e = envSecret(st.setup.sources.find((x) => x.id === id)?.secretNames?.token ?? (id === 'cal' ? 'cal-url' : `${id}-token`));
-    st.cards[id] = { msg: e?.from ? `Switched off. The secret still comes from ${e.from}; remove it there.` : 'Disconnected. The token was removed.', msgGood: true };
+    const local = st.setup.sources.find((x) => x.id === id)?.setup && !st.setup.sources.find((x) => x.id === id).setup.token;
+    st.cards[id] = { msg: local ? 'Switched off.' : e?.from ? `Switched off. The secret still comes from ${e.from}; remove it there.` : 'Disconnected. The token was removed.', msgGood: true };
     await load();
   } catch (err) {
     st.cards[id] = { msg: err.message, msgGood: false };
@@ -1531,6 +1542,7 @@ document.addEventListener('keydown', (e) => {
     if (e.target.id === 'srcSearch' && e.target.value) { e.preventDefault(); e.target.value = ''; st.srcQuery = ''; return filterCards(); }
     if (acctOpen()) return closeAcct({ focus: true });
     if (appearOpen()) return closeAppear();
+    if (prof.isOpen()) return prof.close();
     if (notifyPanelOpen()) return closeNotifyPanel();
     if (chatOpen()) return closeChat();
     if (document.body.classList.contains('rail-mobile-open')) return closeMobileRail();
@@ -1580,6 +1592,7 @@ document.addEventListener('keydown', (e) => {
     // No toast here: it would replace a pending "Undo" toast, and the change is visible anyway.
     case 't': toggleTheme(); return;
     case 'p': cyclePalette(); return;
+    case 'P': e.preventDefault(); return prof.cycle();
     case '/': e.preventDefault(); return openPalette();
     case '?': return openOverlay('#helpScrim');
     case 'b': return setView('board');

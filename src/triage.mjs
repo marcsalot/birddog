@@ -10,6 +10,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fingerprint } from './items.mjs';
 import { DEFAULT_NOTIFY, normalizeNotify } from './notify.mjs';
+import { isChoice } from './profiles.mjs';
 import { readJson, writeJson } from './store.mjs';
 
 const PRUNE_AFTER_MS = 30 * 86_400_000;
@@ -25,6 +26,7 @@ export const DEFAULT_PREFS = Object.freeze({
   guideOpen: false,
   guideWidth: null,
   hideNextStep: false,
+  profile: 'auto', // which profile is showing: auto, all, or a profile id (src/profiles.mjs)
 });
 
 const PREF_CHECKS = {
@@ -37,6 +39,7 @@ const PREF_CHECKS = {
   guideOpen: (v) => typeof v === 'boolean',
   guideWidth: (v) => v === null || (Number.isInteger(v) && v >= 280 && v <= 2400),
   hideNextStep: (v) => typeof v === 'boolean',
+  profile: isChoice,
 };
 
 export class Triage {

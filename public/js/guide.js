@@ -30,7 +30,7 @@ export const SECTIONS = [
       <p>Tokens and private links go to your OS keychain, never to config.json. If a source fails, its last good items stay, marked <b>stale</b>, with a <b>Retry</b> button.</p>`,
   },
   {
-    id: 'more', title: 'More sources (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Teams)', words: 'gitlab linear azure devops boards repos sentry pagerduty on call incident slack teams microsoft chat dm mention actions ci dependabot security token',
+    id: 'more', title: 'More sources (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Teams, Discord, Thunderbird)', words: 'gitlab linear azure devops boards repos sentry pagerduty on call incident slack teams microsoft chat dm mention actions ci dependabot security token discord bot server thunderbird email mail inbox unread starred',
     html: `<p>Switch these on in <b>Sources &amp; settings</b> when you use them. Each one asks for the smallest read-only access that works, and keeps its token in your keychain.</p>
       <ul>
         <li><b>GitLab</b>: merge requests waiting for your review, your MRs with a failed pipeline or conflicts, and issues assigned to you. Use <i>Sign in with GitLab</i> (needs an application with the <code>read_api</code> scope) or a personal access token with <code>read_api</code>. Self-managed GitLab works too.</li>
@@ -40,9 +40,11 @@ export const SECTIONS = [
         <li><b>PagerDuty</b>: incidents paged to you (triggered ones are <b>Now</b>), and when you're on call. Needs a user API token.</li>
         <li><b>Slack</b>: messages that mention you, and DMs waiting for your reply. Needs a user token (<code>xoxp-…</code>) from your own Slack app, with <code>search:read</code>, <code>im:read</code>, <code>im:history</code> and <code>users:read</code>. Add <code>chat:write</code> too if you want to <a href="#" data-guide-link="replies">reply from Birddog</a>.</li>
         <li><b>Microsoft Teams</b>: 1:1 chats waiting for your reply, and @mentions of you in group and meeting chats. Use <i>Sign in with Microsoft Teams</i> (a work or school account; Birddog asks for <code>Chat.Read</code>). Some organizations make an admin approve apps first; the sign-in page says so. Channel posts aren't included: reading them needs an admin-only permission.</li>
+        <li><b>Discord</b>: @mentions of you, or a role you have, that you haven't answered in that channel since. Discord doesn't let apps read your own account, so you make a bot (developer portal → Bot → Reset Token, switch on <i>Message Content Intent</i>), invite it to your servers with <i>View Channels</i> and <i>Read Message History</i>, and paste its token and your user ID (Developer Mode → right-click yourself → <i>Copy User ID</i>). It never sees your DMs.</li>
+        <li><b>Thunderbird</b>: unread mail from the last week, and starred mail you haven't replied to, read from Thunderbird's own files on this computer. No token. Mark a message read in Thunderbird and it leaves the list.</li>
         <li><b>GitHub</b> also shows <b>failing Actions runs</b> on branches you pushed this week, and <b>Dependabot alerts</b> on those repos. Turn them off with <code>"actions": false</code> or <code>"security": false</code> under <code>sources.github</code>.</li>
       </ul>
-      <p>In Docker, pass the tokens as <code>GITLAB_TOKEN</code>, <code>LINEAR_API_KEY</code>, <code>AZURE_DEVOPS_EXT_PAT</code>, <code>SENTRY_AUTH_TOKEN</code>, <code>BIRDDOG_PAGERDUTY_TOKEN</code> or <code>BIRDDOG_SLACK_TOKEN</code>.</p>`,
+      <p>In Docker, pass the tokens as <code>GITLAB_TOKEN</code>, <code>LINEAR_API_KEY</code>, <code>AZURE_DEVOPS_EXT_PAT</code>, <code>SENTRY_AUTH_TOKEN</code>, <code>BIRDDOG_PAGERDUTY_TOKEN</code>, <code>BIRDDOG_SLACK_TOKEN</code> or <code>BIRDDOG_DISCORD_TOKEN</code>.</p>`,
   },
   {
     id: 'logins', title: 'Sign-ins (GitHub, Google, Microsoft, GitLab, Linear, PagerDuty, iCloud)', words: 'oauth login sign in google microsoft outlook office 365 atlassian jira gitlab linear pagerduty icloud apple caldav app-specific password client id register unverified own app',
@@ -116,6 +118,11 @@ export const SECTIONS = [
         <li>Switch sources and kinds on and off, set <b>quiet hours</b>, or <b>snooze all</b> for an hour or until tomorrow.</li>
         <li>No dashboard running? <code>birddog notify</code> keeps the system notifications coming. <code>birddog notify --test</code> checks that your OS lets them through.</li>
       </ul>`,
+  },
+  {
+    id: 'profiles', title: 'Profiles (Work, Home)', words: 'profile profiles work home schedule auto switch filter hide sources focus weekend on call',
+    html: `<p>The <b>profile</b> button in the top bar (or ${keys('⇧P')}) picks which sources you see. <b>Work</b> shows every source, <b>Home</b> shows local git, GitHub, calendar, Discord and Thunderbird. <b>Auto</b> switches by schedule: Work on weekdays from 08:00 to 18:00, Home the rest of the time.</p>
+      <p><b>Edit profiles</b> renames them, picks their sources and hours, turns notifications off for one, and adds your own (up to 12). Every source keeps refreshing, so switching is instant. A profile only changes what you see, what can notify you, and what Claude sees over MCP.</p>`,
   },
   {
     id: 'work', title: 'Board, worktrees and slots', words: 'board swimlane lane kanban jira status code review pass ready for deployment worktree git slot dev qa environment claim port lock version',

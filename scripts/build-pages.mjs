@@ -23,7 +23,7 @@ const quiet = { warn() {}, error() {}, log() {} };
 
 /** The GET endpoints the UI reads, recorded as-is. */
 const READS = [
-  '/api/health', '/api/me', '/api/items', '/api/prefs', '/api/setup', '/api/firstrun', '/api/history?days=14',
+  '/api/health', '/api/me', '/api/items', '/api/prefs', '/api/setup', '/api/firstrun', '/api/history?days=14', '/api/profiles',
   '/api/oauth', '/api/connections/github', '/api/notifications/kinds',
   '/api/chat/status', '/api/chat/boundaries', '/api/chat/memory', '/api/board', '/api/workspace',
 ];

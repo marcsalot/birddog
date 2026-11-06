@@ -13,6 +13,8 @@ export const KEYWORDS = {
   pagerduty: 'incidents on call oncall alerts pages ops',
   slack: 'chat messages mentions dms direct',
   teams: 'microsoft teams chat messages mentions office 365 m365 work',
+  discord: 'chat messages mentions servers guilds community gaming home',
+  thunderbird: 'email mail inbox unread starred mozilla imap pop local home',
 };
 
 /**

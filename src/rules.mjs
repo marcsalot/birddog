@@ -122,6 +122,18 @@ export const RULES = [
     when: (s) => s.ageDays < 2,
     why: (s) => `${who(s.by)} messaged you **${ago(s.ageDays)}** ago · waiting for your reply`,
   },
+  {
+    id: 'email-starred', kind: 'email', urgency: 'today',
+    text: 'Starred email you haven\'t replied to → Today',
+    when: (s) => s.starred && !s.replied,
+    why: (s) => `**Starred** · from ${s.by ? `**${s.by}**` : 'someone'} ${ago(s.ageDays)} ago · not replied yet`,
+  },
+  {
+    id: 'email-unread-fresh', kind: 'email', urgency: 'today',
+    text: 'Unread email from the last day → Today',
+    when: (s) => s.unread && s.ageDays < 1,
+    why: (s) => `Unread · from ${s.by ? `**${s.by}**` : 'someone'} **${ago(s.ageDays)}** ago`,
+  },
   // ---- GitHub: today ---------------------------------------------------------
   {
     id: 'review-request', kind: 'review-request', urgency: 'today',
@@ -225,6 +237,12 @@ export const RULES = [
     why: (s) => `${who(s.by)} messaged you ${ago(s.ageDays)} ago · still unanswered`,
   },
   {
+    id: 'email-unread', kind: 'email', urgency: 'later',
+    text: 'Older unread email → Later',
+    when: () => true,
+    why: (s) => `${s.unread ? 'Unread' : 'Starred'} · from ${s.by ? `**${s.by}**` : 'someone'} ${ago(s.ageDays)} ago`,
+  },
+  {
     id: 'meeting-all-day', kind: 'meeting', urgency: 'later',
     text: 'All-day event today → Later',
     when: (s) => s.allDay && s.today,
@@ -258,7 +276,7 @@ export const RULES = [
     id: 'mention', kind: 'mention', urgency: 'later',
     text: 'Older unread @mention → Later',
     when: () => true,
-    why: (s) => `${who(s.by)} mentioned ${s.team ? 'your team' : 'you'} **${ago(s.ageDays)}** ago · still unread on GitHub`,
+    why: (s) => `${who(s.by)} mentioned ${s.team ? 'your team' : 'you'} **${ago(s.ageDays)}** ago · ${s.where === 'Discord' ? 'no reply from you since' : s.where ? `still waiting in ${s.where}` : 'still unread on GitHub'}`,
   },
   {
     id: 'issue-assigned', kind: 'issue', urgency: 'later',

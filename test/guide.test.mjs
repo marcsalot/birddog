@@ -9,7 +9,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('user guide', () => {
   it('covers the topics the app has', () => {
-    assert.deepEqual(SECTIONS.map((s) => s.id), ['start', 'sources', 'more', 'logins', 'triage', 'replies', 'shortcuts', 'notifications', 'work', 'chat', 'docker', 'mcp']);
+    assert.deepEqual(SECTIONS.map((s) => s.id), ['start', 'sources', 'more', 'logins', 'triage', 'replies', 'shortcuts', 'notifications', 'profiles', 'work', 'chat', 'docker', 'mcp']);
+    assert.deepEqual(searchGuide('weekend schedule'), ['profiles']);
     assert.deepEqual(searchGuide('qa slot'), ['work']);
   });
 

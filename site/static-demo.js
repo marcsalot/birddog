@@ -63,9 +63,37 @@
   const bad = (msg, status = 400) => json({ error: msg }, status);
   const now = () => new Date().toISOString();
 
+  // Profiles, as in src/profiles.mjs: the recording holds every item (profile "all"), and
+  // the page filters them by the profile you pick.
+  const mins = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+  function inSchedule(s, t) {
+    if (!s) return false;
+    const d = new Date(t);
+    const n = d.getHours() * 60 + d.getMinutes();
+    const from = mins(s.from);
+    const to = mins(s.to);
+    if (from < to) return s.days.includes(d.getDay()) && n >= from && n < to;
+    if (n >= from) return s.days.includes(d.getDay());
+    return n < to && s.days.includes((d.getDay() + 6) % 7);
+  }
+  function profileView() {
+    const pv = state.r['/api/profiles'];
+    const list = pv?.list ?? [];
+    const choice = state.prefs.profile ?? 'auto';
+    let profile = null;
+    let auto = false;
+    if (choice !== 'all') {
+      profile = list.find((p) => p.id === choice) ?? null;
+      if (!profile) { auto = true; profile = list.find((p) => inSchedule(p.schedule, Date.now())) ?? list.find((p) => !p.schedule) ?? list[0] ?? null; }
+    }
+    return { ...pv, choice: auto ? 'auto' : choice, active: profile?.id ?? 'all', name: profile?.name ?? 'All sources', auto, notify: profile ? profile.notify : true, list, profile };
+  }
   function itemsPayload() {
     state.items.refreshedAt = now();
-    return state.items;
+    const { profile, sources: _all, ...view } = profileView();
+    const shows = (id) => !profile || !profile.sources || profile.sources.includes(id);
+    const items = state.items.items.filter((i) => shows(i.source));
+    return { ...state.items, items, sources: state.items.sources.filter((x) => shows(x.id)), profile: { ...view, hidden: state.items.items.length - items.length } };
   }
   function setItem(id, patch) {
     const i = state.items.items.find((x) => x.id === id);
@@ -127,6 +155,7 @@
     if (method === 'GET') {
       if (p === '/api/items') return json(itemsPayload());
       if (p === '/api/prefs') return json(state.prefs);
+      if (p === '/api/profiles') { const { profile: _p, ...v } = profileView(); return json(v); }
       if (p === '/api/workspace') return json(state.ws);
       if (p === '/api/board') return json(state.board);
       if (p === '/api/history') return json(state.r['/api/history?days=14']);
@@ -163,7 +192,11 @@
       r.state = 'undone';
       return json(r);
     }
-    if (method === 'PUT' && p === '/api/prefs') { Object.assign(state.prefs, body); return json(state.prefs); }
+    if (method === 'PUT' && p === '/api/prefs') {
+      if ('profile' in body && !['auto', 'all', ...(state.r['/api/profiles']?.list ?? []).map((x) => x.id)].includes(body.profile)) return bad('Invalid preference: profile');
+      Object.assign(state.prefs, body);
+      return json(state.prefs);
+    }
     if (method === 'POST' && p === '/api/chat') return chatAnswer(body);
     if (method === 'POST' && p === '/api/chat/confirm') {
       const rec = state.lastChat.get(body.sessionId);

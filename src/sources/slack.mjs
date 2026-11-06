@@ -79,7 +79,7 @@ export async function collect(config = {}, ctx = {}) {
     const at = tsToMs(m.ts);
     if (now - at > WINDOW_DAYS * 86_400_000) continue;
     const by = m.username || (await nameOf(m.user));
-    const s = { by, team: false, ageDays: (now - at) / 86_400_000 };
+    const s = { by, team: false, ageDays: (now - at) / 86_400_000, where: 'Slack' };
     const r = rank('mention', s);
     const where = m.channel?.is_im ? 'a DM' : m.channel?.name ? `#${m.channel.name}` : 'Slack';
     const threadTs = m.thread_ts ?? threadFromLink(m.permalink) ?? m.ts;

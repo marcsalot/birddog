@@ -3,6 +3,7 @@
 
 import * as azure from './azure.mjs';
 import * as cal from './cal.mjs';
+import * as discord from './discord.mjs';
 import * as git from './git.mjs';
 import * as github from './github.mjs';
 import * as gitlab from './gitlab.mjs';
@@ -12,9 +13,10 @@ import * as pagerduty from './pagerduty.mjs';
 import * as sentry from './sentry.mjs';
 import * as slack from './slack.mjs';
 import * as teams from './teams.mjs';
+import * as thunderbird from './thunderbird.mjs';
 
 // Order is the order in setup: the essentials first, then the rest of a developer's day.
-export const SOURCES = [git, github, jira, cal, gitlab, linear, azure, sentry, pagerduty, slack, teams];
+export const SOURCES = [git, github, jira, cal, gitlab, linear, azure, sentry, pagerduty, slack, teams, discord, thunderbird];
 
 /** Sources that appear in setup but are not built yet. */
 export const COMING_SOON = [];

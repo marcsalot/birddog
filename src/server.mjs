@@ -23,6 +23,7 @@ import { createWorkspace, newWorktreeCommand, normalizeWorkspace, SlotError, tic
 import { Collector } from './collector.mjs';
 import { createHistory } from './history.mjs';
 import { createNotifier } from './notify.mjs';
+import { isChoice, normalizeProfiles, profileSummary, resolveProfile, showsSource } from './profiles.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
 import { repoFolders } from './firstrun.mjs';
 import { canReply, createReplies, ReplyError } from './replies.mjs';
@@ -277,7 +278,25 @@ export async function createBirddog({
     return s;
   };
 
-  function itemsPayload(snap = collector.snapshot()) {
+  // ---- Profiles (Work, Home, …): which sources show, and which may notify ----
+  let badProfiles = null;
+  const profiles = () => {
+    try { return normalizeProfiles(config.profiles, sources.map((s) => s.id)); } catch (e) {
+      if (badProfiles !== e.message) { badProfiles = e.message; log.warn?.(`birddog: "profiles" in config.json: ${e.message}. Using Work and Home.`); }
+      return normalizeProfiles(undefined);
+    }
+  };
+  const activeProfile = (choice = triage.prefs.profile) => resolveProfile(profiles(), choice, now?.() ?? Date.now()).profile;
+  const profilesPayload = () => ({
+    ...profileSummary(profiles(), triage.prefs.profile, now?.() ?? Date.now()),
+    sources: sources.map((s) => ({ id: s.id, name: s.name, enabled: isEnabled(s, config) })),
+  });
+
+  function itemsPayload(snap = collector.snapshot(), { profile: choice } = {}) {
+    const profile = activeProfile(choice ?? triage.prefs.profile);
+    const shown = (id) => showsSource(profile, id);
+    const hidden = snap.items.filter((i) => !shown(i.source)).length;
+    snap = { ...snap, items: snap.items.filter((i) => shown(i.source)), sources: snap.sources.filter((s) => shown(s.id)) };
     // Tag sources that run on a sign-in, so a failed renewal can offer "Sign in again".
     const sourcesOut = snap.sources.map((s) => {
       const p = Object.keys(USES).find((k) => USES[k].source === s.id && USES[k].uses(config.sources?.[s.id] ?? {}));
@@ -285,7 +304,8 @@ export async function createBirddog({
     });
     // Items whose source can reply say who and where a reply goes, and whether replies are on.
     const items = triage.apply(snap.items).map((i) => { const r = replies.target(i); return r ? { ...i, reply: r } : i; });
-    return { ...snap, sources: sourcesOut, items, refreshing: collector.refreshing };
+    const view = profileSummary(profiles(), choice ?? triage.prefs.profile, now?.() ?? Date.now());
+    return { ...snap, sources: sourcesOut, items, refreshing: collector.refreshing, profile: { ...view, hidden } };
   }
 
   refresh = async (opts) => {
@@ -293,7 +313,9 @@ export async function createBirddog({
     await triage.prune(snap.items);
     await triage.sync();
     const triaged = triage.apply(snap.items);
-    await notifier.observe({ items: triaged, sources: snap.sources }).catch((e) => log.warn?.(`birddog: notifications: ${e.message}`));
+    const profile = activeProfile();
+    const muted = (e) => (profile && !profile.notify) || !showsSource(profile, e.source);
+    await notifier.observe({ items: triaged, sources: snap.sources, muted }).catch((e) => log.warn?.(`birddog: notifications: ${e.message}`));
     await history.record(triaged).catch((e) => log.warn?.(`birddog: history: ${e.message}`));
     return snap;
   };
@@ -419,7 +441,7 @@ export async function createBirddog({
 
   // ---- Ask Fetch (chat) ----
   const chat = createChat({
-    app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; }, replies },
+    app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; }, replies, profiles: { active: (c) => activeProfile(c), summary: () => profilesPayload() } },
     secrets, fetchImpl, version: VERSION, now, log,
     memory: createMemory({ dir, ...(now ? { now } : {}) }),
     getPrefs: () => triage.prefs,
@@ -530,7 +552,28 @@ export async function createBirddog({
   const routes = [
     ['GET', /^\/api\/health$/, () => ({ app: 'birddog', version: VERSION, ...(liveReload ? { liveReload: true } : {}) })],
     ['GET', /^\/api\/me$/, (_m, _b, ctx) => ({ authEnabled: !!oidc, user: ctx.user })],
-    ['GET', /^\/api\/items$/, async () => { await triage.sync(); return itemsPayload(); }],
+    ['GET', /^\/api\/items$/, async (_m, _b, ctx) => {
+      await triage.sync();
+      const choice = ctx.query.get('profile');
+      if (choice !== null && !isChoice(choice)) throw new HttpError(400, 'profile must be auto, all or a profile id');
+      return itemsPayload(undefined, { profile: choice ?? undefined });
+    }],
+    ['GET', /^\/api\/profiles$/, async () => { await triage.sync(); return profilesPayload(); }],
+    ['PUT', /^\/api\/profiles$/, asBadRequest(async (_m, body) => {
+      const list = normalizeProfiles(body.profiles, sources.map((s) => s.id));
+      config = { ...config, profiles: list };
+      await saveConfig(dir, config);
+      // A deleted profile can't stay chosen.
+      if (!['auto', 'all'].includes(triage.prefs.profile) && !list.some((p) => p.id === triage.prefs.profile)) await triage.setPrefs({ profile: 'auto' });
+      return profilesPayload();
+    })],
+    ['DELETE', /^\/api\/profiles$/, async () => {
+      const { profiles: _gone, ...rest } = config;
+      config = rest;
+      await saveConfig(dir, config);
+      if (!['auto', 'all', 'work', 'home'].includes(triage.prefs.profile)) await triage.setPrefs({ profile: 'auto' });
+      return profilesPayload();
+    }],
     ['POST', /^\/api\/refresh$/, async () => itemsPayload(await refresh())],
     ['POST', /^\/api\/sources\/([^/]+)\/retry$/, async (m) => {
       const src = findSource(m[1]);
@@ -800,6 +843,8 @@ export async function createBirddog({
     replies,
     board,
     workspace,
+    /** Profiles: active(choice) → the profile showing (null = all sources); summary() for the API. */
+    profiles: { active: (c) => activeProfile(c), summary: () => profilesPayload() },
     configFile: loaded.file,
     authFile: loaded.authFile,
     firstRun: loaded.created,

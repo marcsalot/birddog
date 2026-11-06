@@ -193,6 +193,8 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **PagerDuty** | Incidents paged to you (**Now**), your on-call shifts | User API token |
 | **Slack** | Mentions, and DMs waiting for your reply. Can reply, opt-in | User token with `search:read`, `im:read`, `im:history`, `users:read`; `chat:write` to reply. Fastest setup: create the app from [docs/slack-app-manifest.json](docs/slack-app-manifest.json) |
 | **Microsoft Teams** | 1:1 chats waiting for your reply, @mentions in group and meeting chats. Can reply, opt-in | Sign in with Microsoft Teams (work or school account): `Chat.Read`; `ChatMessage.Send` to reply. Channel posts aren't read (that needs an admin-only permission) |
+| **Discord** | @mentions of you (or a role you have) in your servers that you haven't answered in that channel since | A bot you create and invite (Discord gives personal apps no access to your own account). Bot token + your user ID; never sees your DMs |
+| **Thunderbird** | Unread mail from the last week, and starred mail you haven't replied to | Reads Thunderbird's own mail files on this computer, read-only. No account, no token |
 
 GitHub also reports **failing Actions runs** on branches you pushed this week, and **Dependabot alerts** on those repos (`"actions": false` / `"security": false` under `sources.github` turn them off).
 
@@ -351,11 +353,33 @@ That link works like a password (anyone who has it can read your calendar), so B
 
 The reader is built in (no dependencies) and handles what real feeds contain: folded lines and escapes, UTC, `TZID` and floating times, Windows zone names from Outlook, all-day and multi-day events, `DURATION`, recurring events (`RRULE` with `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, `INTERVAL`, `COUNT`, `UNTIL`, `BYDAY` such as `2TU` or `-1FR`, `BYMONTHDAY`, `BYMONTH`), `EXDATE`, `RDATE`, and single instances that were moved or cancelled (`RECURRENCE-ID`). Recurring events keep their wall-clock time across daylight saving changes. A zone it doesn't know falls back to the zone's standard offset, with a warning in setup. Not supported: `BYSETPOS`, `HOURLY`/`MINUTELY` rules and `BYWEEKNO` (such events show their first occurrence only).
 
+## Profiles: Work, Home and your own
+
+The **profile** button in the top bar (or <kbd>⇧P</kbd>) picks which sources you see. Birddog starts with two:
+
+| Profile | Shows | When (in Auto) |
+|---|---|---|
+| **Work** | every source | Monday–Friday, 08:00–18:00 |
+| **Home** | local git, GitHub, calendar, Discord, Thunderbird | the rest of the time |
+
+**Auto** (the default) switches by schedule: the first profile whose schedule covers right now, otherwise the first one without a schedule. You can also pin a profile, or pick **All sources**. **Edit profiles** lets you rename them, pick their sources, set days and hours (overnight windows like 22:00–06:00 work), turn notifications off for a profile, and add up to 12 (On call, Side project, Weekend…).
+
+Every source keeps refreshing in the background, so switching is instant. A profile changes three things: the inbox (and its counts and charts), which items can notify you (items outside the profile are noted silently, so switching later never causes a burst), and what `list_items` returns over MCP (pass `profile: "all"` or a `source` to look past it). Profiles live in `config.json` under `"profiles"`; which one is showing is a preference in `state.json`.
+
+```json
+"profiles": [
+  { "id": "work", "name": "Work", "sources": null, "schedule": { "days": [1, 2, 3, 4, 5], "from": "08:00", "to": "18:00" }, "notify": true },
+  { "id": "home", "name": "Home", "sources": ["git", "github", "cal", "discord", "thunderbird"], "schedule": null, "notify": true }
+]
+```
+
+`"sources": null` means every source. Days run 0 = Sunday to 6 = Saturday.
+
 ## More sources
 
 Sources & settings lists every source A–Z, with a search box that matches names and kinds of thing (*calendar* finds Google, Microsoft, iCloud and iCal; *ci* finds GitHub Actions, GitLab pipelines and Azure).
 
-GitLab, Linear, Azure DevOps, Sentry, PagerDuty and Slack are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token` and `slack-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN` and `BIRDDOG_SLACK_TOKEN`. None of them write anything while collecting. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL. Slack can also post your replies, only once you turn on [Allow replies](#reply-from-birddog).
+GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Discord and Thunderbird are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token`, `slack-token` and `discord-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN`, `BIRDDOG_SLACK_TOKEN` and `BIRDDOG_DISCORD_TOKEN`. Thunderbird needs no token. None of them write anything while collecting. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL. Slack can also post your replies, only once you turn on [Allow replies](#reply-from-birddog).
 
 | Source | Ranks it as | Rules that fire |
 |---|---|---|
@@ -365,9 +389,26 @@ GitLab, Linear, Azure DevOps, Sentry, PagerDuty and Slack are off until you conn
 | Sentry | errors | regressed or new → Today; others → Later |
 | PagerDuty | incidents, on call | triggered → **Now**; acknowledged and on call now → Today; shift soon → Later |
 | Slack | mentions, DMs | fresh → Today; older → Later |
+| Discord | mentions | under 3 days → Today; older → Later |
+| Thunderbird | email | starred and not replied, or unread under a day → Today; older unread → Later |
 | GitHub Actions / Dependabot | CI failures, security alerts | failing < 2 days and critical/high → Today; others → Later |
 
 GitLab also has **Sign in with GitLab**: register an application under *User settings → Applications* (scope `read_api`, *not* confidential, redirect `http://127.0.0.1:4747/auth/oauth/gitlab/callback`), then set `"oauth": { "gitlab": { "clientId": "…", "url": "https://gitlab.com" } }`.
+
+### Discord
+
+Discord doesn't let personal apps read your own account (user tokens are against its terms), so Birddog reads through a bot you own:
+
+1. [discord.com/developers/applications](https://discord.com/developers/applications) → **New Application** → **Bot** → **Reset Token**, and copy the token.
+2. On the same page, switch on **Message Content Intent**, or message text comes back blank.
+3. **OAuth2 → URL Generator**: scope `bot`, permissions **View Channels** and **Read Message History**. Open the URL and add the bot to each server you want watched.
+4. In Discord, turn on **Developer Mode** (Settings → Advanced), right-click your name and **Copy User ID**.
+
+Birddog checks the 40 most recently active text channels and threads in each server for the last 7 days. A mention counts when it names you, replies to you, or names a role you have. It drops off once you post in that channel after it. The bot sees only the channels you let it into, and never your DMs. It only reads.
+
+### Thunderbird
+
+Birddog finds Thunderbird's default profile (`~/Library/Thunderbird` on macOS, `~/.thunderbird` on Linux, including the Snap and Flatpak folders, and `%APPDATA%\Thunderbird` on Windows). It reads the newest 8 MB of each account's Inbox and the read, starred, replied and deleted flags Thunderbird writes into every message. It opens the files read-only: mark a message read or unstar it in Thunderbird and it leaves the list. IMAP accounts are covered when Thunderbird keeps mail on this computer, which it does by default. Set **Profile folder** if yours is elsewhere. Maildir stores aren't read yet. In Docker there's no Thunderbird to read unless you mount the profile.
 
 Not built yet: Bitbucket Cloud. Its "PRs waiting for my review" needs a query per repository, and I'd rather not guess at its newer API-token scheme without a way to test it.
 
@@ -982,6 +1023,8 @@ test/                  node:test suites
 12. ✅ Reply from Birddog: Slack DMs and mentions, opt-in, with undo; Fetch drafts, MCP opt-in (1.12)
 13. ✅ Fetch on Haiku, with memory, every source, and visible, enforced boundaries (1.13)
 14. ✅ Microsoft Teams: chats waiting on you, @mentions, and opt-in replies (1.14)
+15. ✅ Ticket board, worktrees & slots, launch slots (1.15–1.17)
+16. ✅ Discord, Thunderbird, and Work/Home profiles (1.18)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Discord, Google Chat), Teams channel mentions (with admin consent) and comments (GitHub/GitLab PRs, Jira).
 

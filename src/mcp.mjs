@@ -41,6 +41,7 @@ const TOOLS = [
         source: { type: 'string', description: 'Only this source id, e.g. git, github, gitlab, jira, linear, slack, cal (see list_sources)' },
         query: { type: 'string', description: 'Only items whose title, why line or fields contain these words (case-insensitive)' },
         status: { type: 'string', enum: STATUS, description: 'open (default): not done or snoozed; all: everything' },
+        profile: { type: 'string', description: 'Which profile to look in: "auto" or omitted = the one the dashboard shows (Work, Home…), "all" = every source, or a profile id' },
         limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: 'At most this many items (default 50)' },
       },
       additionalProperties: false,
@@ -198,7 +199,14 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
       if (a.status !== undefined && !STATUS.includes(a.status)) throw new ToolError(`status must be one of ${STATUS.join(', ')}`);
       const limit = a.limit === undefined ? 50 : Number(a.limit);
       if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new ToolError(`limit must be a whole number from 1 to ${MAX_LIMIT}`);
-      const { items, sources } = await data();
+      if (a.profile !== undefined && (typeof a.profile !== 'string' || !/^[a-z0-9][a-z0-9-]{0,23}$/.test(a.profile))) throw new ToolError('profile must be auto, all or a profile id');
+      let { items, sources } = await data();
+      // Asking for one source by id looks there whatever the profile.
+      const profile = app.profiles && a.source === undefined ? app.profiles.active(a.profile && a.profile !== 'auto' ? a.profile : undefined) : null;
+      if (profile?.sources) {
+        items = items.filter((i) => profile.sources.includes(i.source));
+        sources = sources.filter((s) => profile.sources.includes(s.id));
+      }
       if (a.source !== undefined && !sources.some((s) => s.id === a.source)) {
         throw new ToolError(`No source "${a.source}" is switched on. Sources: ${sources.map((s) => s.id).join(', ') || 'none'}`);
       }
@@ -209,9 +217,10 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
         .filter((i) => matches(i, a.query));
       const shown = list.slice(0, limit);
       const stale = sources.filter((s) => s.status === 'stale');
+      const where = profile?.sources ? ` (${profile.name} profile; profile "all" shows every source)` : '';
       const head = shown.length
-        ? `${list.length} ${status === 'all' ? '' : `${status} `}item${list.length === 1 ? '' : 's'}${list.length > shown.length ? ` (showing ${shown.length})` : ''}, most urgent first:`
-        : 'Nothing needs you right now.';
+        ? `${list.length} ${status === 'all' ? '' : `${status} `}item${list.length === 1 ? '' : 's'}${list.length > shown.length ? ` (showing ${shown.length})` : ''}, most urgent first${where}:`
+        : `Nothing needs you right now${where}.`;
       const note = stale.length ? `\n\nStale sources (showing their last good data): ${stale.map((s) => `${s.name}: ${s.error}`).join('; ')}` : '';
       return result(`${head}\n${shown.map(line).join('\n')}${note}`.trim(), { items: shown, total: list.length });
     },

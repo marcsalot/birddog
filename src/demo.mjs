@@ -334,6 +334,59 @@ function teamsData(t0, sentTo, now) {
 }
 
 /** fetch() for the demo: answers for the fake APIs above, and refuses everything else. */
+// ---- Discord: a bot in one made-up server, and your user id ------------------------
+export const DISCORD_ME = '1100000000000000042';
+const DISCORD_GUILD = { id: '1200000000000000001', name: 'Lantern Game Jam' };
+const snowflake = (t) => String((BigInt(Math.floor(t)) - 1420070400000n) << 22n);
+function discordData(t0) {
+  const at = (h) => t0 - h * HOUR;
+  const person = (id, username, global_name) => ({ id, username, global_name });
+  const kai = person('1100000000000000007', 'kai', 'Kai');
+  const rae = person('1100000000000000008', 'raeb', 'Rae');
+  const msg = (h, author, content, extra = {}) => ({ id: snowflake(at(h)), timestamp: new Date(at(h)).toISOString(), author, content, mentions: [], mention_roles: [], ...extra });
+  return {
+    channels: [
+      { id: '1300000000000000001', name: 'general', type: 0, last_message_id: snowflake(at(0.6)) },
+      { id: '1300000000000000002', name: 'art-feedback', type: 0, last_message_id: snowflake(at(30)) },
+      { id: '1300000000000000003', name: 'voice', type: 2, last_message_id: null },
+    ],
+    messages: {
+      '1300000000000000001': [
+        msg(0.6, kai, `<@${DISCORD_ME}> can you look at the build for the jam submission tonight? itch.io page is up`, { mentions: [{ id: DISCORD_ME }] }),
+        msg(3, rae, 'Who has the lighting shader?'),
+      ],
+      '1300000000000000002': [
+        msg(30, rae, '<@&1400000000000000001> new tileset pass is in, thoughts?', { mention_roles: ['1400000000000000001'] }),
+      ],
+    },
+  };
+}
+
+// ---- Thunderbird: a made-up profile folder with one Inbox ---------------------------
+function mboxMessage({ from, subject, at, status, id }) {
+  return `From - ${new Date(at).toUTCString()}\nX-Mozilla-Status: ${status}\nX-Mozilla-Status2: 00000000\nMessage-ID: <${id}@home.example>\nDate: ${new Date(at).toUTCString()}\nFrom: ${from}\nTo: Sam <sam@home.example>\nSubject: ${subject}\nContent-Type: text/plain; charset=UTF-8\n\nMade-up message for the Birddog demo.\n\n`;
+}
+export async function demoThunderbird(dir, now = Date.now()) {
+  const profile = path.join(dir, 'thunderbird-profile');
+  const inbox = path.join(profile, 'ImapMail', 'imap.home.example');
+  await fs.mkdir(inbox, { recursive: true });
+  await fs.writeFile(path.join(profile, 'prefs.js'), [
+    'user_pref("mail.server.server1.directory-rel", "[ProfD]ImapMail/imap.home.example");',
+    'user_pref("mail.server.server1.hostname", "imap.home.example");',
+    'user_pref("mail.server.server1.type", "imap");',
+    'user_pref("mail.server.server1.userName", "sam@home.example");',
+  ].join('\n') + '\n');
+  await fs.writeFile(path.join(inbox, 'INBOX'), [
+    mboxMessage({ from: 'Old Newsletter <news@example.org>', subject: 'Last week in woodworking', at: now - 9 * DAY, status: '0000', id: 'n1' }),
+    mboxMessage({ from: '"Dana (landlord)" <dana@home.example>', subject: 'Boiler service visit: Thursday 9–11?', at: now - 2.5 * HOUR, status: '0000', id: 'd1' }),
+    mboxMessage({ from: 'City Library <noreply@library.example>', subject: '=?UTF-8?Q?Your_hold_is_ready_=E2=80=93_pick_up_by_Saturday?=', at: now - 1.6 * DAY, status: '0000', id: 'l1' }),
+    mboxMessage({ from: 'Alex <alex@home.example>', subject: 'Camping weekend: who brings the stove?', at: now - 3 * DAY, status: '0005', id: 'a1' }),
+    mboxMessage({ from: 'Shop <orders@shop.example>', subject: 'Your order has shipped', at: now - 5 * HOUR, status: '0001', id: 's1' }),
+    mboxMessage({ from: 'Spam <x@spam.example>', subject: 'Deleted message', at: now - 1 * HOUR, status: '0008', id: 'x1' }),
+  ].join(''));
+  return profile;
+}
+
 export function demoFetch(clock = () => Date.now()) {
   const sent = new Set(); // channels the demo "replied" in, so the item clears like the real thing
   const teamsSent = new Map(); // Teams chat id → your reply
@@ -350,6 +403,18 @@ export function demoFetch(clock = () => Date.now()) {
       if (method === 'users.info') return json({ ok: true, user: { name: SLACK_PEOPLE[body.user] ?? 'someone', profile: { display_name: SLACK_PEOPLE[body.user] ?? '' } } });
       const data = slackData(t0, sent, now)[method];
       return data ? json(data, 200, { 'x-oauth-scopes': 'search:read,im:read,im:history,users:read,chat:write' }) : json({ ok: false, error: 'unknown_method' });
+    }
+    if (u.origin === 'https://discord.com') {
+      const p = u.pathname.replace('/api/v10', '');
+      const d = discordData(t0);
+      if (p === '/users/@me') return json({ id: '1100000000000000099', username: 'birddog-demo-bot' });
+      if (p === '/users/@me/guilds') return json([DISCORD_GUILD]);
+      if (p === `/guilds/${DISCORD_GUILD.id}/channels`) return json(d.channels);
+      if (p === `/guilds/${DISCORD_GUILD.id}/members/${DISCORD_ME}`) return json({ roles: ['1400000000000000001'] });
+      if (p === `/guilds/${DISCORD_GUILD.id}/threads/active`) return json({ threads: [] });
+      const m = /^\/channels\/(\d+)\/messages$/.exec(p);
+      if (m) return json(d.messages[m[1]] ?? []);
+      return json({ message: 'Unknown', code: 0 }, 404);
     }
     if (u.origin === 'https://graph.microsoft.com') {
       const p = decodeURIComponent(u.pathname.replace('/v1.0', ''));
@@ -412,7 +477,7 @@ export function demoHistory(now) {
 
 /** A secret store that lives in memory and starts with the demo's fake credentials. */
 export function demoSecrets() {
-  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token'],
+  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token'], ['discord-token', 'demo-not-a-real-token'],
     // A fake Teams sign-in that never expires (the fake Graph above takes any token).
     ['oauth-teams', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Chat.Read ChatMessage.Send' })]]);
   return {
@@ -431,6 +496,7 @@ export function demoSecrets() {
  */
 export async function createDemo() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'birddog-demo-'));
+  const thunderbird = await demoThunderbird(dir);
   await writeJson(path.join(dir, 'config.json'), {
     port: 4848,
     refreshMinutes: 5,
@@ -441,7 +507,14 @@ export async function createDemo() {
       // Replies are on in the demo; the fake Slack above takes them and sends nothing anywhere.
       slack: { enabled: true, allowReplies: true },
       teams: { enabled: true, allowReplies: true },
+      discord: { enabled: true, userId: DISCORD_ME, guilds: '' },
+      thunderbird: { enabled: true, profile: thunderbird, days: 7 },
     },
+    // Work shows everything on weekdays; Home shows the personal sources.
+    profiles: [
+      { id: 'work', name: 'Work', sources: ['git', 'github', 'jira', 'cal', 'slack', 'teams'], schedule: { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' }, notify: true },
+      { id: 'home', name: 'Home', sources: ['git', 'github', 'cal', 'discord', 'thunderbird'], schedule: null, notify: true },
+    ],
     chat: { demo: true },
     workspace: {
       devSlots: [{ label: 'Dev 1', ports: [5173, 5001] }, { label: 'Dev 2', ports: [5174, 5003] }, { label: 'Dev 3', ports: [5175, 5005] }],
@@ -456,7 +529,7 @@ export async function createDemo() {
     github: { method: 'gh-cli', login: ME, name: 'Sam Developer', connectedAt: new Date().toISOString() },
     oauth: { teams: { account: 'sam@acme.example', connectedAt: new Date().toISOString() } },
   });
-  await writeJson(path.join(dir, 'state.json'), { version: 1, items: {}, prefs: { seenSetup: true } });
+  await writeJson(path.join(dir, 'state.json'), { version: 1, items: {}, prefs: { seenSetup: true, profile: 'all' } });
   await writeJson(path.join(dir, 'history.json'), { days: demoHistory(Date.now()) });
   return {
     options: {

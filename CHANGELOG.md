@@ -4,7 +4,14 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-11-06
+
 ### Added
+- **Profiles**: Work and Home by default, and up to 12 of your own. A profile picks which sources show, can follow a schedule (Auto: Work on weekdays 08:00–18:00, Home otherwise; overnight windows work), and can keep quiet. It filters the inbox, notifications (items outside it are noted silently, so switching never causes a burst) and MCP `list_items` (new `profile` argument). Top-bar switcher, <kbd>⇧P</kbd>, palette commands, an editor, and `GET/PUT/DELETE /api/profiles`; `GET /api/items?profile=`.
+- **Discord**: @mentions of you, or a role you have, that you haven't answered in that channel since. It reads through a bot you invite (bot token plus your user ID), GET only, and never sees DMs.
+- **Thunderbird**: unread mail from the last week, and starred mail you haven't replied to, read straight from Thunderbird's local Inbox files (mbox, read-only). It decodes encoded and raw UTF-8 headers and skips deleted messages. No token.
+- Setup cards for sources that need no token ("reading files on this computer", **Turn off**).
+- The demo and the live site have a Discord server, a Thunderbird inbox, and Work and Home profiles.
 - **Website and live demo** at https://marcsalot.github.io/birddog/: a landing page, and the real UI running in the browser on recorded `--demo` data (`scripts/build-pages.mjs`, `site/`), with times shifted to now, triage, replies, slot claims and recorded Ask Fetch answers working in the tab. Deployed to GitHub Pages on every push to `main`.
 
 ## [1.17.0] - 2026-11-05

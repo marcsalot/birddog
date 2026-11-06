@@ -1,6 +1,6 @@
 {
   "name": "@marcusferrell/birddog",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "description": "A local-first \"what needs me next?\" inbox for developers: local git, GitHub, Jira and calendar, ranked by plain rules that explain themselves. Zero dependencies, with an MCP server.",
   "type": "module",
   "bin": {

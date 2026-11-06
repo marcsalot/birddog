@@ -52,6 +52,7 @@
       <button class="icon-btn" id="refresh" title="Refresh (r)" aria-label="Refresh"><span>⟳</span></button>
       <button class="icon-btn notify-btn" id="notifyBtn" title="Notifications" aria-label="Notifications" aria-haspopup="dialog">🔕</button>
       <button class="icon-btn" id="guideBtn" title="Guide (g)" aria-label="Guide (g)" aria-controls="guideRail" aria-expanded="false"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H10c1.1 0 2 .9 2 2v14c0-1.1-.9-2-2-2H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H14c-1.1 0-2 .9-2 2v14c0-1.1.9-2 2-2h4.5c.8 0 1.5-.7 1.5-1.5z"/></svg></button>
+      <button class="appear-btn profile-btn" id="profileBtn" title="Profile (⇧P)" aria-haspopup="dialog" aria-expanded="false" aria-controls="profilePanel"><i aria-hidden="true">◑</i><span>Profile</span></button>
       <button class="appear-btn" id="appearBtn" title="Appearance" aria-haspopup="dialog"><i></i><span>Appearance</span></button>
       <button class="avatar-btn" id="meBtn" title="Account" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenu"><span class="avatar" id="meAvatar" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M4.5 20c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></svg></span></button>
     </div>
@@ -82,6 +83,7 @@
   <div>Ask Fetch <kbd>a</kbd></div><div>Guide <kbd>g</kbd></div><div>Widen the guide <kbd>⇧G</kbd></div>
   <div>Overview <kbd>0</kbd></div><div>Menu <kbd>m</kbd></div>
   <div>Board <kbd>b</kbd></div><div>Worktrees &amp; slots <kbd>w</kbd></div>
+  <div>Switch profile <kbd>⇧P</kbd></div>
 </div></div></div>
 
 <div class="scrim" id="setupScrim"><div class="modal setup" role="dialog" aria-labelledby="setupTitle">
@@ -91,6 +93,7 @@
 </div></div>
 
 <div class="appear" id="appear" role="dialog" aria-label="Appearance"></div>
+<div class="appear profile-panel" id="profilePanel" role="dialog" aria-label="Profiles"></div>
 <div class="acct" id="acctMenu" role="menu" aria-label="Account" hidden></div>
 <div class="appear notify-panel" id="notifyPanel" role="dialog" aria-label="Notifications"></div>
 <div class="toast" id="toast" role="status"><span id="toastMsg"></span><button id="undoBtn">Undo <kbd>z</kbd></button></div>
