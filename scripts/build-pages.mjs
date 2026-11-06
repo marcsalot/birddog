@@ -62,6 +62,8 @@ export async function capture() {
     responses['/api/chat/status#on'] = await get('/api/chat/status');
     // Who and where each reply would go, for the reply box.
     for (const i of responses['/api/items'].items) if (i.reply) responses[`/api/items/${encodeURIComponent(i.id)}/reply`] = await get(`/api/items/${encodeURIComponent(i.id)}/reply`);
+    // Emails can be read in the demo too (made-up messages).
+    for (const i of responses['/api/items'].items) if (i.kind === 'email') responses[`/api/items/${encodeURIComponent(i.id)}/message`] = await get(`/api/items/${encodeURIComponent(i.id)}/message`);
     // Recorded conversations, each in a fresh session; a proposed change is recorded with its confirmation.
     const chats = {};
     for (const q of await chatQuestions()) {

@@ -4,6 +4,16 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-11-06
+
+### Added
+- **Read email in Birddog, or in your mail app.** A preference (`emailOpen`: Birddog, web app, Apple Mail) in each email's details and the command palette. <kbd>o</kbd> and the main button follow it, and an email your app can't open (no web link or Message-ID) opens in Birddog.
+- **The message view** shows email as plain text only: HTML is turned into text and never rendered, so no tracking pixels load and nothing can run. It reads multipart, quoted-printable, base64 and charsets, lists attachments, and stops at 20,000 characters. `GET /api/items/:id/message`.
+- Thunderbird messages come from its local file. Gmail and Outlook show text after you set **Read message text** and sign in again: Gmail swaps `gmail.metadata` for `gmail.readonly` (bodies are refused while metadata is granted), and Outlook adds `Mail.Read`. Until then the viewer says how, and links to the message.
+
+### Fixed
+- The missing-secret step for sign-ins that ride on another app (Google Tasks, Gmail) named the wrong secret.
+
 ## [1.20.0] - 2026-11-06
 
 ### Added

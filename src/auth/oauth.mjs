@@ -104,6 +104,8 @@ export const PROVIDERS = {
     token: () => 'https://oauth2.googleapis.com/token',
     revoke: 'https://oauth2.googleapis.com/revoke',
     scopes: ['email', 'https://www.googleapis.com/auth/gmail.metadata'],
+    // Gmail refuses message bodies while gmail.metadata is granted, so reading text swaps it for gmail.readonly.
+    baseScopes: (config) => (config.sources?.gmail?.readBodies === true ? ['email', 'https://www.googleapis.com/auth/gmail.readonly'] : null),
     extra: { access_type: 'offline', prompt: 'consent' },
     secret: 'optional',
     tokenBody: 'form',
@@ -116,6 +118,7 @@ export const PROVIDERS = {
     token: (c) => `https://login.microsoftonline.com/${encodeURIComponent(c.tenant || 'common')}/oauth2/v2.0/token`,
     revoke: null,
     scopes: ['offline_access', 'User.Read', 'Mail.ReadBasic'],
+    scopesFor: (config) => (config.sources?.outlook?.readBodies === true ? ['Mail.Read'] : []),
     extra: {},
     secret: 'none',
     tokenBody: 'form',
@@ -331,8 +334,8 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       if (!id) throw new OAuthError(`One-click ${d.name} sign-in isn't available in this copy of Birddog. Use a token instead, or bring your own app: set oauth.${appOf(p)}.clientId in config.json or ${envName(appOf(p), 'CLIENT_ID')} (see the guide).`);
       if (needsSecret(p) && !(await clientSecret(p))) {
         throw new OAuthError(client(p).from === 'built-in'
-          ? `${d.name} sign-in needs one more step: Birddog's app secret, which doesn't ship with Birddog. Get it from whoever runs Birddog's ${d.name.split(' ')[0]} project, then run "birddog secret set ${p}-client-secret", or set ${envName(p, 'CLIENT_SECRET')} (or ${envName(p, 'CLIENT_SECRET')}_FILE) and restart Birddog. Or use an iCal link instead.`
-          : `${d.name} also needs its client secret: run "birddog secret set ${p}-client-secret".`);
+          ? `${d.name} sign-in needs one more step: Birddog's app secret, which doesn't ship with Birddog. Get it from whoever runs Birddog's ${def(appOf(p)).name.split(' ')[0]} project, then run "birddog secret set ${appOf(p)}-client-secret", or set ${envName(appOf(p), 'CLIENT_SECRET')} (or ${envName(appOf(p), 'CLIENT_SECRET')}_FILE) and restart Birddog.${p === 'google' ? ' Or use an iCal link instead.' : ''}`
+          : `${d.name} also needs its client secret: run "birddog secret set ${appOf(p)}-client-secret".`);
       }
       for (const [k, v] of pending) if (v.exp < now()) pending.delete(k);
       if (pending.size > 50) throw new OAuthError('Too many sign-ins in progress. Wait a minute.', 429);
@@ -342,7 +345,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       pending.set(state, { provider: p, verifier, redirectUri, exp: now() + PENDING_TTL_MS });
       const url = new URL(d.authorize(settings(p)));
       url.search = new URLSearchParams({
-        response_type: 'code', client_id: id, redirect_uri: redirectUri, scope: [...d.scopes, ...(d.scopesFor?.(getConfig()) ?? []), ...(settings(p).extraScopes ?? [])].join(d.scopeSep ?? ' '),
+        response_type: 'code', client_id: id, redirect_uri: redirectUri, scope: [...(d.baseScopes?.(getConfig()) ?? d.scopes), ...(d.scopesFor?.(getConfig()) ?? []), ...(settings(p).extraScopes ?? [])].join(d.scopeSep ?? ' '),
         state, code_challenge: challenge, code_challenge_method: 'S256', ...d.extra,
       }).toString();
       return { url: url.toString() };

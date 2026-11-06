@@ -30,6 +30,7 @@ export const api = {
   done: (id) => call('POST', item(id, 'done'), {}),
   snooze: (id, until) => call('POST', item(id, 'snooze'), { until }),
   restore: (id) => call('POST', item(id, 'restore'), {}),
+  message: (id) => call('GET', item(id, 'message')),
   replyDetails: (id) => call('GET', item(id, 'reply')),
   reply: (id, text, broadcast) => call('POST', item(id, 'reply'), { text, broadcast }),
   replyStatus: (pid) => call('GET', `/api/replies/${encodeURIComponent(pid)}`),

@@ -79,6 +79,7 @@ const st = {
   srcQuery: '', // the search box in Sources & settings
   only: null, // 'github' while setup shows just that card (the suggested next step)
   nextStep: null, // { github: connected? } for the next-step card; null = don't show it
+  emailOpen: 'birddog', // where emails open: birddog | web | apple-mail (a preference)
 };
 
 const $ = (s) => document.querySelector(s);
@@ -410,7 +411,50 @@ async function copy(text, what) {
   toast(`📋 Copied ${what}: <code>${esc(text.length > 60 ? `${text.slice(0, 60)}…` : text)}</code>`);
 }
 
+// ---------------------------------------------------------------------------
+// Email: open it in Birddog, or in your mail app (a preference). When your app can't take
+// this message (no web link, no Message-ID), it opens in Birddog instead.
+
+const EMAIL_OPEN = { birddog: 'Birddog', web: 'its web app (Gmail, Outlook)', 'apple-mail': 'Apple Mail' };
+/** Where an email goes with the current preference: { url, label } or null for Birddog. */
+function emailTarget(i) {
+  const mail = i?.meta?.mail ?? {};
+  if (st.emailOpen === 'web' && mail.webUrl) return { url: mail.webUrl, label: `Open in ${mail.app ?? new URL(mail.webUrl).hostname} ↗` };
+  if (st.emailOpen === 'apple-mail' && mail.messageId) return { url: `message://%3C${encodeURIComponent(mail.messageId)}%3E`, label: 'Open in Apple Mail ↗' };
+  return null;
+}
+function go(url) {
+  const a = document.createElement('a');
+  a.href = url;
+  if (/^https?:/i.test(url)) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+  a.click();
+}
+function setEmailOpen(v) {
+  st.emailOpen = v;
+  savePrefs({ emailOpen: v });
+  toast(`Emails open in ${esc(EMAIL_OPEN[v])}${v === 'birddog' ? '' : ', or in Birddog when that app can\'t take one'}`);
+  if (drawerOpen() && drawerItem()?.kind === 'email') openDrawer(drawerItem());
+}
+async function loadMessage(i) {
+  const box = $('#mailBody');
+  if (!box) return;
+  box.innerHTML = '<div class="msg">Loading the message…</div>';
+  try {
+    const r = await api.message(i.id);
+    if ($('#drawer').dataset.id !== i.id) return;
+    if (!r.ok) {
+      box.innerHTML = `<div class="msg">${esc(r.error)}</div>${r.needsScope ? '<div class="row-btns"><button class="btn small" data-setup>Open its card in setup →</button></div>' : ''}${r.link ? `<div class="row-btns"><a class="btn small" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">Open it in ${esc(i.meta?.mail?.app ?? 'your mail app')} ↗</a></div>` : ''}`;
+      return;
+    }
+    const m = r.message;
+    box.innerHTML = `<dl class="kv mail-head"><dt>From</dt><dd>${esc(m.from)}</dd><dt>To</dt><dd>${esc(m.to)}</dd>${m.cc ? `<dt>Cc</dt><dd>${esc(m.cc)}</dd>` : ''}${m.date ? `<dt>Date</dt><dd>${esc(m.date)}</dd>` : ''}</dl>
+      <div class="mail-text" tabindex="0" aria-label="Message text">${esc(m.text || '(no text)')}</div>
+      <div class="msg">${m.html ? 'Shown as plain text: no images or tracking pixels load. ' : ''}${m.attachments?.length ? `Attachments: ${esc(m.attachments.join(', '))}.` : ''}</div>`;
+  } catch (err) { box.innerHTML = `<div class="msg bad">${esc(err.message)}</div>`; }
+}
+
 function openLink(i) {
+  if (i?.kind === 'email') { const t = emailTarget(i); if (t) return go(t.url); if (!drawerOpen() || drawerItem()?.id !== i.id) openDrawer(i); return loadMessage(i); }
   if (i?.url) window.open(i.url, '_blank', 'noopener');
   else if (i) toast('This item has no web link. Press <kbd>c</kbd> to copy its command instead.');
 }
@@ -437,15 +481,18 @@ function openDrawer(i) {
   <div class="why-box" style="--u:${URG[i.urgency].c}"><div class="lbl">Why it's here</div>${whyHTML(i.why)}${i.meta?.rule ? `<div class="rule">Rule: ${esc(i.meta.rule.text)}</div>` : ''}</div>
   ${i.meta?.command ? `<div class="cmd"><div class="lbl">Suggested next step</div><div class="line"><code>${esc(i.meta.command)}</code><button class="btn small" data-copy="command">Copy <kbd>c</kbd></button></div></div>` : ''}
   ${fields.length ? `<dl class="kv">${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+  ${i.kind === 'email' ? `<div class="mail-box"><div class="mail-pref"><label>Open emails in <select data-email-open aria-label="Open emails in">${Object.entries({ birddog: 'Birddog', web: 'Web app (Gmail, Outlook)', 'apple-mail': 'Apple Mail' }).map(([k, v]) => `<option value="${k}" ${st.emailOpen === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
+    <div id="mailBody">${emailTarget(i) ? '<button class="btn small" data-read-mail>Read it here instead</button>' : ''}</div></div>` : ''}
   ${i.reply && !parked ? `<div class="reply-box" id="replyBox">${replyBoxHTML(i, srcName)}</div>` : ''}
   ${i.stale ? `<div class="why-box" style="--u:var(--warn)"><div class="lbl">Stale data</div>${esc(srcName)} could not refresh. Showing what it found ${esc(relTime(i.stale.since))}.<br><small>${esc(i.stale.error)}</small><div class="row-btns" style="margin-top:8px"><button class="btn small" data-retry="${esc(i.source)}">↻ Retry now</button><button class="btn small" data-setup>Fix in setup →</button></div></div>` : ''}
   </div>
-  <footer>${host ? `<a class="btn primary" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">Open on ${esc(host)} ↗</a>` : ''}
+  <footer>${i.kind === 'email' && emailTarget(i) ? `<a class="btn primary" href="${esc(emailTarget(i).url)}" ${/^https?:/.test(emailTarget(i).url) ? 'target="_blank" rel="noopener noreferrer"' : ''}>${esc(emailTarget(i).label)}</a>` : host ? `<a class="btn ${i.kind === 'email' ? '' : 'primary'}" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">Open on ${esc(host)} ↗</a>` : ''}
   ${i.meta?.path ? `<button class="btn ${host ? '' : 'primary'}" data-copy="path">Copy path</button>` : ''}
   ${parked ? '<button class="btn" data-d="restore">↩ Restore</button>' : '<button class="btn" data-d="done">Done <kbd>x</kbd></button><button class="btn" data-d="snooze">Snooze <kbd>s</kbd></button>'}</footer>`;
   $('#drawer').classList.add('open');
   $('#drawer').dataset.id = i.id;
   if (i.reply?.allowed && !parked) checkReply(i);
+  if (i.kind === 'email' && !emailTarget(i)) loadMessage(i);
 }
 // ---------------------------------------------------------------------------
 // Replies (sources with the "reply" capability, e.g. Slack). Posting is opt-in per source,
@@ -701,6 +748,7 @@ function commands() {
     { label: 'Appearance…', run: openAppear },
     { label: 'Notifications…', run: () => toggleNotifyPanel() },
     { label: 'Switch profile (Work, Home…)', k: 'P', run: () => prof.cycle() },
+    ...Object.entries(EMAIL_OPEN).map(([k, v]) => ({ label: `Open emails in ${v}`, run: () => setEmailOpen(k) })),
     { label: 'Profiles…', run: () => prof.open() },
     { label: 'Profile: Auto (by schedule)', run: () => prof.pick('auto') },
     { label: 'Profile: All sources', run: () => prof.pick('all') },
@@ -1500,7 +1548,7 @@ async function disconnectCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-cal-remove],[data-sync-done],[data-allow-replies],[data-reply-send],[data-reply-undo],[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-read-mail],[data-cal-remove],[data-sync-done],[data-allow-replies],[data-reply-send],[data-reply-undo],[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.allowReplies) return setAllowReplies(d.allowReplies, t.checked, t);
@@ -1536,6 +1584,7 @@ document.addEventListener('click', (e) => {
   if (d.connect) return connectCard(d.connect);
   if (d.oauth) return oauthSignIn(d.oauth);
   if (d.oauthOff) return oauthSignOut(d.oauthOff);
+  if ('readMail' in d) { const i = drawerItem(); return i && loadMessage(i); }
   if (d.calRemove) return removeCalendar(d.calRemove);
   if (d.calmode) { st.cards.cal = { ...(st.cards.cal ?? {}), mode: d.calmode, editing: true, draft: undefined, msg: null }; return renderCards(); }
   if (d.guideLink) { closeAll(); return openGuide(d.guideLink); }
@@ -1600,6 +1649,10 @@ document.addEventListener('mousedown', (e) => {
   if (appearOpen() && !e.target.closest('#appear,#appearBtn')) closeAppear();
   if (acctOpen() && !e.target.closest('#acctMenu,#meBtn')) closeAcct();
   if (notifyPanelOpen() && !e.target.closest('#notifyPanel,#notifyBtn')) closeNotifyPanel();
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.matches?.('[data-email-open]')) setEmailOpen(e.target.value);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -1744,6 +1797,7 @@ async function boot() {
   initAppearance({ prefs, save: savePrefs, changed: () => { if (appearOpen()) renderAppear(); loadShots(); } });
   initGuide({ open: !!prefs.guideOpen, width: prefs.guideWidth ?? null, save: (open) => savePrefs({ guideOpen: open }), saveWidth: (w) => savePrefs({ guideWidth: w }), theme: () => document.documentElement.dataset.theme });
   st.hidden = new Set(prefs.hiddenSources ?? []);
+  st.emailOpen = prefs.emailOpen ?? 'birddog';
   setRail(prefs.railOpen !== false, { save: false });
   render();
   await load();

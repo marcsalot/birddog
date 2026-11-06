@@ -647,6 +647,21 @@ export async function createBirddog({
       }
       await triage.snooze(findItem(m[1]), until); return { ok: true };
     }],
+    ['GET', /^\/api\/items\/([^/]+)\/message$/, async (m) => {
+      // Read an email in Birddog, as plain text. Sources without message() (or without the
+      // opt-in read access) answer with what to do instead, and the email's own link.
+      const item = findItem(m[1]);
+      if (item.kind !== 'email') throw new HttpError(400, 'Only emails can be read here.');
+      const src = sources.find((x) => x.id === item.source);
+      const link = item.meta?.mail?.webUrl ?? item.url ?? null;
+      if (typeof src?.message !== 'function') return { ok: false, error: `${src?.name ?? item.source} can't show messages in Birddog.`, link };
+      try {
+        return { ok: true, message: await src.message(item, { ...context, now: Date.now() }, config.sources?.[src.id] ?? {}), link };
+      } catch (e) {
+        if (e.code === 'needs_scope') return { ok: false, needsScope: true, error: e.message, link };
+        throw new HttpError(502, e.message);
+      }
+    }],
     ['GET', /^\/api\/items\/([^/]+)\/reply$/, replyRoute((m) => replies.details(findItem(m[1])))],
     ['POST', /^\/api\/items\/([^/]+)\/reply$/, replyRoute((m, body) => replies.queue(m[1], body.text, { broadcast: body.broadcast === true }))],
     ['GET', /^\/api\/replies\/([^/]+)$/, replyRoute((m) => replies.get(m[1]))],

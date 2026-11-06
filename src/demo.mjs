@@ -363,8 +363,8 @@ function discordData(t0) {
 }
 
 // ---- Thunderbird: a made-up profile folder with one Inbox ---------------------------
-function mboxMessage({ from, subject, at, status, id, to = 'Sam <sam@home.example>', extra = '' }) {
-  return `From - ${new Date(at).toUTCString()}\nX-Mozilla-Status: ${status}\nX-Mozilla-Status2: 00000000\nMessage-ID: <${id}@home.example>\nDate: ${new Date(at).toUTCString()}\nFrom: ${from}\nTo: ${to}\n${extra}Subject: ${subject}\nContent-Type: text/plain; charset=UTF-8\n\nMade-up message for the Birddog demo.\n\n`;
+function mboxMessage({ from, subject, at, status, id, to = 'Sam <sam@home.example>', extra = '', body = 'Made-up message for the Birddog demo.' }) {
+  return `From - ${new Date(at).toUTCString()}\nX-Mozilla-Status: ${status}\nX-Mozilla-Status2: 00000000\nMessage-ID: <${id}@home.example>\nDate: ${new Date(at).toUTCString()}\nFrom: ${from}\nTo: ${to}\n${extra}Subject: ${subject}\nContent-Type: text/plain; charset=UTF-8\n\n${body}\n\n`;
 }
 export async function demoThunderbird(dir, now = Date.now()) {
   const profile = path.join(dir, 'thunderbird-profile');
@@ -379,7 +379,7 @@ export async function demoThunderbird(dir, now = Date.now()) {
   ].join('\n') + '\n');
   await fs.writeFile(path.join(inbox, 'INBOX'), [
     mboxMessage({ from: 'Old Newsletter <news@example.org>', subject: 'Last week in woodworking', at: now - 9 * DAY, status: '0000', id: 'n1' }),
-    mboxMessage({ from: '"Dana (landlord)" <dana@home.example>', subject: 'Boiler service visit: Thursday 9–11?', at: now - 2.5 * HOUR, status: '0000', id: 'd1' }),
+    mboxMessage({ from: '"Dana (landlord)" <dana@home.example>', subject: 'Boiler service visit: Thursday 9–11?', at: now - 2.5 * HOUR, status: '0000', id: 'd1', body: 'Hi Sam,\n\nThe engineer can come on Thursday between 9 and 11 to service the boiler. Does that work? They need access to the airing cupboard.\n\nThanks,\nDana' }),
     mboxMessage({ from: 'City Library <noreply@library.example>', subject: '=?UTF-8?Q?Your_hold_is_ready_=E2=80=93_pick_up_by_Saturday?=', at: now - 1.6 * DAY, status: '0000', id: 'l1' }),
     mboxMessage({ from: 'Alex <alex@home.example>', subject: 'Camping weekend: who brings the stove?', at: now - 3 * DAY, status: '0005', id: 'a1' }),
     mboxMessage({ from: 'Shop <orders@shop.example>', subject: 'Your order has shipped', at: now - 5 * HOUR, status: '0001', id: 's1' }),
@@ -387,7 +387,7 @@ export async function demoThunderbird(dir, now = Date.now()) {
     // Noise and FYI, so the demo shows the sorting: a newsletter, a GitHub notification, and a thread you're only CC'd on.
     mboxMessage({ from: 'Gear Shop <deals@gearshop.example>', subject: 'Weekly deals: 30% off tents', at: now - 4 * HOUR, status: '0000', id: 'w1', extra: 'List-Unsubscribe: <https://gearshop.example/unsub>\n' }),
     mboxMessage({ from: 'GitHub <notifications@github.com>', subject: '[acme/payments] Retry failed webhooks (#482)', at: now - 2 * HOUR, status: '0000', id: 'g1', extra: 'List-Id: acme/payments <payments.acme.github.com>\n' }),
-    mboxMessage({ from: 'Jo <jo@home.example>', subject: 'Re: Tent for the camping weekend', at: now - 6 * HOUR, status: '0000', id: 't1', to: 'Alex <alex@home.example>', extra: 'Cc: Sam <sam@home.example>\n' }),
+    mboxMessage({ from: 'Jo <jo@home.example>', subject: 'Re: Tent for the camping weekend', at: now - 6 * HOUR, status: '0000', id: 't1', to: 'Alex <alex@home.example>', extra: 'Cc: Sam <sam@home.example>\n', body: 'I can bring the big tent if someone has the footprint. Sam, cc-ing you in case you still have it.\n\nJo' }),
   ].join(''));
   return profile;
 }
@@ -522,6 +522,11 @@ export function demoFetch(clock = () => Date.now()) {
       const p = decodeURIComponent(u.pathname.replace('/v1.0', ''));
       const data = teamsData(t0, teamsSent, now);
       if (p === '/me') return json(TEAMS_ME);
+      const om = /^\/me\/messages\/([^/]+)$/.exec(p);
+      if (om) {
+        const m = ops.mail.find((x) => x.id === om[1]);
+        return m ? json({ ...m, hasAttachments: m.id === 'om1', body: { contentType: 'text', content: m.id === 'om1' ? 'Hi Sam,\n\nThe Q4 vendor invoice from Ledgerly is attached (€4,200). Finance needs your approval by Friday so it goes out in this payment run.\n\nThanks!\nLena' : 'Made-up message for the Birddog demo.' } }) : json({ error: { code: 'NotFound' } }, 404);
+      }
       if (p === '/me/mailFolders/inbox/messages') {
         const flagged = /flagStatus/.test(u.searchParams.get('$filter') ?? '');
         return json({ value: flagged ? [] : ops.mail });
@@ -603,7 +608,7 @@ export function demoHistory(now) {
 /** A secret store that lives in memory and starts with the demo's fake credentials. */
 export function demoSecrets() {
   const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token'], ['discord-token', 'demo-not-a-real-token'], ['todoist-token', 'demo-not-a-real-token'], ['dynatrace-token', 'demo-not-a-real-token'], ['grafana-token', 'demo-not-a-real-token'], ['jenkins-token', 'demo-not-a-real-token'], ['confluence-token', 'demo-not-a-real-token'],
-    ['oauth-msmail', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Mail.ReadBasic' })],
+    ['oauth-msmail', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Mail.ReadBasic Mail.Read' })],
     ['oauth-mstodo', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Tasks.Read Tasks.ReadWrite' })],
     // A fake Teams sign-in that never expires (the fake Graph above takes any token).
     ['oauth-teams', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Chat.Read ChatMessage.Send' })]]);
@@ -645,7 +650,7 @@ export async function createDemo() {
       jenkins: { enabled: true, url: JENKINS_URL, username: 'sam', onlyMine: false },
       ghprojects: { enabled: true, projects: 'https://github.com/orgs/acme/projects/5' },
       confluence: { enabled: true, site: JIRA, email: 'sam@acme.example' },
-      outlook: { enabled: true, vip: '', mute: '', showNoise: false },
+      outlook: { enabled: true, vip: '', mute: '', showNoise: false, readBodies: true },
     },
     // Work shows everything on weekdays; Home shows the personal sources.
     profiles: [

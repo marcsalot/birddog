@@ -96,7 +96,8 @@ if you want them. Self-managed GitLab users bring their own app; the built-in on
    - Under **Advanced settings**, set **Allow public client flows** to **Yes**. Save.
 4. **API permissions → Add a permission → Microsoft Graph → Delegated:** `User.Read`,
    `Calendars.Read` and `offline_access`, for Teams `Chat.Read` and `ChatMessage.Send`, and for
-   To Do `Tasks.Read` and `Tasks.ReadWrite`, and for Outlook mail `Mail.ReadBasic`. Don't grant admin consent; users consent for
+   To Do `Tasks.Read` and `Tasks.ReadWrite`, and for Outlook mail `Mail.ReadBasic` and `Mail.Read`
+   (asked for only when someone turns on Read message text). Don't grant admin consent; users consent for
    themselves (Teams only asks for `ChatMessage.Send` once someone turns on Allow replies, To Do
    only asks for `Tasks.ReadWrite` once someone turns on Sync done). Teams chats need a work or
    school account; To Do works with personal accounts too.
@@ -125,9 +126,11 @@ domain, plus a Microsoft Partner Network ID. Personal accounts work without it.
    - **Data access → Add or remove scopes:** add
      `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/tasks.readonly`,
      `https://www.googleapis.com/auth/tasks` (asked for only after someone turns on Sync done) and
-     `email` (to show which account is signed in), and `https://www.googleapis.com/auth/gmail.metadata`.
+     `email` (to show which account is signed in), `https://www.googleapis.com/auth/gmail.metadata`,
+     and `https://www.googleapis.com/auth/gmail.readonly` (asked for instead of metadata only when
+     someone turns on Read message text).
      Google classes the calendar and tasks scopes as **sensitive** and `gmail.metadata` as
-     **restricted**: a public app using it needs Google's verification and an annual security
+     **restricted** (so is `gmail.readonly`): a public app using them needs Google's verification and an annual security
      assessment. Until then, Sign in with Gmail works only for the app's test users. Leave it
      out if you don't want that; everything else keeps working.
 4. **Clients → Create client → Application type: Desktop app**, named `Birddog`.

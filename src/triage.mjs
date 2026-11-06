@@ -27,6 +27,7 @@ export const DEFAULT_PREFS = Object.freeze({
   guideWidth: null,
   hideNextStep: false,
   profile: 'auto', // which profile is showing: auto, all, or a profile id (src/profiles.mjs)
+  emailOpen: 'birddog', // where an email opens: birddog (read it here), web (Gmail / Outlook on the web), apple-mail
 });
 
 const PREF_CHECKS = {
@@ -40,6 +41,7 @@ const PREF_CHECKS = {
   guideWidth: (v) => v === null || (Number.isInteger(v) && v >= 280 && v <= 2400),
   hideNextStep: (v) => typeof v === 'boolean',
   profile: isChoice,
+  emailOpen: (v) => ['birddog', 'web', 'apple-mail'].includes(v),
 };
 
 export class Triage {

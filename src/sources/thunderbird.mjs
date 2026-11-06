@@ -20,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { expandHome, tildify } from '../config.mjs';
 import { createItem } from '../items.mjs';
-import { addressOf, classifyMail, MAIL_FIELDS, noiseNote, normalizeMailSettings } from '../mailsense.mjs';
+import { addressOf, bodyText, classifyMail, MAIL_FIELDS, noiseNote, normalizeMailSettings } from '../mailsense.mjs';
 import { plural, rank } from '../rules.mjs';
 
 export const id = 'thunderbird';
@@ -158,7 +158,7 @@ export function senderName(from) {
  * The messages in a stretch of mbox text: [{ headers, flags }].
  * When the text is the end of a bigger file, the first (cut-off) message is dropped.
  */
-export function mboxMessages(text, { partial = false } = {}) {
+export function mboxMessages(text, { partial = false, raw = false } = {}) {
   const starts = [];
   // A separator is a "From " line followed by a header line; a body line that happens
   // to start with "From " (when it wasn't escaped as ">From ") is not.
@@ -172,7 +172,7 @@ export function mboxMessages(text, { partial = false } = {}) {
     const end = chunk.search(/\r?\n\r?\n/);
     const headers = parseHeaders(chunk.slice(body, end < 0 ? chunk.length : end));
     const status = /^[0-9a-f]{4}$/i.test(headers['x-mozilla-status'] ?? '') ? parseInt(headers['x-mozilla-status'], 16) : null;
-    out.push({ headers, flags: status });
+    out.push({ headers, flags: status, ...(raw ? { raw: chunk.slice(body) } : {}) });
   }
   return out;
 }
@@ -215,7 +215,7 @@ async function inboxOf(account) {
 }
 
 /** Everything the source found, without ranking: for test() and collect(). */
-export async function scan(config = {}, opts = {}) {
+export async function scan(config = {}, opts = {}, { raw = false } = {}) {
   const profile = await findProfile(config, opts);
   const prefs = await fs.readFile(path.join(profile, 'prefs.js'), 'utf8');
   const accounts = accountsFromPrefs(prefs, profile);
@@ -224,7 +224,7 @@ export async function scan(config = {}, opts = {}) {
     const file = await inboxOf(a);
     if (!file) continue; // no local copy (maildir stores and IMAP without offline mail are skipped)
     const { text, partial } = await readTail(file, opts.tailBytes);
-    found.push({ account: a, file, messages: mboxMessages(text, { partial }) });
+    found.push({ account: a, file, messages: mboxMessages(text, { partial, raw }) });
   }
   return { profile, accounts, inboxes: found, me: identities(prefs) };
 }
@@ -271,7 +271,7 @@ export async function collect(config = {}, ctx = {}) {
         id: `thunderbird:${crypto.createHash('sha256').update(`${account.dir}\n${msgId}`).digest('hex').slice(0, 20)}`,
         source: id, kind: 'email', title: subject.slice(0, 140), url: null,
         why: ranked.why, urgency: ranked.urgency, updatedAt: new Date(at).toISOString(),
-        meta: { rule: ranked.rule, fingerprint: String(flags & (FLAGS.read | FLAGS.starred | FLAGS.replied)), fields: { From: decodeWords(h.from ?? '').slice(0, 120) || 'unknown', Account: account.label, Folder: 'Inbox', Received: new Date(at).toLocaleString(), ...(sense.reason ? { Why: `${sense.verdict}: ${sense.reason}` } : {}) } },
+        meta: { mail: { messageId: String(msgId).replace(/^<|>$/g, ''), webUrl: null, app: 'Thunderbird', dir: account.dir }, rule: ranked.rule, fingerprint: String(flags & (FLAGS.read | FLAGS.starred | FLAGS.replied)), fields: { From: decodeWords(h.from ?? '').slice(0, 120) || 'unknown', Account: account.label, Folder: 'Inbox', Received: new Date(at).toLocaleString(), ...(sense.reason ? { Why: `${sense.verdict}: ${sense.reason}` } : {}) } },
       }));
     }
     items.push(...mine);
@@ -279,4 +279,18 @@ export async function collect(config = {}, ctx = {}) {
   const unread = items.filter((i) => i.meta.rule?.id !== 'email-starred').length;
   ctx.summary?.(`${plural(r.inboxes.length, 'Inbox', 'Inboxes')} · ${plural(unread, 'message')} waiting · ${plural(items.length - unread, 'starred')}${noiseNote(noise)}`);
   return items;
+}
+
+/** The message's text, read from Thunderbird's file (read-only), for viewing in Birddog. */
+export async function message(item, ctx = {}, config = {}) {
+  const ref = item?.meta?.mail;
+  if (!ref?.messageId) throw new Error('This email has no message to show.');
+  const r = await scan(config, ctx.thunderbird, { raw: true });
+  const box = r.inboxes.find((b) => b.account.dir === ref.dir) ?? r.inboxes[0];
+  const want = ref.messageId.toLowerCase();
+  const m = (box?.messages ?? []).slice().reverse().find((x) => String(x.headers['message-id'] ?? '').replace(/^<|>$/g, '').toLowerCase() === want);
+  if (!m) throw new Error('Thunderbird no longer has this message in the Inbox (moved, or deleted and compacted).');
+  const h = m.headers;
+  const body = bodyText(m.raw);
+  return { subject: decodeWords(h.subject ?? '') || '(no subject)', from: decodeWords(h.from ?? ''), to: decodeWords(h.to ?? ''), cc: decodeWords(h.cc ?? ''), date: h.date ?? null, ...body };
 }

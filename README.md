@@ -379,7 +379,19 @@ Thunderbird, Gmail and Outlook mail don't just list unread mail. Each message ge
 
 Starred / flagged mail always counts as needing you. A robot that says *action required* still gets through. Each mail card has **Always important** and **Always noise** (addresses or `@domains`), and **Also list the noise** if you'd rather see it, in Later.
 
-Gmail asks for `gmail.metadata` and Outlook for `Mail.ReadBasic`: senders, subjects, labels and flags, never what an email says. Neither can change anything. `gmail.metadata` is a Google *restricted* scope, so Sign in with Gmail works for the Birddog Google app's test users until that app passes Google's verification; bring your own Google app to use it right away.
+### Reading an email: in Birddog, or in your mail app
+
+Choose where emails open (in an email's details, or ⌘K → *Open emails in…*):
+
+- **Birddog** (the default): the message opens in the details panel, as plain text. HTML mail is turned into text and never rendered, so no images or tracking pixels load and nothing in an email can run in the page. Long messages are cut at 20,000 characters, with a note.
+- **Web app**: Gmail or Outlook on the web, at that message.
+- **Apple Mail**: a `message://` link with the email's Message-ID.
+
+If your choice can't open a particular email (a Thunderbird message has no web link, say), it opens in Birddog instead. <kbd>o</kbd> and the panel's main button follow the choice; *Read it here instead* is always there.
+
+Thunderbird messages are read from Thunderbird's own file. Gmail and Outlook need one more permission to show message text: set **Read message text** to *yes* on the Gmail or Outlook mail card and sign in again. Gmail then uses `gmail.readonly` instead of `gmail.metadata` (Gmail won't hand out bodies while the metadata scope is granted), and Outlook adds `Mail.Read`. Until then, the panel says so and links to the message in its app.
+
+Without *Read message text*, Gmail asks for `gmail.metadata` and Outlook for `Mail.ReadBasic`: senders, subjects, labels and flags, never what an email says. Neither can change anything. `gmail.metadata` is a Google *restricted* scope, so Sign in with Gmail works for the Birddog Google app's test users until that app passes Google's verification; bring your own Google app to use it right away.
 
 ## Ops and work tools
 
@@ -957,6 +969,7 @@ The UI talks to a small JSON API on the same port. It answers only on `localhost
 |---|---|---|
 | `GET` | `/api/items` | items (with `status`: open/done/snoozed) and per-source status |
 | `POST` | `/api/refresh` | re-run all sources |
+| `GET` | `/api/items/:id/message` | an email's text, for reading in Birddog: `{ ok, message: { subject, from, to, cc, date, text, html, attachments }, link }`, or `{ ok: false, needsScope, error, link }` |
 | `POST` | `/api/items/:id/done` | mark done |
 | `POST` | `/api/items/:id/snooze` | `{ "until": "<ISO date>" \| "change" }` |
 | `POST` | `/api/items/:id/restore` | undo done/snooze |
@@ -1088,6 +1101,7 @@ test/                  node:test suites
 16. ✅ Discord, Thunderbird, and Work/Home profiles (1.18)
 17. ✅ Two-way task lists (To Do, Google Tasks, Todoist) and one unified calendar (1.19)
 18. ✅ Dynatrace, Grafana and Jenkins (private servers too), GitHub Projects, Confluence, and email triage with Gmail and Outlook (1.20)
+19. ✅ Read email in Birddog, or open it in your mail app (1.21)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Discord, Google Chat), Teams channel mentions (with admin consent) and comments (GitHub/GitLab PRs, Jira).
 

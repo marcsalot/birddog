@@ -103,7 +103,7 @@ export function displayName(from) {
 }
 
 /**
- * @param {object} m { source, key, subject, from, at (ms), unread, starred, replied, sense, url, account, now }
+ * @param {object} m { source, key, subject, from, at (ms), unread, starred, replied, sense, url, account, now, messageId, app }
  */
 export function mailItem(m) {
   const by = displayName(m.from);
@@ -112,6 +112,79 @@ export function mailItem(m) {
   return createItem({
     id: `${m.source}:${m.key}`, source: m.source, kind: 'email', title: String(m.subject || '(no subject)').replace(/\s+/g, ' ').slice(0, 140),
     url: /^https:\/\//.test(m.url ?? '') ? m.url : null, why: r.why, urgency: r.urgency, updatedAt: new Date(m.at).toISOString(),
-    meta: { rule: r.rule, fingerprint: [m.unread, m.starred, m.replied].join('|'), fields: { From: String(m.from ?? 'unknown').slice(0, 120), Account: m.account ?? 'unknown', Received: new Date(m.at).toLocaleString(), ...(m.sense.reason ? { Why: `${m.sense.verdict}: ${m.sense.reason}` } : {}) } },
+    meta: { mail: { id: m.key, messageId: m.messageId ? String(m.messageId).replace(/^<|>$/g, '') : null, webUrl: /^https:\/\//.test(m.url ?? '') ? m.url : null, app: m.app ?? null }, rule: r.rule, fingerprint: [m.unread, m.starred, m.replied].join('|'), fields: { From: String(m.from ?? 'unknown').slice(0, 120), Account: m.account ?? 'unknown', Received: new Date(m.at).toLocaleString(), ...(m.sense.reason ? { Why: `${m.sense.verdict}: ${m.sense.reason}` } : {}) } },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Reading a message in Birddog: always as plain text (HTML is turned into text, never
+// rendered), so no tracking pixels load and nothing in an email can run in the page.
+
+export const MAX_BODY = 20_000;
+export const READ_BODIES_FIELD = Object.freeze({ key: 'readBodies', label: 'Read message text in Birddog (yes / no)', placeholder: 'no: asks for read access at your next sign-in', optional: true });
+
+/** An error that means "sign in again and allow reading message text". */
+export const needsScope = (msg) => Object.assign(new Error(msg), { code: 'needs_scope' });
+
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+/** HTML → readable plain text. */
+export function htmlToText(html) {
+  return String(html ?? '')
+    .replace(/<(script|style|head|title)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|li|h[1-6]|blockquote|table)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<a\s[^>]*href="(https?:[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, label) => (label.replace(/<[^>]+>/g, '').trim() === href ? href : `${label} (${href})`))
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (m, e) => (e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENTITIES[e.toLowerCase()] ?? m))
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+const decodeQP = (s) => Buffer.from(s.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16))), 'latin1');
+function decodeCharset(buf, charset = 'utf-8') {
+  try { return new TextDecoder(charset.toLowerCase().replace(/^"|"$/g, ''), { fatal: false }).decode(buf); } catch { return new TextDecoder().decode(buf); }
+}
+function splitHeaders(raw) {
+  const at = raw.search(/\r?\n\r?\n/);
+  const head = at < 0 ? raw : raw.slice(0, at);
+  const body = at < 0 ? '' : raw.slice(at).replace(/^\r?\n\r?\n/, '');
+  const h = {};
+  for (const line of head.replace(/\r\n/g, '\n').replace(/\n[ \t]+/g, ' ').split('\n')) {
+    const m = /^([!-9;-~]+):\s?(.*)$/.exec(line);
+    if (m && !(m[1].toLowerCase() in h)) h[m[1].toLowerCase()] = m[2].trim();
+  }
+  return { h, body };
+}
+const param = (v, name) => (new RegExp(`${name}\\s*=\\s*"?([^";]+)"?`, 'i').exec(v ?? '') ?? [])[1] ?? null;
+
+/**
+ * A raw MIME message (headers + body, as a latin1 string straight from the file) →
+ * { text, html: was it HTML, attachments: [names] }. Prefers text/plain.
+ */
+export function bodyText(raw) {
+  const attachments = [];
+  const walk = (part) => {
+    const { h, body } = splitHeaders(part);
+    const type = (h['content-type'] ?? 'text/plain').toLowerCase();
+    if (type.startsWith('multipart/')) {
+      const b = param(h['content-type'], 'boundary');
+      if (!b) return null;
+      const parts = body.split(new RegExp(`\\r?\\n?--${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:--)?\\r?\\n?`)).filter((x) => x.trim());
+      const found = parts.map(walk).filter(Boolean);
+      return found.find((f) => !f.html) ?? found[0] ?? null;
+    }
+    const disposition = (h['content-disposition'] ?? '').toLowerCase();
+    if (disposition.startsWith('attachment') || !type.startsWith('text/')) {
+      const name = param(h['content-disposition'], 'filename') ?? param(h['content-type'], 'name');
+      if (name) attachments.push(name);
+      return null;
+    }
+    const enc = (h['content-transfer-encoding'] ?? '').toLowerCase();
+    const bytes = enc === 'base64' ? Buffer.from(body.replace(/\s+/g, ''), 'base64') : enc === 'quoted-printable' ? decodeQP(body) : Buffer.from(body, 'latin1');
+    const text = decodeCharset(bytes, param(h['content-type'], 'charset') ?? 'utf-8');
+    return type.startsWith('text/html') ? { text: htmlToText(text), html: true } : { text: text.replace(/^>From /gm, 'From '), html: false };
+  };
+  const r = walk(raw) ?? { text: '', html: false };
+  const text = r.text.length > MAX_BODY ? `${r.text.slice(0, MAX_BODY)}\n\n… (the rest is cut off; open it in your mail app to read it all)` : r.text;
+  return { text, html: r.html, attachments };
 }

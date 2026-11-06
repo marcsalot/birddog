@@ -752,3 +752,8 @@ a.tkey:hover{text-decoration:underline}
 .cal-list li{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;font-size:13px}
 .cal-list li .msg{margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cal-list li b+.btn{margin-left:auto}
+.mail-box{margin:14px 0;display:flex;flex-direction:column;gap:8px}
+.mail-pref{font-size:13px;color:var(--muted)}
+.mail-pref select{margin-left:6px;font:inherit;padding:3px 6px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text)}
+.mail-head{margin:0}
+.mail-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.5;max-height:46vh;overflow:auto;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
