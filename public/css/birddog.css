@@ -748,3 +748,7 @@ a.tkey:hover{text-decoration:underline}
 .pf-day{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
 .pf-day.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#111)}
 @media (max-width:760px){.profile-btn span{display:none}.profile-panel{right:12px}}
+.cal-list{list-style:none;margin:6px 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.cal-list li{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;font-size:13px}
+.cal-list li .msg{margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cal-list li b+.btn{margin-left:auto}

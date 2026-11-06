@@ -14,6 +14,9 @@ export const KEYWORDS = {
   slack: 'chat messages mentions dms direct',
   teams: 'microsoft teams chat messages mentions office 365 m365 work',
   discord: 'chat messages mentions servers guilds community gaming home',
+  todo: 'tasks to do todo lists reminders microsoft outlook office 365 two-way sync',
+  gtasks: 'tasks to do todo lists gmail google two-way sync',
+  todoist: 'tasks to do todo lists projects two-way sync',
   thunderbird: 'email mail inbox unread starred mozilla imap pop local home',
 };
 

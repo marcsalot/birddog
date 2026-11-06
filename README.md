@@ -185,7 +185,7 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **Local git** | Unpushed commits, uncommitted work, merged and stale branches | Scans folders you pick; runs read-only `git` commands |
 | **GitHub** | Review requests, your PRs with failing checks, change requests or conflicts, unread @mentions, assigned issues | Your existing `gh` login, or "Sign in with GitHub" (device flow) |
 | **Jira Cloud** | Your tickets: overdue, sprint ending, blocked, high priority | Site + email + API token |
-| **Calendar** | Meetings starting soon or later today, all-day events | Sign in with Google or Microsoft, iCloud (app-specific password), or any iCal link or `.ics` file |
+| **Calendar** | Meetings starting soon or later today, all-day events, from **every calendar you connect, in one list** | Sign in with Google and/or Microsoft, iCloud (app-specific password), Thunderbird's calendars on this computer, and any iCal link or `.ics` file |
 | **GitLab** | MRs to review, your MRs with failed pipelines or conflicts, assigned issues | Sign in with GitLab, or a `read_api` token |
 | **Linear** | Your issues: overdue, cycle ending, blocked, urgent | Personal API key |
 | **Azure DevOps** | PRs you haven't voted on, work items assigned to you | PAT with Work Items: Read, Code: Read |
@@ -195,6 +195,9 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **Microsoft Teams** | 1:1 chats waiting for your reply, @mentions in group and meeting chats. Can reply, opt-in | Sign in with Microsoft Teams (work or school account): `Chat.Read`; `ChatMessage.Send` to reply. Channel posts aren't read (that needs an admin-only permission) |
 | **Discord** | @mentions of you (or a role you have) in your servers that you haven't answered in that channel since | A bot you create and invite (Discord gives personal apps no access to your own account). Bot token + your user ID; never sees your DMs |
 | **Thunderbird** | Unread mail from the last week, and starred mail you haven't replied to | Reads Thunderbird's own mail files on this computer, read-only. No account, no token |
+| **Microsoft To Do** | Tasks overdue, due within a week, or important. **Two-way**, opt-in | Sign in with Microsoft To Do: `Tasks.Read`; `Tasks.ReadWrite` once you turn on Sync done |
+| **Google Tasks** | Tasks (Gmail's and Calendar's Tasks panel) overdue or due within a week. **Two-way**, opt-in | Sign in with Google Tasks: `tasks.readonly`; `tasks` once you turn on Sync done |
+| **Todoist** | Tasks overdue, due within a week, or priority 1. **Two-way**, opt-in | API token |
 
 GitHub also reports **failing Actions runs** on branches you pushed this week, and **Dependabot alerts** on those repos (`"actions": false` / `"security": false` under `sources.github` turn them off).
 
@@ -329,7 +332,11 @@ Why an API token and not Atlassian OAuth? OAuth would mean registering your own 
 
 ## What it finds (Calendar)
 
-Your meetings from any iCalendar feed or `.ics` file:
+Your meetings from every calendar you connect, **read together into one list**: Google (sign-in), Outlook / Microsoft 365 (sign-in), iCloud (CalDAV), Thunderbird's calendars on this computer, and any iCal link or `.ics` file. Connect as many as you like; the Calendar card lists each one with its own **Remove** button and an **Add a calendar** button. A meeting that's in two calendars (invited at work and at home) shows once, naming both. If one calendar fails, the rest still show and the card says which one broke.
+
+**Thunderbird's calendars** are its local calendars plus the offline copies it keeps of Google, CalDAV and iCal calendars you subscribed to in Thunderbird. Birddog copies Thunderbird's calendar file (`calendar-data/local.sqlite`) to a temporary folder and reads the copy with Node's built-in SQLite (Node 22.13 or newer), so it never locks or changes Thunderbird's file. Disabled calendars are skipped.
+
+Example lines:
 
 | Example "why" | Urgency |
 |---|---|
@@ -353,6 +360,19 @@ That link works like a password (anyone who has it can read your calendar), so B
 
 The reader is built in (no dependencies) and handles what real feeds contain: folded lines and escapes, UTC, `TZID` and floating times, Windows zone names from Outlook, all-day and multi-day events, `DURATION`, recurring events (`RRULE` with `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, `INTERVAL`, `COUNT`, `UNTIL`, `BYDAY` such as `2TU` or `-1FR`, `BYMONTHDAY`, `BYMONTH`), `EXDATE`, `RDATE`, and single instances that were moved or cancelled (`RECURRENCE-ID`). Recurring events keep their wall-clock time across daylight saving changes. A zone it doesn't know falls back to the zone's standard offset, with a warning in setup. Not supported: `BYSETPOS`, `HOURLY`/`MINUTELY` rules and `BYWEEKNO` (such events show their first occurrence only).
 
+## Task lists, two-way
+
+**Microsoft To Do**, **Google Tasks** and **Todoist** list your open tasks that are overdue, due within a week, or marked important / priority 1 (**Show all** in config, `"showAll": true`, lists every open task). Overdue, due today and important are **Today**; the rest are **Later**.
+
+They sync both ways, if you want:
+
+- **Reading** is always on. Complete a task in To Do, Google Tasks or Todoist and it leaves Birddog on the next refresh.
+- **Sync done** is a switch on each task source's card, off by default. With it on, marking a task **Done** in Birddog (the button, <kbd>x</kbd>, or MCP `mark_done`) completes it in the app, and **Undo** / **Restore** reopens it. If the app refuses, nothing changes in Birddog and you see why. Snooze stays in Birddog.
+- To Do and Google Tasks ask for write access (`Tasks.ReadWrite`, `tasks`) only at the sign-in after you switch Sync done on. Todoist tokens can't be limited to reading, so Birddog only writes when the switch is on.
+- A recurring Todoist task moves to its next date when closed (as it does in Todoist), and Undo reopens it.
+
+Thunderbird's own tasks and Apple Reminders aren't read yet: Thunderbird keeps tasks in the same calendar file (writing it back isn't safe while Thunderbird runs), and Reminders has no web API.
+
 ## Profiles: Work, Home and your own
 
 The **profile** button in the top bar (or <kbd>⇧P</kbd>) picks which sources you see. Birddog starts with two:
@@ -360,7 +380,7 @@ The **profile** button in the top bar (or <kbd>⇧P</kbd>) picks which sources y
 | Profile | Shows | When (in Auto) |
 |---|---|---|
 | **Work** | every source | Monday–Friday, 08:00–18:00 |
-| **Home** | local git, GitHub, calendar, Discord, Thunderbird | the rest of the time |
+| **Home** | local git, GitHub, calendar, Discord, Thunderbird, Google Tasks, Todoist | the rest of the time |
 
 **Auto** (the default) switches by schedule: the first profile whose schedule covers right now, otherwise the first one without a schedule. You can also pin a profile, or pick **All sources**. **Edit profiles** lets you rename them, pick their sources, set days and hours (overnight windows like 22:00–06:00 work), turn notifications off for a profile, and add up to 12 (On call, Side project, Weekend…).
 
@@ -369,7 +389,7 @@ Every source keeps refreshing in the background, so switching is instant. A prof
 ```json
 "profiles": [
   { "id": "work", "name": "Work", "sources": null, "schedule": { "days": [1, 2, 3, 4, 5], "from": "08:00", "to": "18:00" }, "notify": true },
-  { "id": "home", "name": "Home", "sources": ["git", "github", "cal", "discord", "thunderbird"], "schedule": null, "notify": true }
+  { "id": "home", "name": "Home", "sources": ["git", "github", "cal", "discord", "thunderbird", "gtasks", "todoist"], "schedule": null, "notify": true }
 ]
 ```
 
@@ -379,7 +399,7 @@ Every source keeps refreshing in the background, so switching is instant. A prof
 
 Sources & settings lists every source A–Z, with a search box that matches names and kinds of thing (*calendar* finds Google, Microsoft, iCloud and iCal; *ci* finds GitHub Actions, GitLab pipelines and Azure).
 
-GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Discord and Thunderbird are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token`, `slack-token` and `discord-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN`, `BIRDDOG_SLACK_TOKEN` and `BIRDDOG_DISCORD_TOKEN`. Thunderbird needs no token. None of them write anything while collecting. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL. Slack can also post your replies, only once you turn on [Allow replies](#reply-from-birddog).
+GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Discord and Thunderbird are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token`, `slack-token`, `discord-token` and `todoist-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN`, `BIRDDOG_SLACK_TOKEN`, `BIRDDOG_DISCORD_TOKEN` and `TODOIST_API_TOKEN`. Thunderbird needs no token. None of them write anything while collecting. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL. Slack can also post your replies, only once you turn on [Allow replies](#reply-from-birddog).
 
 | Source | Ranks it as | Rules that fire |
 |---|---|---|
@@ -391,6 +411,7 @@ GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Discord and Thunderbird 
 | Slack | mentions, DMs | fresh → Today; older → Later |
 | Discord | mentions | under 3 days → Today; older → Later |
 | Thunderbird | email | starred and not replied, or unread under a day → Today; older unread → Later |
+| To Do, Google Tasks, Todoist | tasks | overdue, due today, or important / P1 → Today; due within a week → Later |
 | GitHub Actions / Dependabot | CI failures, security alerts | failing < 2 days and critical/high → Today; others → Later |
 
 GitLab also has **Sign in with GitLab**: register an application under *User settings → Applications* (scope `read_api`, *not* confidential, redirect `http://127.0.0.1:4747/auth/oauth/gitlab/callback`), then set `"oauth": { "gitlab": { "clientId": "…", "url": "https://gitlab.com" } }`.
@@ -1025,6 +1046,7 @@ test/                  node:test suites
 14. ✅ Microsoft Teams: chats waiting on you, @mentions, and opt-in replies (1.14)
 15. ✅ Ticket board, worktrees & slots, launch slots (1.15–1.17)
 16. ✅ Discord, Thunderbird, and Work/Home profiles (1.18)
+17. ✅ Two-way task lists (To Do, Google Tasks, Todoist) and one unified calendar (1.19)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Discord, Google Chat), Teams channel mentions (with admin consent) and comments (GitHub/GitLab PRs, Jira).
 

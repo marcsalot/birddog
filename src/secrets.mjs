@@ -119,6 +119,7 @@ export const ENV_SECRETS = Object.freeze({
   'pagerduty-token': ['BIRDDOG_PAGERDUTY_TOKEN'],
   'slack-token': ['BIRDDOG_SLACK_TOKEN'],
   'discord-token': ['BIRDDOG_DISCORD_TOKEN'],
+  'todoist-token': ['TODOIST_API_TOKEN', 'BIRDDOG_TODOIST_TOKEN'],
   'gitlab-client-secret': ['BIRDDOG_GITLAB_CLIENT_SECRET'],
 });
 

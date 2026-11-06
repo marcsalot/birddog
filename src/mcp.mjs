@@ -65,9 +65,9 @@ const TOOLS = [
   {
     name: 'mark_done',
     title: 'Mark done',
-    description: 'Mark an item done in Birddog. It disappears from the open list until it changes (new commits, new activity). Only changes Birddog\'s own list, never GitHub, Jira or git.',
+    description: 'Mark an item done in Birddog. It disappears from the open list until it changes (new commits, new activity). Only changes Birddog\'s own list, never GitHub, Jira or git. The one exception: tasks from a task list (Microsoft To Do, Google Tasks, Todoist) whose source has "Sync done" switched on are completed in that app too.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   {
     name: 'snooze',
@@ -237,8 +237,9 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
     },
     async mark_done(a) {
       const it = await find(a.id);
-      await app.triage.done(it);
-      return result(`Marked done: ${it.title}. It comes back if it changes.`, { id: it.id, status: 'done' });
+      let r = {};
+      try { r = app.markDone ? await app.markDone(it) : (await app.triage.done(it), {}); } catch (e) { throw new ToolError(e.message); }
+      return result(`Marked done: ${it.title}.${r.synced ? ` Also completed in ${r.synced}.` : ' It comes back if it changes.'}`, { id: it.id, status: 'done', ...(r.synced ? { completedIn: r.synced } : {}) });
     },
     async snooze(a) {
       const it = await find(a.id);
@@ -258,7 +259,7 @@ export function createMcpHandler({ app, version, now = () => Date.now(), refresh
     },
     async restore(a) {
       const it = await find(a.id);
-      await app.triage.restore(it.id);
+      try { if (app.restoreItem) await app.restoreItem(it.id); else await app.triage.restore(it.id); } catch (e) { throw new ToolError(e.message); }
       return result(`Back in the open list: ${it.title}`, { id: it.id, status: 'open' });
     },
   };

@@ -21,7 +21,7 @@ export const CHOICES = Object.freeze(['auto', 'all']);
 export function defaultProfiles() {
   return [
     { id: 'work', name: 'Work', sources: null, schedule: { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' }, notify: true },
-    { id: 'home', name: 'Home', sources: ['git', 'github', 'cal', 'discord', 'thunderbird'], schedule: null, notify: true },
+    { id: 'home', name: 'Home', sources: ['git', 'github', 'cal', 'discord', 'thunderbird', 'gtasks', 'todoist'], schedule: null, notify: true },
   ];
 }
 

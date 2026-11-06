@@ -176,7 +176,10 @@
       const patch = m[2] === 'done' ? { status: 'done', doneAt: now() }
         : m[2] === 'snooze' ? { status: 'snoozed', snoozedAt: now(), snoozeUntil: body.until }
           : { status: 'open', doneAt: undefined, snoozedAt: undefined, snoozeUntil: undefined };
-      return setItem(id, patch) ? json({ ok: true }) : bad('That item is gone. Try refreshing.', 404);
+      // Task lists have Sync done on in the demo, so Done "completes" them in the (pretend) app too.
+      const app = { todo: 'Microsoft To Do', todoist: 'Todoist', gtasks: 'Google Tasks' }[state.items.items.find((x) => x.id === id)?.source];
+      if (!setItem(id, patch)) return bad('That item is gone. Try refreshing.', 404);
+      return json(m[2] === 'done' ? { ok: true, synced: app ?? null } : m[2] === 'restore' ? { ok: true, reopened: app ?? null } : { ok: true });
     }
     if (method === 'POST' && (m = /^\/api\/items\/([^/]+)\/reply$/.exec(p))) {
       const text = String(body.text ?? '').trim();

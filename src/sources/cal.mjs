@@ -1,4 +1,10 @@
-// Calendar source.
+// Calendar source: one unified list of meetings from every calendar you connect.
+//
+// It reads all of these that are set up, together: Google (sign-in), Outlook /
+// Microsoft 365 (sign-in), iCloud (CalDAV), an iCal link or .ics file, and
+// Thunderbird's calendars on this computer. A meeting that shows up in two of them
+// (you were invited at work and at home) is listed once. One calendar failing is a
+// warning; the others still show.
 //
 // Reads an iCalendar feed (the "secret address in iCal format" from Google, Outlook,
 // Fastmail, iCloud…) and/or a local .ics file, and lists your meetings:
@@ -19,10 +25,11 @@ import { plural, rank } from '../rules.mjs';
 import { getText } from './http.mjs';
 import { caldavClient, googleOccurrences, graphOccurrences } from './calendar-apis.mjs';
 import { expand, parseCalendar } from './ical.mjs';
+import { thunderbirdCalendars } from './thunderbird-cal.mjs';
 
 export const id = 'cal';
 export const name = 'Calendar';
-export const description = 'Upcoming meetings from any iCal link or .ics file, so nothing sneaks up on you.';
+export const description = 'Upcoming meetings from Google, Outlook, iCloud, Thunderbird and any iCal link, in one list.';
 export const enabledByDefault = false;
 export const secretFields = Object.freeze({ url: 'cal-url', caldavPassword: 'caldav-password' });
 
@@ -74,6 +81,12 @@ export function normalizeSettings(input = {}) {
   if (input.file !== undefined || !Object.keys(input).length) {
     const file = String(input.file ?? '').trim();
     out.file = file ? tildify(expandHome(file)) : '';
+  }
+  if (input.thunderbird !== undefined) out.thunderbird = input.thunderbird === true || input.thunderbird === 'true' || input.thunderbird === 'on';
+  if (input.thunderbirdProfile !== undefined) {
+    const f = String(input.thunderbirdProfile).trim();
+    if (f && !(path.isAbsolute(f) || f.startsWith('~'))) throw new TypeError('The Thunderbird profile folder must be a full path');
+    out.thunderbirdProfile = f;
   }
   if (input.email !== undefined || !Object.keys(input).length) {
     const email = String(input.email ?? '').trim().toLowerCase();
@@ -213,34 +226,86 @@ export function meetingItems(cals, { now, email = '', warn = () => {} }) {
   return itemsFromOccurrences(icsOccurrences(cals, { now, email, warn }), { now });
 }
 
-/** Read the calendar, whichever back end is configured. Returns { label, occs, events }. */
-async function readSource(config, ctx) {
+export const BACKENDS = Object.freeze(['google', 'microsoft', 'caldav', 'ics', 'thunderbird']);
+export const BACKEND_NAMES = Object.freeze({ google: 'Google Calendar', microsoft: 'Outlook', caldav: 'iCloud', ics: 'iCal link or file', thunderbird: 'Thunderbird' });
+
+/** Which calendars are set up. A sign-in counts when it's connected (or, without status, when it's the chosen provider). */
+export async function backends(config = {}, ctx = {}) {
+  const out = [];
+  for (const p of ['google', 'microsoft']) {
+    const st = ctx.oauth?.status ? await ctx.oauth.status(p).catch(() => null) : null;
+    if (st ? st.connected : config.provider === p && !!ctx.oauth) out.push(p);
+  }
+  if (config.caldavUser && (await ctx.secret?.(secretFields.caldavPassword))) out.push('caldav');
+  if (config.file || (await ctx.secret?.(secretFields.url))) out.push('ics');
+  if (config.thunderbird === true) out.push('thunderbird');
+  return out;
+}
+
+/** One back end → { label, occs, events }. */
+async function readOne(kind, config, ctx) {
   const now = ctx.now ?? Date.now();
   const fetchImpl = ctx.fetch ?? fetch;
   const win = meetingWindow(now);
-  const provider = config.provider || 'ics';
-  if (provider === 'google' || provider === 'microsoft') {
-    if (!ctx.oauth) throw new Error(`Sign in to ${provider === 'google' ? 'Google' : 'Microsoft'} in setup.`);
-    const token = await ctx.oauth.accessToken(provider);
-    const occs = provider === 'google'
+  if (kind === 'google' || kind === 'microsoft') {
+    const token = await ctx.oauth.accessToken(kind);
+    const occs = kind === 'google'
       ? await googleOccurrences({ fetchImpl, token, from: now - 86_400_000, to: win.to })
       : await graphOccurrences({ fetchImpl, token, from: now - 86_400_000, to: win.to });
-    const conn = await ctx.oauth.connection?.(provider).catch(() => null);
-    const label = conn?.account ? `${provider === 'google' ? 'Google' : 'Outlook'} · ${conn.account}` : provider === 'google' ? 'Google Calendar' : 'Outlook';
+    const conn = await ctx.oauth.connection?.(kind).catch(() => null);
+    const label = conn?.account ? `${kind === 'google' ? 'Google' : 'Outlook'} · ${conn.account}` : kind === 'google' ? 'Google Calendar' : 'Outlook';
     return { label, occs: occs.map((o) => ({ ...o, label })), events: occs.length };
   }
-  if (provider === 'caldav') {
+  if (kind === 'caldav') {
     const password = await ctx.secret?.(secretFields.caldavPassword);
-    if (!config.caldavUser || !password) throw new Error('Add your Apple ID and an app-specific password in setup (iCloud).');
     const client = caldavClient({ fetchImpl, baseUrl: config.caldavUrl || 'https://caldav.icloud.com/', username: config.caldavUser, password });
     const cals = await client.calendars({ from: now - 86_400_000, to: win.to });
     const occs = icsOccurrences(cals, { now, email: config.email, warn: ctx.warn });
     return { label: client.label, occs, events: occs.length };
   }
+  if (kind === 'thunderbird') {
+    const cals = await thunderbirdCalendars({ profile: config.thunderbirdProfile || undefined, from: now - 86_400_000, to: win.to, thunderbird: ctx.thunderbird });
+    let events = 0;
+    for (const c of cals) events += parseCalendar(c.text).events.length;
+    return { label: cals.length ? `Thunderbird (${plural(cals.length, 'calendar')})` : 'Thunderbird', occs: icsOccurrences(cals, { now, email: config.email, warn: ctx.warn }), events };
+  }
   const cals = await readCalendars(config, ctx);
   let events = 0;
   for (const c of cals) events += parseCalendar(c.text).events.length;
   return { label: cals.map((c) => c.label).join(' + '), occs: icsOccurrences(cals, { now, email: config.email, warn: ctx.warn }), events };
+}
+
+/** The same meeting in two calendars (by title and time) is listed once, naming both. */
+export function mergeOccurrences(occs) {
+  const seen = new Map();
+  for (const o of occs) {
+    const k = `${String(o.summary ?? '').trim().toLowerCase()}|${o.start}|${o.end}|${!!o.allDay}`;
+    const prev = seen.get(k);
+    if (!prev) { seen.set(k, { ...o }); continue; }
+    if (o.label && !String(prev.label ?? '').split(' + ').includes(o.label)) prev.label = `${prev.label} + ${o.label}`;
+    prev.joinUrl ??= o.joinUrl;
+    prev.declined = prev.declined && o.declined;
+  }
+  return [...seen.values()];
+}
+
+/** Read every calendar that's set up. Returns { label, occs, events, read }. */
+async function readSource(config, ctx) {
+  const kinds = await backends(config, ctx);
+  if (!kinds.length) throw new Error('Add a calendar in setup: sign in with Google or Microsoft, iCloud, an iCal link or file, or Thunderbird.');
+  const results = await Promise.allSettled(kinds.map((k) => readOne(k, config, ctx)));
+  const ok = [];
+  results.forEach((r, n) => {
+    if (r.status === 'fulfilled') ok.push(r.value);
+    else if (kinds.length > 1) (ctx.warn ?? (() => {}))(`${BACKEND_NAMES[kinds[n]]}: ${r.reason?.message ?? r.reason}`);
+  });
+  if (!ok.length) throw results[0].reason;
+  return {
+    label: ok.map((r) => r.label).join(' + '),
+    occs: mergeOccurrences(ok.flatMap((r) => r.occs)),
+    events: ok.reduce((n, r) => n + r.events, 0),
+    read: kinds.filter((_, n) => results[n].status === 'fulfilled'),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +315,7 @@ export async function test(config = {}, ctx = {}) {
   try {
     const now = ctx.now ?? Date.now();
     const src = await readSource(config, ctx);
-    if (!src.events && (config.provider || 'ics') === 'ics') return { ok: false, message: `${src.label}: no events found. Is this an iCal (.ics) link?` };
+    if (!src.events && src.read.length === 1 && src.read[0] === 'ics') return { ok: false, message: `${src.label}: no events found. Is this an iCal (.ics) link?` };
     const soon = itemsFromOccurrences(src.occs, { now, label: src.label }).length;
     return { ok: true, message: `Read ${plural(src.events, 'event')} from ${src.label} · ${plural(soon, 'meeting')} today or tomorrow` };
   } catch (err) {

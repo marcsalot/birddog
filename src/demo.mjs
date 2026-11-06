@@ -387,9 +387,51 @@ export async function demoThunderbird(dir, now = Date.now()) {
   return profile;
 }
 
+// ---- Task lists: Microsoft To Do (fake Graph) and Todoist ---------------------------
+const ymd = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+function todoData(t0, done) {
+  const task = (id, title, dueIn, importance = 'normal') => ({ id, title, status: done.has(id) ? 'completed' : 'notStarted', importance, lastModifiedDateTime: new Date(t0 - DAY).toISOString(), ...(dueIn === null ? {} : { dueDateTime: { dateTime: `${ymd(t0 + dueIn * DAY)}T00:00:00.0000000`, timeZone: 'UTC' } }) });
+  return {
+    lists: [{ id: 'list-work', displayName: 'Work', wellknownListName: 'defaultList' }, { id: 'list-q4', displayName: 'Q4 close' }],
+    tasks: {
+      'list-work': [task('t1', 'Send the payments runbook to on-call', -1), task('t2', 'Book the 1:1 room for next week', 0), task('t3', 'Expense report', null, 'high'), task('t4', 'Read the RFC on idempotency keys', 4)],
+      'list-q4': [task('t5', 'Ledger export sign-off with finance', 2), task('t6', 'Someday: tidy the dashboards', null)],
+    },
+  };
+}
+function todoistData(t0, closed) {
+  const t = (id, content, dueIn, priority = 1, project = 'p-home') => ({ id, content, priority, project_id: project, checked: closed.has(id), is_deleted: false, added_at: new Date(t0 - 3 * DAY).toISOString(), due: dueIn === null ? null : { date: ymd(t0 + dueIn * DAY), is_recurring: false, string: '' } });
+  return {
+    tasks: [t('8001', 'Renew the car insurance', 1, 4), t('8002', 'Water the plants', 0, 1), t('8003', 'Call the dentist', -2, 2), t('8004', 'Plan the camping weekend', 5, 1, 'p-fun')].filter((x) => !x.checked),
+    projects: [{ id: 'p-home', name: 'Home' }, { id: 'p-fun', name: 'Weekend' }],
+  };
+}
+
+// ---- Thunderbird calendar: a local.sqlite with one event later today ------------------
+export async function demoThunderbirdCalendar(profile, now = Date.now()) {
+  let DatabaseSync;
+  try { ({ DatabaseSync } = await import('node:sqlite')); } catch { return false; } // older Node: the demo skips it
+  await fs.mkdir(path.join(profile, 'calendar-data'), { recursive: true });
+  const db = new DatabaseSync(path.join(profile, 'calendar-data', 'local.sqlite'));
+  try {
+    db.exec('CREATE TABLE cal_events (cal_id TEXT, id TEXT, time_created INTEGER, last_modified INTEGER, title TEXT, priority INTEGER, privacy TEXT, ical_status TEXT, flags INTEGER, event_start INTEGER, event_start_tz TEXT, event_end INTEGER, event_end_tz TEXT, event_stamp INTEGER, recurrence_id INTEGER, recurrence_id_tz TEXT, alarm_last_ack INTEGER, offline_journal INTEGER)');
+    db.exec('CREATE TABLE cal_properties (item_id TEXT, key TEXT, value BLOB, recurrence_id INTEGER, recurrence_id_tz TEXT, cal_id TEXT)');
+    db.exec('CREATE TABLE cal_recurrence (item_id TEXT, cal_id TEXT, icalString TEXT)');
+    const start = new Date(now); start.setHours(19, 30, 0, 0);
+    const at = start.getTime() < now + HOUR ? now + 3 * HOUR : start.getTime();
+    db.prepare('INSERT INTO cal_events (cal_id, id, title, flags, event_start, event_start_tz, event_end, event_end_tz) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('home-cal', 'demo-dinner', 'Dinner with Alex and Jo', 4, at * 1000, 'UTC', (at + 2 * HOUR) * 1000, 'UTC');
+    db.prepare('INSERT INTO cal_properties (item_id, key, value, cal_id) VALUES (?, ?, ?, ?)').run('demo-dinner', 'LOCATION', 'Luigi\'s, Main St', 'home-cal');
+  } finally { db.close(); }
+  await fs.appendFile(path.join(profile, 'prefs.js'), 'user_pref("calendar.registry.home-cal.name", "Home");\nuser_pref("calendar.registry.home-cal.type", "storage");\n');
+  return true;
+}
+
 export function demoFetch(clock = () => Date.now()) {
   const sent = new Set(); // channels the demo "replied" in, so the item clears like the real thing
   const teamsSent = new Map(); // Teams chat id → your reply
+  const todoDone = new Set(); // To Do tasks the demo completed (Sync done is on in the demo)
+  const todoistClosed = new Set();
   const t0 = clock(); // fake Slack messages keep their timestamps (and so their ids) across refreshes
   return async (url, init = {}) => {
     const u = new URL(url);
@@ -416,10 +458,29 @@ export function demoFetch(clock = () => Date.now()) {
       if (m) return json(d.messages[m[1]] ?? []);
       return json({ message: 'Unknown', code: 0 }, 404);
     }
+    if (u.origin === 'https://api.todoist.com') {
+      const p = u.pathname.replace('/api/v1', '');
+      const d = todoistData(t0, todoistClosed);
+      if (p === '/user') return json({ full_name: 'Sam Developer', email: 'sam@home.example' });
+      if (p === '/tasks/filter' || p === '/tasks') return json({ results: d.tasks, next_cursor: null });
+      if (p === '/projects') return json({ results: d.projects, next_cursor: null });
+      const c = /^\/tasks\/(\d+)\/(close|reopen)$/.exec(p);
+      if (c && init.method === 'POST') { if (c[2] === 'close') todoistClosed.add(c[1]); else todoistClosed.delete(c[1]); return { ok: true, status: 204, headers: new Headers(), text: async () => '', json: async () => null }; }
+      return json({ error: 'Not found' }, 404);
+    }
     if (u.origin === 'https://graph.microsoft.com') {
       const p = decodeURIComponent(u.pathname.replace('/v1.0', ''));
       const data = teamsData(t0, teamsSent, now);
       if (p === '/me') return json(TEAMS_ME);
+      const todo = todoData(t0, todoDone);
+      if (p === '/me/todo/lists') return json({ value: todo.lists });
+      const tl = /^\/me\/todo\/lists\/([^/]+)\/tasks(?:\/([^/]+))?$/.exec(p);
+      if (tl && tl[2] && init.method === 'PATCH') {
+        const status = JSON.parse(init.body).status;
+        if (status === 'completed') todoDone.add(tl[2]); else todoDone.delete(tl[2]);
+        return json({ id: tl[2], status });
+      }
+      if (tl) return json({ value: (todo.tasks[tl[1]] ?? []).filter((x) => x.status !== 'completed') });
       if (p === '/me/chats') return json({ value: data.chats });
       const m = /^\/chats\/([^/]+)\/messages$/.exec(p);
       if (m && (init.method ?? 'GET') === 'POST') {
@@ -477,7 +538,8 @@ export function demoHistory(now) {
 
 /** A secret store that lives in memory and starts with the demo's fake credentials. */
 export function demoSecrets() {
-  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token'], ['discord-token', 'demo-not-a-real-token'],
+  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token'], ['discord-token', 'demo-not-a-real-token'], ['todoist-token', 'demo-not-a-real-token'],
+    ['oauth-mstodo', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Tasks.Read Tasks.ReadWrite' })],
     // A fake Teams sign-in that never expires (the fake Graph above takes any token).
     ['oauth-teams', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Chat.Read ChatMessage.Send' })]]);
   return {
@@ -497,23 +559,27 @@ export function demoSecrets() {
 export async function createDemo() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'birddog-demo-'));
   const thunderbird = await demoThunderbird(dir);
+  const tbCalendar = await demoThunderbirdCalendar(thunderbird);
   await writeJson(path.join(dir, 'config.json'), {
     port: 4848,
     refreshMinutes: 5,
     sources: {
       git: { enabled: true, roots: ['~/code'] },
       jira: { enabled: true, site: JIRA, email: 'sam@acme.example' },
-      cal: { enabled: true, file: '', email: 'sam@acme.example' },
+      cal: { enabled: true, file: '', email: 'sam@acme.example', thunderbird: tbCalendar, thunderbirdProfile: thunderbird },
       // Replies are on in the demo; the fake Slack above takes them and sends nothing anywhere.
       slack: { enabled: true, allowReplies: true },
       teams: { enabled: true, allowReplies: true },
       discord: { enabled: true, userId: DISCORD_ME, guilds: '' },
       thunderbird: { enabled: true, profile: thunderbird, days: 7 },
+      // Task lists, two-way: Done in the demo "completes" the task in the fake To Do / Todoist.
+      todo: { enabled: true, syncDone: true },
+      todoist: { enabled: true, syncDone: true },
     },
     // Work shows everything on weekdays; Home shows the personal sources.
     profiles: [
-      { id: 'work', name: 'Work', sources: ['git', 'github', 'jira', 'cal', 'slack', 'teams'], schedule: { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' }, notify: true },
-      { id: 'home', name: 'Home', sources: ['git', 'github', 'cal', 'discord', 'thunderbird'], schedule: null, notify: true },
+      { id: 'work', name: 'Work', sources: ['git', 'github', 'jira', 'cal', 'slack', 'teams', 'todo'], schedule: { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' }, notify: true },
+      { id: 'home', name: 'Home', sources: ['git', 'github', 'cal', 'discord', 'thunderbird', 'todoist'], schedule: null, notify: true },
     ],
     chat: { demo: true },
     workspace: {
@@ -527,7 +593,7 @@ export async function createDemo() {
   });
   await writeJson(path.join(dir, 'connections.json'), {
     github: { method: 'gh-cli', login: ME, name: 'Sam Developer', connectedAt: new Date().toISOString() },
-    oauth: { teams: { account: 'sam@acme.example', connectedAt: new Date().toISOString() } },
+    oauth: { teams: { account: 'sam@acme.example', connectedAt: new Date().toISOString() }, mstodo: { account: 'sam@acme.example', connectedAt: new Date().toISOString() } },
   });
   await writeJson(path.join(dir, 'state.json'), { version: 1, items: {}, prefs: { seenSetup: true, profile: 'all' } });
   await writeJson(path.join(dir, 'history.json'), { days: demoHistory(Date.now()) });

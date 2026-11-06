@@ -24,6 +24,12 @@ export function until(days) {
   return `in ${plural(Math.floor(days), 'day')}`;
 }
 
+/** A due date in whole days: "yesterday", "3 days ago", "today", "tomorrow", "in 4 days". */
+export function dueWhen(days) {
+  if (days < 0) { const n = Math.ceil(-days); return n === 1 ? 'yesterday' : `${n} days ago`; }
+  return until(days);
+}
+
 const who = (login) => (login ? `**@${login}**` : 'Someone');
 const list = (names, max = 3) => names.slice(0, max).join(', ') + (names.length > max ? ` +${names.length - max}` : '');
 
@@ -121,6 +127,24 @@ export const RULES = [
     text: 'Direct message waiting for your reply, under 2 days old → Today',
     when: (s) => s.ageDays < 2,
     why: (s) => `${who(s.by)} messaged you **${ago(s.ageDays)}** ago · waiting for your reply`,
+  },
+  {
+    id: 'task-overdue', kind: 'task', urgency: 'today',
+    text: 'Task past its due date → Today',
+    when: (s) => s.dueDays !== null && s.dueDays < 0,
+    why: (s) => `**Overdue**, due ${dueWhen(s.dueDays)}${s.list ? ` · ${s.list}` : ''}`,
+  },
+  {
+    id: 'task-due-today', kind: 'task', urgency: 'today',
+    text: 'Task due today → Today',
+    when: (s) => s.dueDays !== null && s.dueDays < 1,
+    why: (s) => `Due **today**${s.list ? ` · ${s.list}` : ''}`,
+  },
+  {
+    id: 'task-important', kind: 'task', urgency: 'today',
+    text: 'Task marked important or top priority → Today',
+    when: (s) => s.important,
+    why: (s) => `Marked **${s.importantLabel ?? 'important'}**${s.dueDays !== null ? ` · due ${dueWhen(s.dueDays)}` : ''}${s.list ? ` · ${s.list}` : ''}`,
   },
   {
     id: 'email-starred', kind: 'email', urgency: 'today',
@@ -235,6 +259,12 @@ export const RULES = [
     text: 'Older direct message you have not answered → Later',
     when: () => true,
     why: (s) => `${who(s.by)} messaged you ${ago(s.ageDays)} ago · still unanswered`,
+  },
+  {
+    id: 'task', kind: 'task', urgency: 'later',
+    text: 'Other open task (due soon, or no date) → Later',
+    when: () => true,
+    why: (s) => `${s.dueDays !== null ? `Due ${dueWhen(s.dueDays)}` : 'No due date'}${s.list ? ` · ${s.list}` : ''}`,
   },
   {
     id: 'email-unread', kind: 'email', urgency: 'later',

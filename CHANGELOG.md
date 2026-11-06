@@ -4,6 +4,18 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-11-06
+
+### Added
+- **Task lists, two-way**: Microsoft To Do (Sign in with Microsoft To Do), Google Tasks (Sign in with Google Tasks) and Todoist (API token). They list open tasks that are overdue, due within a week, or important / P1, ranked by new task rules. **Sync done**, off by default and switched per source, makes Done in Birddog (UI, keyboard, MCP `mark_done`) complete the task in its app and Undo / Restore reopen it. If the app refuses, nothing changes in Birddog. Write scopes are asked for only after you switch it on. `PUT /api/sources/:id/sync`.
+- **One unified calendar**: the Calendar source reads every calendar that's connected at once (Google, Outlook, iCloud, iCal links and files, and now **Thunderbird's calendars**). The same meeting in two calendars shows once, and one broken calendar is a warning instead of an empty list. The card lists each calendar with **Remove** (`DELETE /api/sources/cal/calendars/:kind`) and **Add a calendar**.
+- **Thunderbird calendars**: read from a copy of `calendar-data/local.sqlite` with Node's built-in `node:sqlite` (Node 22.13+), turned into iCalendar so repeats, moved occurrences, all-day and floating times go through the existing parser.
+- The demo has To Do and Todoist with Sync done on, and a Thunderbird calendar.
+
+### Changed
+- Signing out of Google or Microsoft in the Calendar card removes just that calendar; the Calendar source stays on while it has others.
+- Home (the default profile) also shows Google Tasks and Todoist.
+
 ## [1.18.0] - 2026-11-06
 
 ### Added

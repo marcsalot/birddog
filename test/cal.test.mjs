@@ -135,7 +135,7 @@ describe('Calendar source', () => {
     const items = await cal.collect({ file: path.join(FIX, 'outlook.ics') }, { now: NOW, secret: async () => null });
     assert.equal(items.length, 4);
     assert.equal(items[0].meta.fields.Calendar, 'outlook.ics');
-    await assert.rejects(cal.collect({}, { now: NOW, secret: async () => null }), /Add a calendar link or an \.ics file/);
+    await assert.rejects(cal.collect({}, { now: NOW, secret: async () => null }), /Add a calendar in setup/);
     await assert.rejects(cal.collect({ file: '/nope/missing.ics' }, { now: NOW, secret: async () => null }), /does not exist/);
   });
 

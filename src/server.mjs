@@ -377,6 +377,8 @@ export async function createBirddog({
           secretNames: s.secretFields ?? {}, // names only, e.g. { token: 'gitlab-token' }
           capabilities: [...(s.capabilities ?? [])],
           replies: canReply(s) ? { allowed: config.sources?.[s.id]?.allowReplies === true } : null,
+          sync: s.capabilities?.includes('complete') ? { on: config.sources?.[s.id]?.syncDone === true } : null,
+          ...(s.id === 'cal' && s.backends ? { calendars: await s.backends(config.sources?.cal ?? {}, context).catch(() => []) } : {}),
           status: status ?? null,
         };
       })).then((list) => list.sort(byName)), // A–Z by display name, wherever they're listed
@@ -384,6 +386,41 @@ export async function createBirddog({
       connections: { github: await github.status() },
     };
   }
+
+  // ---- Two-way task lists: Done completes the task in its app when "Sync done" is on ----
+  const syncsDone = (src) => !!src?.capabilities?.includes('complete') && typeof src.complete === 'function' && config.sources?.[src.id]?.syncDone === true;
+  const synced = new Map(); // item id → the item, for Undo after the task left the list
+  async function markDone(item) {
+    const src = sources.find((x) => x.id === item.source);
+    if (syncsDone(src)) {
+      try { await src.complete(item, { ...context, now: Date.now() }, true, config.sources[src.id]); } catch (e) {
+        throw new HttpError(502, `Couldn't complete it in ${src.name}: ${e.message} Nothing changed.`);
+      }
+      synced.set(item.id, item);
+      if (synced.size > 200) synced.delete(synced.keys().next().value);
+    }
+    await triage.done(item);
+    await history.record(triage.apply(collector.snapshot().items)).catch(() => {});
+    return { ok: true, synced: syncsDone(src) ? src.name : null };
+  }
+  async function restoreItem(id) {
+    await triage.sync();
+    const item = synced.get(id) ?? collector.snapshot().items.find((i) => i.id === id);
+    const src = item && sources.find((x) => x.id === item.source);
+    let reopened = null;
+    if (item && syncsDone(src) && (synced.has(id) || triage.data.items[id]?.status === 'done')) {
+      try { await src.complete(item, { ...context, now: Date.now() }, false, config.sources[src.id]); } catch (e) {
+        throw new HttpError(502, `Couldn't reopen it in ${src.name}: ${e.message}`);
+      }
+      synced.delete(id);
+      reopened = src.name;
+    }
+    await triage.restore(id);
+    return { ok: true, reopened };
+  }
+
+  const calSource = () => sources.find((x) => x.id === 'cal');
+  const calBackends = async () => (calSource()?.backends ? calSource().backends(config.sources?.cal ?? {}, context) : []);
 
   function findItem(id) {
     const it = collector.snapshot().items.find((i) => i.id === id);
@@ -441,7 +478,7 @@ export async function createBirddog({
 
   // ---- Ask Fetch (chat) ----
   const chat = createChat({
-    app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; }, replies, profiles: { active: (c) => activeProfile(c), summary: () => profilesPayload() } },
+    app: { collector, triage, refresh: (o) => refresh(o), get config() { return config; }, replies, markDone, restoreItem, profiles: { active: (c) => activeProfile(c), summary: () => profilesPayload() } },
     secrets, fetchImpl, version: VERSION, now, log,
     memory: createMemory({ dir, ...(now ? { now } : {}) }),
     getPrefs: () => triage.prefs,
@@ -482,6 +519,11 @@ export async function createBirddog({
     google: (p, token) => googleAccount({ fetchImpl, token }),
     microsoft: (p, token) => graphAccount({ fetchImpl, token }),
     teams: (p, token) => graphAccount({ fetchImpl, token }),
+    mstodo: (p, token) => graphAccount({ fetchImpl, token }),
+    gtasks: async (p, token) => {
+      const r = await fetchImpl('https://openidconnect.googleapis.com/v1/userinfo', { headers: { authorization: `Bearer ${token}` } });
+      return { account: (await r.json().catch(() => ({})))?.email ?? null };
+    },
     atlassian: (p, token) => atlassianSite({ fetchImpl, token }),
     gitlab: async (p, token) => {
       const r = await fetchImpl(`${gitlabBase()}/api/v4/user`, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } });
@@ -503,12 +545,15 @@ export async function createBirddog({
   /** Which source each sign-in feeds, how to switch it to that sign-in, and back. */
   const USES = {
     atlassian: { source: 'jira', on: (info) => ({ auth: 'oauth', ...(info.site ? { site: info.site } : {}) }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
-    google: { source: 'cal', on: () => ({ provider: 'google' }), uses: (c) => c.provider === 'google', off: { provider: 'ics' } },
-    microsoft: { source: 'cal', on: () => ({ provider: 'microsoft' }), uses: (c) => c.provider === 'microsoft', off: { provider: 'ics' } },
+    // The calendar reads every calendar that's connected, so a sign-in adds to it.
+    google: { source: 'cal', on: () => ({ provider: 'google' }), uses: () => true, off: {} },
+    microsoft: { source: 'cal', on: () => ({ provider: 'microsoft' }), uses: () => true, off: {} },
     gitlab: { source: 'gitlab', on: () => ({ auth: 'oauth', url: gitlabBase() }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
     linear: { source: 'linear', on: () => ({ auth: 'oauth' }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
     pagerduty: { source: 'pagerduty', on: () => ({ auth: 'oauth' }), uses: (c) => c.auth === 'oauth', off: { auth: 'token' } },
     teams: { source: 'teams', on: () => ({}), uses: () => true, off: {} }, // Teams has no other way in
+    mstodo: { source: 'todo', on: () => ({}), uses: () => true, off: {} },
+    gtasks: { source: 'gtasks', on: () => ({}), uses: () => true, off: {} },
   };
   /** After a sign-in, point the matching source at it and switch it on. */
   function useProvider(p, info) {
@@ -589,11 +634,7 @@ export async function createBirddog({
       if (body.enabled) await refresh({ only: src.id });
       return setupPayload();
     }],
-    ['POST', /^\/api\/items\/([^/]+)\/done$/, async (m) => {
-      await triage.done(findItem(m[1]));
-      await history.record(triage.apply(collector.snapshot().items)).catch(() => {});
-      return { ok: true };
-    }],
+    ['POST', /^\/api\/items\/([^/]+)\/done$/, (m) => markDone(findItem(m[1]))],
     ['POST', /^\/api\/items\/([^/]+)\/snooze$/, async (m, body) => {
       const until = body.until;
       if (until !== 'change' && !(typeof until === 'string' && Date.parse(until) > Date.now())) {
@@ -615,7 +656,33 @@ export async function createBirddog({
       log.log?.(`birddog: replies ${body.allow ? 'on' : 'off'} for ${src.name}`);
       return setupPayload();
     }],
-    ['POST', /^\/api\/items\/([^/]+)\/restore$/, async (m) => { await triage.restore(m[1]); return { ok: true }; }],
+    ['POST', /^\/api\/items\/([^/]+)\/restore$/, (m) => restoreItem(m[1])],
+    ['DELETE', /^\/api\/sources\/cal\/calendars\/([a-z]+)$/, async (m) => {
+      // Remove one calendar from the unified list; the others stay.
+      const kind = m[1];
+      const cfg = { ...(config.sources?.cal ?? {}) };
+      if (kind === 'google' || kind === 'microsoft') await oauth.disconnect(kind);
+      else if (kind === 'caldav') { await secrets.delete('caldav-password').catch(() => {}); cfg.caldavUser = ''; }
+      else if (kind === 'ics') { await secrets.delete('cal-url').catch(() => {}); cfg.file = ''; }
+      else if (kind === 'thunderbird') cfg.thunderbird = false;
+      else throw new HttpError(404, `No calendar called "${kind}"`);
+      config = { ...config, sources: { ...config.sources, cal: cfg } };
+      const left = await calBackends();
+      config = { ...config, sources: { ...config.sources, cal: { ...cfg, enabled: left.length > 0 } } };
+      await saveConfig(dir, config);
+      await refresh({ only: 'cal' }).catch(() => {});
+      return setupPayload();
+    }],
+    ['PUT', /^\/api\/sources\/([^/]+)\/sync$/, async (m, body) => {
+      // "Sync done": the switch that lets Done in Birddog complete the task in its app.
+      const src = findSource(m[1]);
+      if (!src.capabilities?.includes('complete')) throw new HttpError(400, `${src.name} has no tasks to complete.`);
+      if (typeof body.on !== 'boolean') throw new HttpError(400, 'Send { "on": true | false }');
+      config = { ...config, sources: { ...config.sources, [src.id]: { ...(config.sources?.[src.id] ?? {}), syncDone: body.on } } };
+      await saveConfig(dir, config);
+      log.log?.(`birddog: sync done ${body.on ? 'on' : 'off'} for ${src.name}`);
+      return setupPayload();
+    }],
     ['GET', /^\/api\/prefs$/, async () => { await triage.sync(); return triage.prefs; }],
     ['PUT', /^\/api\/prefs$/, async (_m, body) => {
       const rejected = await triage.setPrefs(body);
@@ -667,7 +734,9 @@ export async function createBirddog({
       const { source: src, uses, off } = USES[p];
       const cfg = config.sources?.[src] ?? {};
       if (uses(cfg)) {
-        config = { ...config, sources: { ...config.sources, [src]: { ...cfg, enabled: false, ...off } } };
+        // The calendar stays on while it has other calendars to read.
+        const keep = src === 'cal' && (await calBackends()).length > 0;
+        config = { ...config, sources: { ...config.sources, [src]: { ...cfg, enabled: keep, ...off } } };
         await saveConfig(dir, config);
         await refresh({ only: src }).catch(() => {});
       }
@@ -843,6 +912,8 @@ export async function createBirddog({
     replies,
     board,
     workspace,
+    markDone,
+    restoreItem,
     /** Profiles: active(choice) → the profile showing (null = all sources); summary() for the API. */
     profiles: { active: (c) => activeProfile(c), summary: () => profilesPayload() },
     configFile: loaded.file,

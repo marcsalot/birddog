@@ -30,6 +30,9 @@ const SRC = {
   slack: { short: 'SL', c: '#611f69' },
   teams: { short: 'TM', c: '#5b5fc7' },
   discord: { short: 'DC', c: '#5865f2' },
+  todo: { short: 'TD', c: '#2564cf' },
+  gtasks: { short: 'GT', c: '#1a73e8' },
+  todoist: { short: 'TI', c: '#e44332' },
   thunderbird: { short: 'TB', c: '#0a84ff' },
 };
 const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
@@ -357,7 +360,7 @@ function reopen(i, snapshot) {
   Object.assign(i, snapshot);
   st.selId = i.id;
   render();
-  api.restore(i.id).catch((err) => toast(`⚠ Undo failed: ${esc(err.message)}`));
+  api.restore(i.id).then((r) => { if (r?.reopened) toast(`↩ Reopened in ${esc(r.reopened)}`); }).catch((err) => toast(`⚠ Undo failed: ${esc(err.message)}`));
 }
 
 function markDone(i) {
@@ -365,7 +368,8 @@ function markDone(i) {
   const prev = { status: i.status, doneAt: i.doneAt, snoozedUntil: i.snoozedUntil };
   closeDrawer();
   leave(i.id, () => { i.status = 'done'; i.doneAt = new Date().toISOString(); });
-  api.done(i.id).catch((err) => { Object.assign(i, prev); render(); toast(`⚠ ${esc(err.message)}`); });
+  api.done(i.id).then((r) => { if (r?.synced) toast(`✓ Done: ${short(i.title)} · completed in ${esc(r.synced)}`, () => reopen(i, { status: 'open', doneAt: undefined })); })
+    .catch((err) => { Object.assign(i, prev); render(); toast(`⚠ ${esc(err.message)}`); });
   toast(`✓ Done: ${short(i.title)}`, () => reopen(i, { status: 'open', doneAt: undefined }));
 }
 
@@ -384,7 +388,7 @@ function restore(i) {
   if (!i) return;
   const prev = { status: i.status, doneAt: i.doneAt, snoozedUntil: i.snoozedUntil, snoozedAt: i.snoozedAt };
   leave(i.id, () => { i.status = 'open'; });
-  api.restore(i.id).catch((err) => { Object.assign(i, prev); render(); toast(`⚠ ${esc(err.message)}`); });
+  api.restore(i.id).then((r) => { if (r?.reopened) toast(`↩ Back in your inbox · reopened in ${esc(r.reopened)}`); }).catch((err) => { Object.assign(i, prev); render(); toast(`⚠ ${esc(err.message)}`); });
   toast('↩ Back in your inbox');
 }
 
@@ -563,6 +567,28 @@ async function setAllowReplies(id, allow, input) {
     toast(allow ? '✉ Replies on: Birddog can now post as you when you send a reply.' : 'Replies off: Birddog is read-only again.');
     await load({ quiet: true });
   } catch (err) { input.checked = !allow; toast(`⚠ ${esc(err.message)}`); }
+  input.disabled = false;
+  renderCards();
+}
+
+async function removeCalendar(kind) {
+  st.cards.cal = { ...(st.cards.cal ?? {}), busy: true };
+  renderCards();
+  try {
+    st.setup = await api.removeCalendar(kind);
+    st.cards.cal = { msg: 'Removed. The other calendars stay.', msgGood: true };
+    await load({ quiet: true });
+  } catch (err) { st.cards.cal = { msg: err.message, msgGood: false }; }
+  renderCards();
+}
+
+async function setSyncDone(id, on, input) {
+  input.disabled = true;
+  try {
+    st.setup = await api.syncDone(id, on);
+    const src = st.setup.sources.find((x) => x.id === id);
+    toast(on ? `✓ Sync done on: Done in Birddog completes the task in ${esc(src?.name ?? id)}.${src?.setup?.oauth ? ' Sign in again on its card to allow it.' : ''}` : 'Sync done off: Done only changes Birddog\'s list.');
+  } catch (err) { input.checked = !on; toast(`⚠ ${esc(err.message)}`); }
   input.disabled = false;
   renderCards();
 }
@@ -824,12 +850,14 @@ const READS = {
   pagerduty: 'your incidents and on-call shifts (read)',
   atlassian: 'your Jira issues (read)',
   teams: 'your Teams chats and the messages that mention you (Chat.Read)',
+  mstodo: 'your Microsoft To Do lists and tasks (Tasks.Read; Tasks.ReadWrite only after you turn on Sync done)',
+  gtasks: 'your Google Tasks lists and tasks (read-only; changing tasks only after you turn on Sync done)',
 };
 const signInReady = (o) => !!o && o.canStore && o.configured && !(o.needsSecret && !o.hasSecret);
 
 /** The one step left when Birddog's built-in app needs a secret that doesn't ship with it (Google). */
 function secretStepHTML(o) {
-  const p = o.id;
+  const p = o.app ?? o.id; // the secret belongs to the app (Google Tasks uses the Google app's)
   const v = `BIRDDOG_${p.toUpperCase()}_CLIENT_SECRET`;
   const who = o.name.split(' ')[0];
   return `<div class="signin-note" role="note"><b>${esc(who)} sign-in: one more step.</b> Birddog's ${esc(who)} app secret doesn't ship with Birddog. Ask whoever runs the Birddog ${esc(who)} project for it, then run
@@ -871,7 +899,7 @@ function signInRow(p, { label, fallback = 'use a token below', compact = false }
       : `One-click sign-in isn't set up in this copy of Birddog, so ${esc(fallback)}.`;
     return `<div class="signin-row off"><span class="msg">${why} Have your own ${esc(who)} app? <button class="linkish" data-guide-link="logins">Bring your own app</button>.</span></div>`;
   }
-  const writes = p === 'teams' ? 'It only posts a reply you send yourself, once you turn on Allow replies' : 'It never changes anything';
+  const writes = p === 'teams' ? 'It only posts a reply you send yourself, once you turn on Allow replies' : p === 'mstodo' || p === 'gtasks' ? 'It only completes a task when you mark it Done with Sync done switched on' : 'It never changes anything';
   return `<div class="signin-row"><button class="btn primary" data-oauth="${esc(p)}">${esc(label)}</button><span class="consent">Birddog will read ${READS[p] ?? 'your data, read-only'}. ${writes}, and the tokens stay in your keychain.</span></div>${p === 'google' && o.unverified ? googleNoticeHTML(o.googleStatus) : ''}`;
 }
 
@@ -974,6 +1002,16 @@ function calCardHTML(src) {
   const { status, cls, label, msg, summary } = cardState(src, ui);
   const store = esc(st.setup.secretStore);
   const signedIn = (provider === 'google' || provider === 'microsoft') && oauthState(provider)?.connected;
+  // One calendar list from everything connected: each with its own Remove, and "Add a calendar".
+  const calendars = src.calendars ?? [];
+  if (src.enabled && calendars.length && !ui.editing) {
+    const NAMES = { google: 'Google Calendar', microsoft: 'Outlook / Microsoft 365', caldav: 'iCloud', ics: 'iCal link or file', thunderbird: 'Thunderbird (this computer)' };
+    const who = (k) => (k === 'google' || k === 'microsoft' ? oauthState(k)?.account : k === 'caldav' ? s.caldavUser : k === 'ics' ? [hasUrl && 'iCal link', s.file].filter(Boolean).join(' + ') : s.thunderbirdProfile ? `profile …/${s.thunderbirdProfile.split(/[\\/]/).filter(Boolean).pop()}` : 'default profile');
+    return `${cardTop('cal', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
+      <ul class="cal-list">${calendars.map((k) => `<li><b>${esc(NAMES[k] ?? k)}</b>${who(k) ? ` <span class="msg">${esc(who(k))}</span>` : ''}<button class="btn small" data-cal-remove="${esc(k)}" ${ui.busy ? 'disabled' : ''} aria-label="Remove ${esc(NAMES[k] ?? k)}">Remove</button></li>`).join('')}</ul>
+      <div class="msg">${calendars.length > 1 ? 'Read together, in one list. A meeting in two calendars shows once.' : 'Add more calendars and Birddog reads them together.'}${summary}</div>${msg}
+      <div class="row-btns"><button class="btn" data-edit="cal">Add a calendar</button><button class="btn" data-test="cal" ${ui.busy ? 'disabled' : ''}>Test again</button></div></div>`;
+  }
   if (src.enabled && signedIn && !ui.editing) {
     const o = oauthState(provider);
     return `${cardTop('cal', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
@@ -990,7 +1028,15 @@ function calCardHTML(src) {
   const noOneClick = notReady.filter((o) => !(o.builtIn && o.secretMissing)).map((o) => o.name); // a missing secret shows its own step
   const picker = `${signInRow('google', { label: 'Sign in with Google', compact: true })}${signInRow('microsoft', { label: 'Sign in with Microsoft', compact: true })}
     ${noOneClick.length ? `<div class="msg">One-click ${esc(noOneClick.join(' and '))} sign-in isn't set up in this copy of Birddog: use the calendar's iCal link below, or <button class="linkish" data-guide-link="logins">bring your own app</button>.</div>` : ''}
-    <div class="oauth-row"><button class="btn ${mode === 'caldav' ? 'on' : ''}" data-calmode="caldav">iCloud</button><button class="btn ${mode === 'ics' ? 'on' : ''}" data-calmode="ics">iCal link or file</button></div>`;
+    <div class="oauth-row"><button class="btn ${mode === 'caldav' ? 'on' : ''}" data-calmode="caldav">iCloud</button><button class="btn ${mode === 'ics' ? 'on' : ''}" data-calmode="ics">iCal link or file</button><button class="btn ${mode === 'thunderbird' ? 'on' : ''}" data-calmode="thunderbird">Thunderbird</button></div>`;
+  if (mode === 'thunderbird') {
+    const d = ui.draft ?? { thunderbirdProfile: s.thunderbirdProfile ?? '' };
+    return `${cardTop('cal', src.name, ui.busy ? 'Working…' : calendars.length ? label : 'Not connected', ui.msg && !ui.msgGood ? 'err' : '')}<div class="msg">${esc(src.description)}</div>${picker}
+      <input type="hidden" data-f="cal.thunderbird" value="true">
+      <div class="fields"><label class="full"><span>Thunderbird profile folder <i>(optional)</i></span><input data-f="cal.thunderbirdProfile" value="${esc(d.thunderbirdProfile)}" placeholder="blank = Thunderbird's default profile" autocomplete="off" spellcheck="false"></label></div>
+      <div class="msg">Reads the calendars Thunderbird keeps on this computer (local ones, and its offline copies of Google, CalDAV and iCal calendars), from a copy of its calendar file. Needs Node 22.13 or newer. Read-only.</div>${msg}
+      <div class="row-btns"><button class="btn primary" data-connect="cal" ${ui.busy ? 'disabled' : ''}>Test &amp; connect <kbd>↵</kbd></button>${calendars.length ? '<button class="btn" data-cancel="cal">Cancel</button>' : ''}</div></div>`;
+  }
   if (mode === 'caldav') {
     const d = ui.draft ?? { caldavUser: s.caldavUser ?? '', caldavPassword: '' };
     return `${cardTop('cal', src.name, ui.busy ? 'Working…' : 'Not connected', ui.msg && !ui.msgGood ? 'err' : '')}<div class="msg">${esc(src.description)}</div>${picker}
@@ -1043,6 +1089,14 @@ function replySwitchHTML(src) {
     <div class="msg">${on ? 'On. When you send a reply from an item, Birddog posts it <b>as you</b> in' : 'Off: Birddog only reads. Turn this on to answer from Birddog. It will post <b>as you</b> in'} ${esc(src.name)}${src.id === 'teams' ? ', into the chat' : ': into the DM, or in the thread of a mention'}. It never posts on its own, and every reply waits 5 seconds so you can undo it. ${src.setup?.replyNote ? esc(src.setup.replyNote) : 'Needs the <code>chat:write</code> scope on your token.'}</div></div>`;
 }
 
+/** "Sync done" for task lists: the only switch that lets Done change a task in its app. */
+function syncSwitchHTML(src) {
+  if (!src.sync) return '';
+  const on = src.sync.on;
+  return `<div class="reply-switch ${on ? 'on' : ''}"><label><input type="checkbox" data-sync-done="${esc(src.id)}" ${on ? 'checked' : ''}> <b>Sync done</b></label>
+    <div class="msg">${on ? `On. Marking a task Done in Birddog completes it in ${esc(src.name)}, and Undo reopens it.` : `Off: Done only changes Birddog's list. Turn this on to complete tasks in ${esc(src.name)} from Birddog (Undo reopens them).`} Completing a task in ${esc(src.name)} clears it here on the next refresh either way. ${esc(src.setup?.syncNote ?? '')}</div></div>`;
+}
+
 function tokenCardHTML(src) {
   const ui = st.cards[src.id] ?? {};
   const s = src.settings ?? {};
@@ -1057,7 +1111,7 @@ function tokenCardHTML(src) {
   if (connected && !ui.editing && status !== 'stale') {
     const how = local ? 'reading files on this computer' : viaOauth ? `signed in with ${esc(oauthState(setup.oauth).name)}` : envSecret(tokenName)?.from ? `token from <code>${esc(envSecret(tokenName).from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`;
     return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
-      <div class="msg">Connected, ${how}${summary}</div>${msg}${replySwitchHTML(src)}
+      <div class="msg">Connected, ${how}${summary}</div>${msg}${replySwitchHTML(src)}${syncSwitchHTML(src)}
       <div class="row-btns"><button class="btn" data-edit="${src.id}">Change</button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button>${viaOauth ? `<button class="btn" data-oauth-off="${esc(setup.oauth)}">Disconnect</button>` : `<button class="btn" data-disconnect="${src.id}" ${ui.busy ? 'disabled' : ''}>${local ? 'Turn off' : 'Disconnect'}</button>`}</div></div>`;
   }
   const d = ui.draft ?? Object.fromEntries(setup.fields.map((f) => [f.key, s[f.key] ?? '']));
@@ -1082,11 +1136,11 @@ function signInCardHTML(src) {
   const { status, cls, label, msg, summary } = cardState(src, ui);
   if (src.enabled && o?.connected) {
     return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
-      <div class="msg">Connected, signed in${o.account ? ` as <b>${esc(o.account)}</b>` : ''}${summary}</div>${msg}${replySwitchHTML(src)}
+      <div class="msg">Connected, signed in${o.account ? ` as <b>${esc(o.account)}</b>` : ''}${summary}</div>${msg}${replySwitchHTML(src)}${syncSwitchHTML(src)}
       <div class="row-btns"><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-oauth="${esc(p)}">Sign in again</button><button class="btn" data-oauth-off="${esc(p)}">Disconnect</button></div></div>`;
   }
   return `${cardTop(src.id, src.name, ui.busy ? 'Working…' : src.enabled && status === 'stale' ? 'Needs attention' : 'Not connected', status === 'stale' && src.enabled ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
-    ${signInRow(p, { label: `Sign in with ${src.name}`, fallback: 'bring your own Microsoft app (the same one the Outlook calendar sign-in uses)' })}
+    ${signInRow(p, { label: `Sign in with ${src.name}`, fallback: p === 'gtasks' ? 'bring your own Google app (the same one the Google Calendar sign-in uses)' : 'bring your own Microsoft app (the same one the Outlook calendar sign-in uses)' })}
     ${src.setup.notes ? `<div class="msg">${esc(src.setup.notes)}</div>` : ''}${msg}</div>`;
 }
 
@@ -1436,10 +1490,11 @@ async function disconnectCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-allow-replies],[data-reply-send],[data-reply-undo],[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-cal-remove],[data-sync-done],[data-allow-replies],[data-reply-send],[data-reply-undo],[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.allowReplies) return setAllowReplies(d.allowReplies, t.checked, t);
+  if (d.syncDone) return setSyncDone(d.syncDone, t.checked, t);
   if ('replySend' in d) return sendReply();
   if ('replyUndo' in d) return undoReply();
   if (d.view) return setView(d.view);
@@ -1471,6 +1526,7 @@ document.addEventListener('click', (e) => {
   if (d.connect) return connectCard(d.connect);
   if (d.oauth) return oauthSignIn(d.oauth);
   if (d.oauthOff) return oauthSignOut(d.oauthOff);
+  if (d.calRemove) return removeCalendar(d.calRemove);
   if (d.calmode) { st.cards.cal = { ...(st.cards.cal ?? {}), mode: d.calmode, editing: true, draft: undefined, msg: null }; return renderCards(); }
   if (d.guideLink) { closeAll(); return openGuide(d.guideLink); }
   if (d.retry) return retrySource(d.retry);

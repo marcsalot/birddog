@@ -30,7 +30,7 @@ export const SECTIONS = [
       <p>Tokens and private links go to your OS keychain, never to config.json. If a source fails, its last good items stay, marked <b>stale</b>, with a <b>Retry</b> button.</p>`,
   },
   {
-    id: 'more', title: 'More sources (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Teams, Discord, Thunderbird)', words: 'gitlab linear azure devops boards repos sentry pagerduty on call incident slack teams microsoft chat dm mention actions ci dependabot security token discord bot server thunderbird email mail inbox unread starred',
+    id: 'more', title: 'More sources (GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Teams, Discord, Thunderbird)', words: 'gitlab linear azure devops boards repos sentry pagerduty on call incident slack teams microsoft chat dm mention actions ci dependabot security token discord bot server thunderbird email mail inbox unread starred tasks todo to do todoist google tasks reminders sync done two-way unified calendar',
     html: `<p>Switch these on in <b>Sources &amp; settings</b> when you use them. Each one asks for the smallest read-only access that works, and keeps its token in your keychain.</p>
       <ul>
         <li><b>GitLab</b>: merge requests waiting for your review, your MRs with a failed pipeline or conflicts, and issues assigned to you. Use <i>Sign in with GitLab</i> (needs an application with the <code>read_api</code> scope) or a personal access token with <code>read_api</code>. Self-managed GitLab works too.</li>
@@ -42,6 +42,8 @@ export const SECTIONS = [
         <li><b>Microsoft Teams</b>: 1:1 chats waiting for your reply, and @mentions of you in group and meeting chats. Use <i>Sign in with Microsoft Teams</i> (a work or school account; Birddog asks for <code>Chat.Read</code>). Some organizations make an admin approve apps first; the sign-in page says so. Channel posts aren't included: reading them needs an admin-only permission.</li>
         <li><b>Discord</b>: @mentions of you, or a role you have, that you haven't answered in that channel since. Discord doesn't let apps read your own account, so you make a bot (developer portal → Bot → Reset Token, switch on <i>Message Content Intent</i>), invite it to your servers with <i>View Channels</i> and <i>Read Message History</i>, and paste its token and your user ID (Developer Mode → right-click yourself → <i>Copy User ID</i>). It never sees your DMs.</li>
         <li><b>Thunderbird</b>: unread mail from the last week, and starred mail you haven't replied to, read from Thunderbird's own files on this computer. No token. Mark a message read in Thunderbird and it leaves the list.</li>
+        <li><b>Microsoft To Do</b>, <b>Google Tasks</b> and <b>Todoist</b>: tasks that are overdue, due within a week, or important. Switch on <b>Sync done</b> on a task card and marking a task Done in Birddog completes it in the app, and Undo reopens it. Off by default.</li>
+        <li><b>Calendar</b> reads every calendar you connect at once (Google, Outlook, iCloud, Thunderbird, iCal links) into one list; <b>Add a calendar</b> on its card adds another.</li>
         <li><b>GitHub</b> also shows <b>failing Actions runs</b> on branches you pushed this week, and <b>Dependabot alerts</b> on those repos. Turn them off with <code>"actions": false</code> or <code>"security": false</code> under <code>sources.github</code>.</li>
       </ul>
       <p>In Docker, pass the tokens as <code>GITLAB_TOKEN</code>, <code>LINEAR_API_KEY</code>, <code>AZURE_DEVOPS_EXT_PAT</code>, <code>SENTRY_AUTH_TOKEN</code>, <code>BIRDDOG_PAGERDUTY_TOKEN</code>, <code>BIRDDOG_SLACK_TOKEN</code> or <code>BIRDDOG_DISCORD_TOKEN</code>.</p>`,
@@ -121,7 +123,7 @@ export const SECTIONS = [
   },
   {
     id: 'profiles', title: 'Profiles (Work, Home)', words: 'profile profiles work home schedule auto switch filter hide sources focus weekend on call',
-    html: `<p>The <b>profile</b> button in the top bar (or ${keys('⇧P')}) picks which sources you see. <b>Work</b> shows every source, <b>Home</b> shows local git, GitHub, calendar, Discord and Thunderbird. <b>Auto</b> switches by schedule: Work on weekdays from 08:00 to 18:00, Home the rest of the time.</p>
+    html: `<p>The <b>profile</b> button in the top bar (or ${keys('⇧P')}) picks which sources you see. <b>Work</b> shows every source, <b>Home</b> shows local git, GitHub, calendar, Discord, Thunderbird, Google Tasks and Todoist. <b>Auto</b> switches by schedule: Work on weekdays from 08:00 to 18:00, Home the rest of the time.</p>
       <p><b>Edit profiles</b> renames them, picks their sources and hours, turns notifications off for one, and adds your own (up to 12). Every source keeps refreshing, so switching is instant. A profile only changes what you see, what can notify you, and what Claude sees over MCP.</p>`,
   },
   {

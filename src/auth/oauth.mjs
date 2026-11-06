@@ -67,6 +67,35 @@ export const PROVIDERS = {
     tokenBody: 'form',
     register: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
   },
+  // Task lists ride on the Microsoft and Google apps, with their own sign-ins (like Teams):
+  // reading asks for read-only access, and the write scope is added only after you turn on
+  // "Sync done" for that source.
+  mstodo: {
+    name: 'Microsoft To Do',
+    app: 'microsoft',
+    authorize: (c) => `https://login.microsoftonline.com/${encodeURIComponent(c.tenant || 'common')}/oauth2/v2.0/authorize`,
+    token: (c) => `https://login.microsoftonline.com/${encodeURIComponent(c.tenant || 'common')}/oauth2/v2.0/token`,
+    revoke: null,
+    scopes: ['offline_access', 'User.Read', 'Tasks.Read'],
+    scopesFor: (config) => (config.sources?.todo?.syncDone === true ? ['Tasks.ReadWrite'] : []),
+    extra: {},
+    secret: 'none',
+    tokenBody: 'form',
+    register: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
+  },
+  gtasks: {
+    name: 'Google Tasks',
+    app: 'google',
+    authorize: () => 'https://accounts.google.com/o/oauth2/v2/auth',
+    token: () => 'https://oauth2.googleapis.com/token',
+    revoke: 'https://oauth2.googleapis.com/revoke',
+    scopes: ['email', 'https://www.googleapis.com/auth/tasks.readonly'],
+    scopesFor: (config) => (config.sources?.gtasks?.syncDone === true ? ['https://www.googleapis.com/auth/tasks'] : []),
+    extra: { access_type: 'offline', prompt: 'consent' },
+    secret: 'optional',
+    tokenBody: 'form',
+    register: 'https://console.cloud.google.com/apis/credentials',
+  },
   gitlab: {
     name: 'GitLab',
     authorize: (c) => `${(c.url || 'https://gitlab.com').replace(/\/+$/, '')}/oauth/authorize`,
@@ -162,11 +191,11 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
   // you stored locally; the other built-in clients are public and use none.
   const clientSecret = async (p) => {
     const { from } = client(p);
-    if (from === 'built-in') return needsLocalSecret(p, builtIn) ? localSecret(p) : null;
-    return localSecret(p);
+    if (from === 'built-in') return needsLocalSecret(appOf(p), builtIn) ? localSecret(appOf(p)) : null;
+    return localSecret(appOf(p));
   };
-  const needsSecret = (p) => def(p).secret === 'required' || (client(p).from === 'built-in' && needsLocalSecret(p, builtIn));
-  const gStatus = (p) => (p === 'google' && client(p).from === 'built-in' ? googleStatus(builtIn) : null);
+  const needsSecret = (p) => def(p).secret === 'required' || (client(p).from === 'built-in' && needsLocalSecret(appOf(p), builtIn));
+  const gStatus = (p) => (appOf(p) === 'google' && client(p).from === 'built-in' ? googleStatus(builtIn) : null);
   // What Google says when an account isn't on the test-user list (or the app isn't verified).
   const googleRefusal = (p, code, why) => {
     const s = gStatus(p);
@@ -249,6 +278,7 @@ export function createOAuth({ dir, secrets, getConfig, fetchImpl = fetch, now = 
       const c = client(p);
       return {
         id: p,
+        app: appOf(p), // whose client ID and secret it uses (Teams and To Do: microsoft; Google Tasks: google)
         name: d.name,
         configured: !!c.clientId,
         builtIn: c.from === 'built-in',
