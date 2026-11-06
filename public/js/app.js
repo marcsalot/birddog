@@ -33,6 +33,13 @@ const SRC = {
   todo: { short: 'TD', c: '#2564cf' },
   gtasks: { short: 'GT', c: '#1a73e8' },
   todoist: { short: 'TI', c: '#e44332' },
+  dynatrace: { short: 'DT', c: '#1496ff' },
+  grafana: { short: 'GF', c: '#f46800' },
+  jenkins: { short: 'JK', c: '#d33833' },
+  ghprojects: { short: 'GP', c: 'var(--gh)' },
+  confluence: { short: 'CF', c: '#1868db' },
+  gmail: { short: 'GM', c: '#ea4335' },
+  outlook: { short: 'OL', c: '#0078d4' },
   thunderbird: { short: 'TB', c: '#0a84ff' },
 };
 const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
@@ -852,6 +859,8 @@ const READS = {
   teams: 'your Teams chats and the messages that mention you (Chat.Read)',
   mstodo: 'your Microsoft To Do lists and tasks (Tasks.Read; Tasks.ReadWrite only after you turn on Sync done)',
   gtasks: 'your Google Tasks lists and tasks (read-only; changing tasks only after you turn on Sync done)',
+  gmail: 'the headers and labels of your mail (gmail.metadata): senders, subjects, Important and tabs, never message bodies',
+  msmail: 'your mail\'s senders, subjects, flags and Focused/Other (Mail.ReadBasic), never message bodies',
 };
 const signInReady = (o) => !!o && o.canStore && o.configured && !(o.needsSecret && !o.hasSecret);
 
@@ -899,7 +908,7 @@ function signInRow(p, { label, fallback = 'use a token below', compact = false }
       : `One-click sign-in isn't set up in this copy of Birddog, so ${esc(fallback)}.`;
     return `<div class="signin-row off"><span class="msg">${why} Have your own ${esc(who)} app? <button class="linkish" data-guide-link="logins">Bring your own app</button>.</span></div>`;
   }
-  const writes = p === 'teams' ? 'It only posts a reply you send yourself, once you turn on Allow replies' : p === 'mstodo' || p === 'gtasks' ? 'It only completes a task when you mark it Done with Sync done switched on' : 'It never changes anything';
+  const writes = p === 'gmail' || p === 'msmail' ? 'It reads senders, subjects and labels, never what an email says, and never changes anything' : p === 'teams' ? 'It only posts a reply you send yourself, once you turn on Allow replies' : p === 'mstodo' || p === 'gtasks' ? 'It only completes a task when you mark it Done with Sync done switched on' : 'It never changes anything';
   return `<div class="signin-row"><button class="btn primary" data-oauth="${esc(p)}">${esc(label)}</button><span class="consent">Birddog will read ${READS[p] ?? 'your data, read-only'}. ${writes}, and the tokens stay in your keychain.</span></div>${p === 'google' && o.unverified ? googleNoticeHTML(o.googleStatus) : ''}`;
 }
 
@@ -1109,7 +1118,7 @@ function tokenCardHTML(src) {
   const connected = src.enabled && (viaOauth || ((hasToken || local) && complete));
   const { status, cls, label, msg, summary } = cardState(src, ui);
   if (connected && !ui.editing && status !== 'stale') {
-    const how = local ? 'reading files on this computer' : viaOauth ? `signed in with ${esc(oauthState(setup.oauth).name)}` : envSecret(tokenName)?.from ? `token from <code>${esc(envSecret(tokenName).from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`;
+    const how = local ? esc(setup.how ?? 'reading files on this computer') : viaOauth ? `signed in with ${esc(oauthState(setup.oauth).name)}` : envSecret(tokenName)?.from ? `token from <code>${esc(envSecret(tokenName).from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`;
     return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
       <div class="msg">Connected, ${how}${summary}</div>${msg}${replySwitchHTML(src)}${syncSwitchHTML(src)}
       <div class="row-btns"><button class="btn" data-edit="${src.id}">Change</button><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button>${viaOauth ? `<button class="btn" data-oauth-off="${esc(setup.oauth)}">Disconnect</button>` : `<button class="btn" data-disconnect="${src.id}" ${ui.busy ? 'disabled' : ''}>${local ? 'Turn off' : 'Disconnect'}</button>`}</div></div>`;
@@ -1137,7 +1146,8 @@ function signInCardHTML(src) {
   if (src.enabled && o?.connected) {
     return `${cardTop(src.id, src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
       <div class="msg">Connected, signed in${o.account ? ` as <b>${esc(o.account)}</b>` : ''}${summary}</div>${msg}${replySwitchHTML(src)}${syncSwitchHTML(src)}
-      <div class="row-btns"><button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-oauth="${esc(p)}">Sign in again</button><button class="btn" data-oauth-off="${esc(p)}">Disconnect</button></div></div>`;
+      ${src.setup.fields?.length ? `<div class="fields">${src.setup.fields.map((f) => `<label class="full"><span>${esc(f.label)}</span><input data-f="${src.id}.${esc(f.key)}" value="${esc(String(src.settings?.[f.key] === true ? 'yes' : src.settings?.[f.key] === false ? '' : src.settings?.[f.key] ?? ''))}" placeholder="${esc(f.placeholder ?? '')}" autocomplete="off" spellcheck="false"></label>`).join('')}</div>` : ''}
+      <div class="row-btns">${src.setup.fields?.length ? `<button class="btn primary" data-connect="${src.id}" ${ui.busy ? 'disabled' : ''}>Save</button>` : ''}<button class="btn" data-test="${src.id}" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-oauth="${esc(p)}">Sign in again</button><button class="btn" data-oauth-off="${esc(p)}">Disconnect</button></div></div>`;
   }
   return `${cardTop(src.id, src.name, ui.busy ? 'Working…' : src.enabled && status === 'stale' ? 'Needs attention' : 'Not connected', status === 'stale' && src.enabled ? 'err' : '')}<div class="msg">${esc(src.description)}</div>
     ${signInRow(p, { label: `Sign in with ${src.name}`, fallback: p === 'gtasks' ? 'bring your own Google app (the same one the Google Calendar sign-in uses)' : 'bring your own Microsoft app (the same one the Outlook calendar sign-in uses)' })}

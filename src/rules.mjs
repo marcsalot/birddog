@@ -49,6 +49,12 @@ export const RULES = [
     when: (s) => s.status === 'triggered',
     why: (s) => `**Triggered** ${s.ageDays < 1 / 24 ? mins(s.ageDays * 86_400_000) : ago(s.ageDays)} ago${s.urgencyLevel === 'high' ? ' · **high urgency**' : ''}${s.service ? ` · ${s.service}` : ''} · acknowledge it`,
   },
+  {
+    id: 'alert-critical', kind: 'alert', urgency: 'now',
+    text: 'Critical alert or problem firing (Dynatrace, Grafana) → Now',
+    when: (s) => s.critical,
+    why: (s) => `**Firing** ${s.ageDays < 1 / 24 ? mins(s.ageDays * 86_400_000) : ago(s.ageDays)} · **${s.severity}**${s.what ? ` · ${s.what}` : ''}`,
+  },
   // ---- Calendar: right now ------------------------------------------------------
   {
     id: 'meeting-now', kind: 'meeting', urgency: 'now',
@@ -105,10 +111,16 @@ export const RULES = [
     why: (s) => `You're **on call**${s.policy ? ` for ${s.policy}` : ''} until **${s.endLabel}**`,
   },
   {
+    id: 'alert-firing', kind: 'alert', urgency: 'today',
+    text: 'Other alert or problem firing for under 3 days → Today',
+    when: (s) => s.ageDays < 3,
+    why: (s) => `Firing for **${ago(s.ageDays)}** · ${s.severity}${s.what ? ` · ${s.what}` : ''}`,
+  },
+  {
     id: 'ci-failing', kind: 'ci-failure', urgency: 'today',
     text: 'CI failing on a branch you pushed in the last 2 days → Today',
     when: (s) => s.ageDays < 2,
-    why: (s) => `**${s.workflow}** failed on **${s.branch}** ${ago(s.ageDays)} ago · it's your latest run there`,
+    why: (s) => `**${s.workflow}** failed on **${s.branch}** ${ago(s.ageDays)} ago · ${s.note ?? "it's your latest run there"}`,
   },
   {
     id: 'security-critical', kind: 'security-alert', urgency: 'today',
@@ -154,9 +166,15 @@ export const RULES = [
   },
   {
     id: 'email-unread-fresh', kind: 'email', urgency: 'today',
-    text: 'Unread email from the last day → Today',
-    when: (s) => s.unread && s.ageDays < 1,
-    why: (s) => `Unread · from ${s.by ? `**${s.by}**` : 'someone'} **${ago(s.ageDays)}** ago`,
+    text: 'Unread email that needs you, from the last day → Today',
+    when: (s) => s.unread && s.ageDays < 1 && (s.verdict ?? 'needs-you') === 'needs-you',
+    why: (s) => `Unread · from ${s.by ? `**${s.by}**` : 'someone'} **${ago(s.ageDays)}** ago${s.reason ? ` · ${s.reason}` : ''}`,
+  },
+  {
+    id: 'email-needs-you', kind: 'email', urgency: 'today',
+    text: 'Unread email that needs you, under 3 days old → Today',
+    when: (s) => s.unread && s.ageDays < 3 && (s.verdict ?? 'needs-you') === 'needs-you',
+    why: (s) => `Unread for **${ago(s.ageDays)}** · from ${s.by ? `**${s.by}**` : 'someone'}${s.reason ? ` · ${s.reason}` : ''}`,
   },
   // ---- GitHub: today ---------------------------------------------------------
   {
@@ -237,6 +255,12 @@ export const RULES = [
     why: (s) => `Your **on-call** shift${s.policy ? ` for ${s.policy}` : ''} starts **${s.startLabel}**`,
   },
   {
+    id: 'alert-old', kind: 'alert', urgency: 'later',
+    text: 'Alert or problem open for days → Later',
+    when: () => true,
+    why: (s) => `Still firing after ${ago(s.ageDays)} · ${s.severity}${s.what ? ` · ${s.what}` : ''}`,
+  },
+  {
     id: 'ci-failing-old', kind: 'ci-failure', urgency: 'later',
     text: 'Older CI failure that is still your latest run → Later',
     when: () => true,
@@ -265,6 +289,12 @@ export const RULES = [
     text: 'Other open task (due soon, or no date) → Later',
     when: () => true,
     why: (s) => `${s.dueDays !== null ? `Due ${dueWhen(s.dueDays)}` : 'No due date'}${s.list ? ` · ${s.list}` : ''}`,
+  },
+  {
+    id: 'email-fyi', kind: 'email', urgency: 'later',
+    text: 'Email that is only FYI (CC, lists) or probably noise → Later',
+    when: (s) => s.verdict === 'fyi' || s.verdict === 'noise',
+    why: (s) => `${s.verdict === 'noise' ? 'Probably noise' : 'FYI'} · from ${s.by ? `**${s.by}**` : 'someone'} ${ago(s.ageDays)} ago${s.reason ? ` · ${s.reason}` : ''}`,
   },
   {
     id: 'email-unread', kind: 'email', urgency: 'later',

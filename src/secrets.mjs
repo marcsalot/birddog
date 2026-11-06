@@ -120,6 +120,10 @@ export const ENV_SECRETS = Object.freeze({
   'slack-token': ['BIRDDOG_SLACK_TOKEN'],
   'discord-token': ['BIRDDOG_DISCORD_TOKEN'],
   'todoist-token': ['TODOIST_API_TOKEN', 'BIRDDOG_TODOIST_TOKEN'],
+  'dynatrace-token': ['BIRDDOG_DYNATRACE_TOKEN'],
+  'grafana-token': ['BIRDDOG_GRAFANA_TOKEN'],
+  'jenkins-token': ['BIRDDOG_JENKINS_TOKEN'],
+  'confluence-token': ['BIRDDOG_CONFLUENCE_TOKEN'],
   'gitlab-client-secret': ['BIRDDOG_GITLAB_CLIENT_SECRET'],
 });
 

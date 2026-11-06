@@ -153,7 +153,7 @@ describe('Thunderbird', () => {
     assert.deepEqual(items.map((i) => [i.title, i.urgency, i.meta.rule.id]).sort(), [
       ['Boiler visit', 'today', 'email-unread-fresh'],
       ['Camping', 'today', 'email-starred'],
-      ['Library hold', 'later', 'email-unread'],
+      ['Library hold', 'today', 'email-needs-you'],
     ]);
     const boiler = items.find((i) => i.title === 'Boiler visit');
     assert.equal(boiler.meta.fields.Account, 'me@x.com (imap.x.com)');
@@ -174,8 +174,8 @@ describe('Thunderbird', () => {
     const empty = await tmpDir();
     await assert.rejects(tb.collect({}, { thunderbird: { platform: 'linux', home: empty } }), /isn't set up on this computer/);
     await assert.rejects(tb.collect({ profile: empty }, {}), /No Thunderbird profile/);
-    assert.deepEqual(tb.normalizeSettings({}), { profile: '', days: 7 });
-    assert.deepEqual(tb.normalizeSettings({ profile: '~/tb', days: '14' }), { profile: '~/tb', days: 14 });
+    assert.deepEqual(tb.normalizeSettings({}), { profile: '', days: 7, vip: '', mute: '', showNoise: false });
+    assert.deepEqual(tb.normalizeSettings({ profile: '~/tb', days: '14', vip: 'Boss@Acme.com, @client.example, junk', showNoise: 'yes' }), { profile: '~/tb', days: 14, vip: 'boss@acme.com, @client.example', mute: '', showNoise: true });
     assert.throws(() => tb.normalizeSettings({ profile: 'relative/path' }), /full path/);
     assert.throws(() => tb.normalizeSettings({ days: '0' }), /1 to 60/);
   });
@@ -184,6 +184,12 @@ describe('Thunderbird', () => {
     const dir = await tmpDir();
     const prof = await demoThunderbird(dir, NOW);
     const items = await tb.collect({ profile: prof }, { now: NOW });
-    assert.deepEqual(items.map((i) => i.title).sort(), ['Boiler service visit: Thursday 9–11?', 'Camping weekend: who brings the stove?', 'Your hold is ready – pick up by Saturday']);
+    assert.deepEqual(items.map((i) => i.title).sort(), ['Boiler service visit: Thursday 9–11?', 'Camping weekend: who brings the stove?', 'Re: Tent for the camping weekend']);
+    assert.match(items.find((i) => /Tent/.test(i.title)).why, /^FYI · .*you're on CC/);
+    let summary = '';
+    await tb.collect({ profile: prof }, { now: NOW, summary: (x) => { summary = x; } });
+    assert.match(summary, /3 noise skipped/, 'the library notice, the newsletter and the GitHub notification');
+    const all = await tb.collect({ profile: prof, showNoise: true }, { now: NOW });
+    assert.match(all.find((i) => /Weekly/.test(i.title)).why, /Probably noise · from \*\*Gear Shop\*\* .* · a newsletter/);
   });
 });

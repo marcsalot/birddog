@@ -4,6 +4,19 @@ All notable changes to Birddog. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-11-06
+
+### Added
+- **Email triage**: Thunderbird, Gmail and Outlook mail sort each message into *needs you*, *FYI* or *noise* (`src/mailsense.mjs`), and say why. They use bulk mail headers, robot senders, notifications from tools Birddog already shows, To versus CC, people you've replied to, "action required" wording, Gmail's Important marker and tabs, Outlook's Focused Inbox, and per-source *Always important* and *Always noise* lists. Noise is counted, not listed, unless you ask.
+- **Gmail** (Sign in with Gmail, `gmail.metadata`: headers and labels only) and **Outlook mail** (Sign in with Outlook mail, `Mail.ReadBasic`): unread and starred / flagged mail. Neither reads message bodies or changes anything.
+- **Dynatrace**: open problems in a management zone or entity selection; availability and error problems are **Now**.
+- **Grafana**: firing alerts (not silenced) through the Alertmanager API, with label filters; critical severity is **Now**. Grafana Cloud or a private Grafana.
+- **Jenkins**: jobs in a view or folder whose last build failed or is unstable, with multibranch pipelines one item per branch, and an option for only builds you started or broke.
+- **GitHub Projects**: items assigned to you on the boards you list, not done, ranked like tickets (iteration end, due date, priority, blocked). Birddog's GitHub sign-in now asks for `read:project`.
+- **Confluence**: @mentions in pages and comments (last 7 days), and inline tasks assigned to you.
+- **Private servers**: `http://` is accepted for hosts on your own network only; clearer errors when you're off the VPN or a server uses a company CA (`NODE_EXTRA_CA_CERTS`).
+- New `alert` kind and rules; the demo has all of the above.
+
 ## [1.19.0] - 2026-11-06
 
 ### Added

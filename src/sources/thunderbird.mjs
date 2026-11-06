@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { expandHome, tildify } from '../config.mjs';
 import { createItem } from '../items.mjs';
+import { addressOf, classifyMail, MAIL_FIELDS, noiseNote, normalizeMailSettings } from '../mailsense.mjs';
 import { plural, rank } from '../rules.mjs';
 
 export const id = 'thunderbird';
@@ -30,6 +31,7 @@ export const setup = {
   fields: [
     { key: 'profile', label: 'Profile folder', placeholder: 'blank = Thunderbird\'s default profile', optional: true },
     { key: 'days', label: 'Unread mail from the last … days', placeholder: '7', optional: true },
+    ...MAIL_FIELDS,
   ],
   token: null, // nothing secret: it's your own files
   notes: 'Birddog reads Thunderbird\'s mail files on this computer, read-only. Mark a message read (or unstar it) in Thunderbird and it leaves the list. IMAP accounts need "Keep messages on this computer", which is on by default.',
@@ -46,7 +48,12 @@ export function normalizeSettings(input = {}) {
   const rawDays = String(input.days ?? '').trim();
   const days = rawDays ? Number(rawDays) : 7;
   if (!Number.isInteger(days) || days < 1 || days > 60) throw new TypeError('Days must be a whole number from 1 to 60');
-  return { profile, days };
+  return { profile, days, ...normalizeMailSettings(input) };
+}
+
+/** prefs.js → your own addresses (mail.identity.*.useremail). */
+export function identities(prefs) {
+  return [...new Set([...String(prefs).matchAll(/user_pref\("mail\.identity\.[\w-]+\.useremail",\s*"([^"]+)"\);/g)].map((m) => m[1].toLowerCase()))];
 }
 
 /** Where Thunderbird keeps profiles.ini on this system. */
@@ -219,7 +226,7 @@ export async function scan(config = {}, opts = {}) {
     const { text, partial } = await readTail(file, opts.tailBytes);
     found.push({ account: a, file, messages: mboxMessages(text, { partial }) });
   }
-  return { profile, accounts, inboxes: found };
+  return { profile, accounts, inboxes: found, me: identities(prefs) };
 }
 
 export async function test(config = {}, ctx = {}) {
@@ -236,6 +243,9 @@ export async function collect(config = {}, ctx = {}) {
   const days = Number(config.days) || 7;
   const r = await scan(config, ctx.thunderbird);
   const items = [];
+  // People you've replied to (from the Replied flag) count as people you correspond with.
+  const known = new Set(r.inboxes.flatMap((b) => b.messages.filter((m) => m.flags !== null && m.flags & FLAGS.replied).map((m) => addressOf(m.headers.from))).filter(Boolean));
+  let noise = 0;
   for (const { account, messages } of r.inboxes) {
     const seen = new Set();
     const mine = [];
@@ -254,17 +264,19 @@ export async function collect(config = {}, ctx = {}) {
       seen.add(msgId);
       const by = senderName(h.from ?? '');
       const subject = decodeWords(h.subject ?? '').replace(/\s+/g, ' ').trim() || '(no subject)';
-      const ranked = rank('email', { by, ageDays, unread, starred, replied });
+      const sense = starred ? { verdict: 'needs-you', reason: null } : classifyMail({ headers: { ...h, subject }, me: r.me, settings: config, known });
+      if (sense.verdict === 'noise' && !config.showNoise) { noise++; continue; }
+      const ranked = rank('email', { by, ageDays, unread, starred, replied, verdict: sense.verdict, reason: sense.reason });
       mine.push(createItem({
         id: `thunderbird:${crypto.createHash('sha256').update(`${account.dir}\n${msgId}`).digest('hex').slice(0, 20)}`,
         source: id, kind: 'email', title: subject.slice(0, 140), url: null,
         why: ranked.why, urgency: ranked.urgency, updatedAt: new Date(at).toISOString(),
-        meta: { rule: ranked.rule, fingerprint: String(flags & (FLAGS.read | FLAGS.starred | FLAGS.replied)), fields: { From: decodeWords(h.from ?? '').slice(0, 120) || 'unknown', Account: account.label, Folder: 'Inbox', Received: new Date(at).toLocaleString() } },
+        meta: { rule: ranked.rule, fingerprint: String(flags & (FLAGS.read | FLAGS.starred | FLAGS.replied)), fields: { From: decodeWords(h.from ?? '').slice(0, 120) || 'unknown', Account: account.label, Folder: 'Inbox', Received: new Date(at).toLocaleString(), ...(sense.reason ? { Why: `${sense.verdict}: ${sense.reason}` } : {}) } },
       }));
     }
     items.push(...mine);
   }
   const unread = items.filter((i) => i.meta.rule?.id !== 'email-starred').length;
-  ctx.summary?.(`${plural(r.inboxes.length, 'Inbox', 'Inboxes')} · ${plural(unread, 'message')} waiting · ${plural(items.length - unread, 'starred')}`);
+  ctx.summary?.(`${plural(r.inboxes.length, 'Inbox', 'Inboxes')} · ${plural(unread, 'message')} waiting · ${plural(items.length - unread, 'starred')}${noiseNote(noise)}`);
   return items;
 }

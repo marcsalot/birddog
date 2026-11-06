@@ -363,8 +363,8 @@ function discordData(t0) {
 }
 
 // ---- Thunderbird: a made-up profile folder with one Inbox ---------------------------
-function mboxMessage({ from, subject, at, status, id }) {
-  return `From - ${new Date(at).toUTCString()}\nX-Mozilla-Status: ${status}\nX-Mozilla-Status2: 00000000\nMessage-ID: <${id}@home.example>\nDate: ${new Date(at).toUTCString()}\nFrom: ${from}\nTo: Sam <sam@home.example>\nSubject: ${subject}\nContent-Type: text/plain; charset=UTF-8\n\nMade-up message for the Birddog demo.\n\n`;
+function mboxMessage({ from, subject, at, status, id, to = 'Sam <sam@home.example>', extra = '' }) {
+  return `From - ${new Date(at).toUTCString()}\nX-Mozilla-Status: ${status}\nX-Mozilla-Status2: 00000000\nMessage-ID: <${id}@home.example>\nDate: ${new Date(at).toUTCString()}\nFrom: ${from}\nTo: ${to}\n${extra}Subject: ${subject}\nContent-Type: text/plain; charset=UTF-8\n\nMade-up message for the Birddog demo.\n\n`;
 }
 export async function demoThunderbird(dir, now = Date.now()) {
   const profile = path.join(dir, 'thunderbird-profile');
@@ -375,6 +375,7 @@ export async function demoThunderbird(dir, now = Date.now()) {
     'user_pref("mail.server.server1.hostname", "imap.home.example");',
     'user_pref("mail.server.server1.type", "imap");',
     'user_pref("mail.server.server1.userName", "sam@home.example");',
+    'user_pref("mail.identity.id1.useremail", "sam@home.example");',
   ].join('\n') + '\n');
   await fs.writeFile(path.join(inbox, 'INBOX'), [
     mboxMessage({ from: 'Old Newsletter <news@example.org>', subject: 'Last week in woodworking', at: now - 9 * DAY, status: '0000', id: 'n1' }),
@@ -383,6 +384,10 @@ export async function demoThunderbird(dir, now = Date.now()) {
     mboxMessage({ from: 'Alex <alex@home.example>', subject: 'Camping weekend: who brings the stove?', at: now - 3 * DAY, status: '0005', id: 'a1' }),
     mboxMessage({ from: 'Shop <orders@shop.example>', subject: 'Your order has shipped', at: now - 5 * HOUR, status: '0001', id: 's1' }),
     mboxMessage({ from: 'Spam <x@spam.example>', subject: 'Deleted message', at: now - 1 * HOUR, status: '0008', id: 'x1' }),
+    // Noise and FYI, so the demo shows the sorting: a newsletter, a GitHub notification, and a thread you're only CC'd on.
+    mboxMessage({ from: 'Gear Shop <deals@gearshop.example>', subject: 'Weekly deals: 30% off tents', at: now - 4 * HOUR, status: '0000', id: 'w1', extra: 'List-Unsubscribe: <https://gearshop.example/unsub>\n' }),
+    mboxMessage({ from: 'GitHub <notifications@github.com>', subject: '[acme/payments] Retry failed webhooks (#482)', at: now - 2 * HOUR, status: '0000', id: 'g1', extra: 'List-Id: acme/payments <payments.acme.github.com>\n' }),
+    mboxMessage({ from: 'Jo <jo@home.example>', subject: 'Re: Tent for the camping weekend', at: now - 6 * HOUR, status: '0000', id: 't1', to: 'Alex <alex@home.example>', extra: 'Cc: Sam <sam@home.example>\n' }),
   ].join(''));
   return profile;
 }
@@ -427,6 +432,50 @@ export async function demoThunderbirdCalendar(profile, now = Date.now()) {
   return true;
 }
 
+// ---- Ops and work tools: Dynatrace, Grafana, Jenkins, GitHub Projects, Confluence, Outlook mail ----
+export const DT_URL = 'https://abc12345.live.dynatrace.com';
+export const GRAFANA_URL = 'https://grafana.acme-demo.example';
+export const JENKINS_URL = 'https://jenkins.acme-demo.example/view/payments';
+function opsData(t0) {
+  const iso = (msAgo) => new Date(t0 - msAgo).toISOString();
+  return {
+    problems: [
+      { problemId: '-4720155300511417811_1730900000000V2', displayId: 'P-24113', title: 'Failure rate increase', status: 'OPEN', severityLevel: 'ERROR', impactLevel: 'SERVICES', startTime: t0 - 14 * MIN, affectedEntities: [{ name: 'payments-api' }], managementZones: [{ name: 'Payments' }] },
+      { problemId: '-1186300711022931_1730800000000V2', displayId: 'P-24098', title: 'Response time degradation', status: 'OPEN', severityLevel: 'PERFORMANCE', impactLevel: 'SERVICES', startTime: t0 - 5 * HOUR, affectedEntities: [{ name: 'ledger-export' }], managementZones: [{ name: 'Payments' }] },
+    ],
+    alerts: [
+      { fingerprint: 'a1b2c3d4e5f60001', labels: { alertname: 'WebhookQueueBacklog', severity: 'warning', service: 'webhooks', team: 'payments' }, annotations: { summary: 'Webhook retry queue above 5,000 for 10 minutes', runbook_url: 'https://wiki.acme-demo.example/runbooks/webhooks' }, startsAt: iso(40 * MIN), status: { state: 'active' }, generatorURL: `${GRAFANA_URL}/alerting/grafana/webhook-backlog/view` },
+      { fingerprint: 'a1b2c3d4e5f60002', labels: { alertname: 'DiskAlmostFull', severity: 'info', instance: 'db-replica-2', team: 'payments' }, annotations: { summary: 'Disk 86% full' }, startsAt: iso(4 * DAY), status: { state: 'active' }, generatorURL: `${GRAFANA_URL}/alerting/grafana/disk/view` },
+    ],
+    jenkins: {
+      jobs: [
+        { name: 'payments-api', fullName: 'payments/payments-api', url: 'https://jenkins.acme-demo.example/job/payments/job/payments-api/', _class: 'org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject', jobs: [
+          { name: 'main', fullName: 'payments/payments-api/main', url: 'https://jenkins.acme-demo.example/job/payments/job/payments-api/job/main/', color: 'blue', lastCompletedBuild: { number: 812, result: 'SUCCESS', timestamp: t0 - 3 * HOUR, url: 'https://jenkins.acme-demo.example/job/payments/job/payments-api/job/main/812/', culprits: [] } },
+          { name: 'feature%2Fwebhook-backoff', fullName: 'payments/payments-api/feature%2Fwebhook-backoff', url: 'https://jenkins.acme-demo.example/job/payments/job/payments-api/job/feature%252Fwebhook-backoff/', color: 'red', lastCompletedBuild: { number: 17, result: 'FAILURE', timestamp: t0 - 50 * MIN, url: 'https://jenkins.acme-demo.example/job/payments/job/payments-api/job/feature%252Fwebhook-backoff/17/', culprits: [{ fullName: 'Sam Developer', id: 'sam' }] } },
+        ] },
+        { name: 'nightly-e2e', fullName: 'nightly-e2e', url: 'https://jenkins.acme-demo.example/job/nightly-e2e/', color: 'yellow', lastCompletedBuild: { number: 301, result: 'UNSTABLE', timestamp: t0 - 9 * HOUR, url: 'https://jenkins.acme-demo.example/job/nightly-e2e/301/', culprits: [] } },
+      ],
+    },
+    project: {
+      title: 'Payments roadmap', url: 'https://github.com/orgs/acme/projects/5', closed: false,
+      items: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
+        { id: 'PVTI_demo1', isArchived: false, updatedAt: iso(DAY), fieldValues: { nodes: [{ name: 'In progress', field: { name: 'Status' } }, { name: 'P1', field: { name: 'Priority' } }, { title: 'Sprint 46', startDate: new Date(t0 - 9 * DAY).toISOString().slice(0, 10), duration: 10, field: { name: 'Iteration' } }] }, content: { __typename: 'Issue', title: 'Idempotency keys for refunds', url: 'https://github.com/acme/payments/issues/471', number: 471, state: 'OPEN', assignees: { nodes: [{ login: 'sam-dev' }] }, repository: { nameWithOwner: 'acme/payments' } } },
+        { id: 'PVTI_demo2', isArchived: false, updatedAt: iso(3 * DAY), fieldValues: { nodes: [{ name: 'Todo', field: { name: 'Status' } }, { date: new Date(t0 + 4 * DAY).toISOString().slice(0, 10), field: { name: 'Target date' } }] }, content: { __typename: 'DraftIssue', title: 'Write the Q4 payments post-mortem template', assignees: { nodes: [{ login: 'sam-dev' }] } } },
+        { id: 'PVTI_demo3', isArchived: false, updatedAt: iso(DAY), fieldValues: { nodes: [{ name: 'Done', field: { name: 'Status' } }] }, content: { __typename: 'Issue', title: 'Done already', url: 'https://github.com/acme/payments/issues/400', number: 400, state: 'OPEN', assignees: { nodes: [{ login: 'sam-dev' }] }, repository: { nameWithOwner: 'acme/payments' } } },
+      ] },
+    },
+    confluence: {
+      search: { results: [{ content: { id: '98301', type: 'page', title: 'Webhook retry design', _links: { webui: '/spaces/PAY/pages/98301/Webhook+retry+design' }, version: { number: 7, by: { displayName: 'Priya Shah', accountId: 'priya' } } }, excerpt: '@Sam Developer can you confirm the max backoff of 32 minutes?', lastModified: iso(3 * HOUR), resultGlobalContainer: { title: 'Payments' } }] },
+      tasks: { results: [{ id: '5501', status: 'incomplete', pageId: '98301', dueAt: new Date(t0 + DAY).toISOString(), createdAt: iso(2 * DAY), body: { storage: { value: '<span>Update the retry table before the design review</span>' } } }] },
+    },
+    mail: [
+      { id: 'om1', subject: 'Can you approve the Q4 vendor invoice?', from: { emailAddress: { name: 'Lena Ortiz', address: 'lena@acme.example' } }, toRecipients: [{ emailAddress: { name: 'Sam Developer', address: 'sam@acme.example' } }], ccRecipients: [], receivedDateTime: iso(70 * MIN), isRead: false, flag: { flagStatus: 'notFlagged' }, importance: 'normal', inferenceClassification: 'focused', webLink: 'https://outlook.office.com/mail/inbox/id/om1', unsubscribeEnabled: false },
+      { id: 'om2', subject: 'Re: Office move – parking passes', from: { emailAddress: { name: 'Facilities', address: 'facilities@acme.example' } }, toRecipients: [{ emailAddress: { name: 'All staff', address: 'everyone@acme.example' } }], ccRecipients: [], receivedDateTime: iso(5 * HOUR), isRead: false, flag: { flagStatus: 'notFlagged' }, importance: 'normal', inferenceClassification: 'other', webLink: 'https://outlook.office.com/mail/inbox/id/om2', unsubscribeEnabled: false },
+      { id: 'om3', subject: 'Your weekly Azure cost digest', from: { emailAddress: { name: 'Microsoft Azure', address: 'azure-noreply@microsoft.com' } }, toRecipients: [{ emailAddress: { address: 'sam@acme.example' } }], ccRecipients: [], receivedDateTime: iso(8 * HOUR), isRead: false, flag: { flagStatus: 'notFlagged' }, importance: 'normal', inferenceClassification: 'other', webLink: 'https://outlook.office.com/mail/inbox/id/om3', unsubscribeEnabled: true },
+    ],
+  };
+}
+
 export function demoFetch(clock = () => Date.now()) {
   const sent = new Set(); // channels the demo "replied" in, so the item clears like the real thing
   const teamsSent = new Map(); // Teams chat id → your reply
@@ -436,6 +485,7 @@ export function demoFetch(clock = () => Date.now()) {
   return async (url, init = {}) => {
     const u = new URL(url);
     const now = clock();
+    const ops = opsData(t0);
     const json = (body, status = 200, headers = {}) => ({ ok: status < 400, status, headers: new Headers(headers), text: async () => JSON.stringify(body), json: async () => body });
     if (u.origin === 'https://slack.com') {
       const method = u.pathname.replace('/api/', '');
@@ -472,6 +522,10 @@ export function demoFetch(clock = () => Date.now()) {
       const p = decodeURIComponent(u.pathname.replace('/v1.0', ''));
       const data = teamsData(t0, teamsSent, now);
       if (p === '/me') return json(TEAMS_ME);
+      if (p === '/me/mailFolders/inbox/messages') {
+        const flagged = /flagStatus/.test(u.searchParams.get('$filter') ?? '');
+        return json({ value: flagged ? [] : ops.mail });
+      }
       const todo = todoData(t0, todoDone);
       if (p === '/me/todo/lists') return json({ value: todo.lists });
       const tl = /^\/me\/todo\/lists\/([^/]+)\/tasks(?:\/([^/]+))?$/.exec(p);
@@ -490,6 +544,16 @@ export function demoFetch(clock = () => Date.now()) {
       }
       if (m) return json({ value: data.messages[m[1]] ?? [] });
       return json({ error: { code: 'NotFound', message: 'Not in the demo' } }, 404);
+    }
+    if (u.origin === DT_URL && u.pathname === '/api/v2/problems') return json({ totalCount: ops.problems.length, problems: ops.problems });
+    if (u.origin === GRAFANA_URL && u.pathname === '/api/alertmanager/grafana/api/v2/alerts') return json(ops.alerts);
+    if (u.origin === new URL(JENKINS_URL).origin && u.pathname.endsWith('/api/json')) return json(ops.jenkins);
+    if (u.href === 'https://api.github.com/graphql') return json({ data: { viewer: { login: ME }, owner: { projectV2: ops.project } } });
+    if (u.origin === JIRA && u.pathname.startsWith('/wiki/')) {
+      if (u.pathname === '/wiki/rest/api/user/current') return json({ accountId: 'sam', displayName: 'Sam Developer' });
+      if (u.pathname === '/wiki/rest/api/search') return json(ops.confluence.search);
+      if (u.pathname === '/wiki/api/v2/tasks') return json(ops.confluence.tasks);
+      if (u.pathname === '/wiki/api/v2/pages/98301') return json({ id: '98301', title: 'Webhook retry design' });
     }
     if (u.origin === API) {
       const gh = githubData(now);
@@ -538,7 +602,8 @@ export function demoHistory(now) {
 
 /** A secret store that lives in memory and starts with the demo's fake credentials. */
 export function demoSecrets() {
-  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token'], ['discord-token', 'demo-not-a-real-token'], ['todoist-token', 'demo-not-a-real-token'],
+  const m = new Map([['jira-token', 'demo-not-a-real-token'], ['cal-url', CAL_URL], ['anthropic-api-key', 'demo-key-not-real-scripted-assistant'], ['slack-token', 'xoxp-demo-not-a-real-token'], ['discord-token', 'demo-not-a-real-token'], ['todoist-token', 'demo-not-a-real-token'], ['dynatrace-token', 'demo-not-a-real-token'], ['grafana-token', 'demo-not-a-real-token'], ['jenkins-token', 'demo-not-a-real-token'], ['confluence-token', 'demo-not-a-real-token'],
+    ['oauth-msmail', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Mail.ReadBasic' })],
     ['oauth-mstodo', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Tasks.Read Tasks.ReadWrite' })],
     // A fake Teams sign-in that never expires (the fake Graph above takes any token).
     ['oauth-teams', JSON.stringify({ access_token: 'demo-not-a-real-token', refresh_token: null, expires_at: 8_640_000_000_000_000, scope: 'User.Read Chat.Read ChatMessage.Send' })]]);
@@ -575,10 +640,16 @@ export async function createDemo() {
       // Task lists, two-way: Done in the demo "completes" the task in the fake To Do / Todoist.
       todo: { enabled: true, syncDone: true },
       todoist: { enabled: true, syncDone: true },
+      dynatrace: { enabled: true, url: DT_URL, zone: 'Payments', entities: '' },
+      grafana: { enabled: true, url: GRAFANA_URL, filter: 'team=payments' },
+      jenkins: { enabled: true, url: JENKINS_URL, username: 'sam', onlyMine: false },
+      ghprojects: { enabled: true, projects: 'https://github.com/orgs/acme/projects/5' },
+      confluence: { enabled: true, site: JIRA, email: 'sam@acme.example' },
+      outlook: { enabled: true, vip: '', mute: '', showNoise: false },
     },
     // Work shows everything on weekdays; Home shows the personal sources.
     profiles: [
-      { id: 'work', name: 'Work', sources: ['git', 'github', 'jira', 'cal', 'slack', 'teams', 'todo'], schedule: { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' }, notify: true },
+      { id: 'work', name: 'Work', sources: ['git', 'github', 'jira', 'cal', 'slack', 'teams', 'todo', 'dynatrace', 'grafana', 'jenkins', 'ghprojects', 'confluence', 'outlook'], schedule: { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' }, notify: true },
       { id: 'home', name: 'Home', sources: ['git', 'github', 'cal', 'discord', 'thunderbird', 'todoist'], schedule: null, notify: true },
     ],
     chat: { demo: true },
@@ -593,7 +664,7 @@ export async function createDemo() {
   });
   await writeJson(path.join(dir, 'connections.json'), {
     github: { method: 'gh-cli', login: ME, name: 'Sam Developer', connectedAt: new Date().toISOString() },
-    oauth: { teams: { account: 'sam@acme.example', connectedAt: new Date().toISOString() }, mstodo: { account: 'sam@acme.example', connectedAt: new Date().toISOString() } },
+    oauth: { teams: { account: 'sam@acme.example', connectedAt: new Date().toISOString() }, mstodo: { account: 'sam@acme.example', connectedAt: new Date().toISOString() }, msmail: { account: 'sam@acme.example', connectedAt: new Date().toISOString() } },
   });
   await writeJson(path.join(dir, 'state.json'), { version: 1, items: {}, prefs: { seenSetup: true, profile: 'all' } });
   await writeJson(path.join(dir, 'history.json'), { days: demoHistory(Date.now()) });

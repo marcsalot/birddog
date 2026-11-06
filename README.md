@@ -198,6 +198,13 @@ Leave out `-p`; the MCP server doesn't listen on a port. It reads what the dashb
 | **Microsoft To Do** | Tasks overdue, due within a week, or important. **Two-way**, opt-in | Sign in with Microsoft To Do: `Tasks.Read`; `Tasks.ReadWrite` once you turn on Sync done |
 | **Google Tasks** | Tasks (Gmail's and Calendar's Tasks panel) overdue or due within a week. **Two-way**, opt-in | Sign in with Google Tasks: `tasks.readonly`; `tasks` once you turn on Sync done |
 | **Todoist** | Tasks overdue, due within a week, or priority 1. **Two-way**, opt-in | API token |
+| **Dynatrace** | Open problems in your management zone: availability and errors are **Now** | API token with `problems.read`; SaaS or Managed |
+| **Grafana** | Alerts firing now (not silenced), critical ones **Now** | Service account token (Viewer); Grafana Cloud or a **private** Grafana |
+| **Jenkins** | Jobs whose last build failed or is unstable, in a view or folder (optionally only builds you broke or started) | Username + API token; works with a **private** Jenkins |
+| **GitHub Projects** | Project items assigned to you that aren't done, ranked by iteration end, due date and priority | Your GitHub sign-in, with `read:project` |
+| **Confluence** | Pages and comments that mention you, and tasks assigned to you | Site + email + API token (same kind as Jira's) |
+| **Gmail** | Unread and starred mail, **sorted into needs-you, FYI and noise** | Sign in with Gmail: `gmail.metadata` (headers and labels, never bodies) |
+| **Outlook mail** | Unread and flagged mail, **sorted into needs-you, FYI and noise**, using Focused Inbox | Sign in with Outlook mail: `Mail.ReadBasic` (never bodies) |
 
 GitHub also reports **failing Actions runs** on branches you pushed this week, and **Dependabot alerts** on those repos (`"actions": false` / `"security": false` under `sources.github` turn them off).
 
@@ -360,6 +367,34 @@ That link works like a password (anyone who has it can read your calendar), so B
 
 The reader is built in (no dependencies) and handles what real feeds contain: folded lines and escapes, UTC, `TZID` and floating times, Windows zone names from Outlook, all-day and multi-day events, `DURATION`, recurring events (`RRULE` with `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, `INTERVAL`, `COUNT`, `UNTIL`, `BYDAY` such as `2TU` or `-1FR`, `BYMONTHDAY`, `BYMONTH`), `EXDATE`, `RDATE`, and single instances that were moved or cancelled (`RECURRENCE-ID`). Recurring events keep their wall-clock time across daylight saving changes. A zone it doesn't know falls back to the zone's standard offset, with a warning in setup. Not supported: `BYSETPOS`, `HOURLY`/`MINUTELY` rules and `BYWEEKNO` (such events show their first occurrence only).
 
+## Email: what needs you vs noise
+
+Thunderbird, Gmail and Outlook mail don't just list unread mail. Each message gets a verdict, and the item says why:
+
+| Verdict | When | Where it goes |
+|---|---|---|
+| **Needs you** | from someone on your *Always important* list; your provider flagged it (Gmail's Important, Outlook's Focused); it says *urgent*, *action required*, *please approve*…; it's from someone you've replied to before; or a person sent it to you directly | Today (Later after 3 days) |
+| **FYI** | you're only on CC, it came through a list or BCC, or Outlook put it in Other | Later |
+| **Noise** | newsletters and mailings (an unsubscribe link, `List-Id`, `Precedence: bulk`, `Auto-Submitted`), no-reply and other robot senders, Gmail's Promotions / Social / Forums, notification mail from tools Birddog already shows (GitHub, Jira, Slack, Sentry…), senders you muted, and mail you sent | not listed; the card counts it ("12 noise skipped") |
+
+Starred / flagged mail always counts as needing you. A robot that says *action required* still gets through. Each mail card has **Always important** and **Always noise** (addresses or `@domains`), and **Also list the noise** if you'd rather see it, in Later.
+
+Gmail asks for `gmail.metadata` and Outlook for `Mail.ReadBasic`: senders, subjects, labels and flags, never what an email says. Neither can change anything. `gmail.metadata` is a Google *restricted* scope, so Sign in with Gmail works for the Birddog Google app's test users until that app passes Google's verification; bring your own Google app to use it right away.
+
+## Ops and work tools
+
+**Dynatrace** reads open problems (`GET /api/v2/problems`, status open). Problems aren't assigned to people, so set a **management zone** or an **entity selector**, or you'll see the whole environment. Availability and error problems are **Now**; slowdowns and resource problems are Today, then Later after 3 days. SaaS (`https://abc12345.live.dynatrace.com`) and Managed (`https://host/e/<environment-id>`) both work.
+
+**Grafana** reads alerts that are firing, not silenced and not inhibited, from Grafana Alerting's Alertmanager API. A `severity` (or `priority`) label of *critical*, *page*, *p1* or *sev1* makes it **Now**. Narrow it with a label filter like `team=payments, env!=dev`.
+
+**Jenkins** reads one view or folder (`…/view/payments` or `…/job/payments`) in one request, including multibranch pipelines (one item per failing branch), and lists jobs whose last finished build failed or is unstable. **Only mine** keeps the builds you started or that list you among the culprits.
+
+**Private servers.** Birddog runs on your computer, so it reaches whatever your computer can: your office network or VPN. Grafana, Jenkins and Dynatrace Managed accept `http://` only for hosts on your own network (`localhost`, `10.x`, `172.16–31.x`, `192.168.x`, Tailscale's `100.64–127.x`, single-label names and `.local`, `.lan`, `.internal`, `.corp`, `.home.arpa`), so a token never crosses the internet in the clear. If your servers use certificates from your company's own CA, start Birddog with `NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem`. When you're off the VPN, the source says so and keeps its last good items.
+
+**GitHub Projects** reads the boards you list (`https://github.com/orgs/ORG/projects/N` or `/users/NAME/projects/N`) through your GitHub sign-in, which needs the `read:project` scope: Birddog's own GitHub sign-in asks for it; with the `gh` CLI run `gh auth refresh -s read:project`. Items assigned to you that aren't done are ranked like tickets: the *Status* field, an *Iteration* ending, a *Due* / *Target* / *Deadline* date field, a *Priority* field, and a blocked status.
+
+**Confluence** reads pages and comments that @mention you in the last 7 days (CQL `mention = currentUser()`, skipping your own edits) and inline tasks assigned to you that aren't done (by due date). One Atlassian API token works for both Jira and Confluence.
+
 ## Task lists, two-way
 
 **Microsoft To Do**, **Google Tasks** and **Todoist** list your open tasks that are overdue, due within a week, or marked important / priority 1 (**Show all** in config, `"showAll": true`, lists every open task). Overdue, due today and important are **Today**; the rest are **Later**.
@@ -399,7 +434,7 @@ Every source keeps refreshing in the background, so switching is instant. A prof
 
 Sources & settings lists every source A–Z, with a search box that matches names and kinds of thing (*calendar* finds Google, Microsoft, iCloud and iCal; *ci* finds GitHub Actions, GitLab pipelines and Azure).
 
-GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Discord and Thunderbird are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token`, `slack-token`, `discord-token` and `todoist-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN`, `BIRDDOG_SLACK_TOKEN`, `BIRDDOG_DISCORD_TOKEN` and `TODOIST_API_TOKEN`. Thunderbird needs no token. None of them write anything while collecting. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL. Slack can also post your replies, only once you turn on [Allow replies](#reply-from-birddog).
+GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Discord and Thunderbird are off until you connect them in **Sources & settings**. Each card asks for the smallest read-only access that works and shows a link to where you make that token. Tokens go to your keychain as `gitlab-token`, `linear-token`, `azure-devops-token`, `sentry-token`, `pagerduty-token`, `slack-token`, `discord-token`, `todoist-token`, `dynatrace-token`, `grafana-token`, `jenkins-token` and `confluence-token`; in Docker, use `GITLAB_TOKEN`, `LINEAR_API_KEY`, `AZURE_DEVOPS_EXT_PAT`, `SENTRY_AUTH_TOKEN`, `BIRDDOG_PAGERDUTY_TOKEN`, `BIRDDOG_SLACK_TOKEN`, `BIRDDOG_DISCORD_TOKEN`, `TODOIST_API_TOKEN`, `BIRDDOG_DYNATRACE_TOKEN`, `BIRDDOG_GRAFANA_TOKEN`, `BIRDDOG_JENKINS_TOKEN` and `BIRDDOG_CONFLUENCE_TOKEN`. Thunderbird needs no token. None of them write anything while collecting. The only non-GET requests are read-only queries that the API takes as POST: Linear's GraphQL queries (never mutations) and Azure's WIQL. Slack can also post your replies, only once you turn on [Allow replies](#reply-from-birddog).
 
 | Source | Ranks it as | Rules that fire |
 |---|---|---|
@@ -411,7 +446,12 @@ GitLab, Linear, Azure DevOps, Sentry, PagerDuty, Slack, Discord and Thunderbird 
 | Slack | mentions, DMs | fresh → Today; older → Later |
 | Discord | mentions | under 3 days → Today; older → Later |
 | Thunderbird | email | starred and not replied, or unread under a day → Today; older unread → Later |
-| To Do, Google Tasks, Todoist | tasks | overdue, due today, or important / P1 → Today; due within a week → Later |
+| To Do, Google Tasks, Todoist, Confluence tasks | tasks | overdue, due today, or important / P1 → Today; due within a week → Later |
+| Dynatrace, Grafana | alerts | critical (outage, error, `severity=critical`) → **Now**; others → Today, then Later after 3 days |
+| Jenkins | CI failures | failed or unstable under 2 days → Today; older → Later |
+| GitHub Projects | tickets | the same rules as Jira |
+| Confluence | mentions | under 3 days → Today; older → Later |
+| Gmail, Outlook mail, Thunderbird | email | starred, or needs you → Today; FYI → Later; noise hidden |
 | GitHub Actions / Dependabot | CI failures, security alerts | failing < 2 days and critical/high → Today; others → Later |
 
 GitLab also has **Sign in with GitLab**: register an application under *User settings → Applications* (scope `read_api`, *not* confidential, redirect `http://127.0.0.1:4747/auth/oauth/gitlab/callback`), then set `"oauth": { "gitlab": { "clientId": "…", "url": "https://gitlab.com" } }`.
@@ -1047,6 +1087,7 @@ test/                  node:test suites
 15. ✅ Ticket board, worktrees & slots, launch slots (1.15–1.17)
 16. ✅ Discord, Thunderbird, and Work/Home profiles (1.18)
 17. ✅ Two-way task lists (To Do, Google Tasks, Todoist) and one unified calendar (1.19)
+18. ✅ Dynatrace, Grafana and Jenkins (private servers too), GitHub Projects, Confluence, and email triage with Gmail and Outlook (1.20)
 
 Ideas for later: Bitbucket Cloud, a "focus" view that hides Later, replies for more chats (Discord, Google Chat), Teams channel mentions (with admin consent) and comments (GitHub/GitLab PRs, Jira).
 

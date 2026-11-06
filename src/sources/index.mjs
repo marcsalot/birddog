@@ -6,7 +6,14 @@ import * as cal from './cal.mjs';
 import * as discord from './discord.mjs';
 import * as git from './git.mjs';
 import * as github from './github.mjs';
+import * as confluence from './confluence.mjs';
+import * as dynatrace from './dynatrace.mjs';
+import * as ghprojects from './ghprojects.mjs';
+import * as gmail from './gmail.mjs';
+import * as grafana from './grafana.mjs';
 import * as gtasks from './gtasks.mjs';
+import * as jenkins from './jenkins.mjs';
+import * as outlook from './outlook.mjs';
 import * as gitlab from './gitlab.mjs';
 import * as jira from './jira.mjs';
 import * as linear from './linear.mjs';
@@ -19,7 +26,7 @@ import * as todo from './todo.mjs';
 import * as todoist from './todoist.mjs';
 
 // Order is the order in setup: the essentials first, then the rest of a developer's day.
-export const SOURCES = [git, github, jira, cal, gitlab, linear, azure, sentry, pagerduty, slack, teams, discord, thunderbird, todo, gtasks, todoist];
+export const SOURCES = [git, github, jira, cal, gitlab, linear, azure, sentry, pagerduty, slack, teams, discord, thunderbird, todo, gtasks, todoist, dynatrace, grafana, jenkins, ghprojects, confluence, gmail, outlook];
 
 /** Sources that appear in setup but are not built yet. */
 export const COMING_SOON = [];

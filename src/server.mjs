@@ -515,15 +515,18 @@ export async function createBirddog({
   // ---- "Sign in with …" for sources (OAuth 2.0 + PKCE, loopback redirect) ----
   const redirectFor = (req, p) => `${baseUrl(req)}/auth/oauth/${p}/callback`;
   const gitlabBase = () => String(config.oauth?.gitlab?.url || config.sources?.gitlab?.url || 'https://gitlab.com').replace(/\/+$/, '');
+  const googleEmail = async (token) => {
+    const r = await fetchImpl('https://openidconnect.googleapis.com/v1/userinfo', { headers: { authorization: `Bearer ${token}` } });
+    return { account: (await r.json().catch(() => ({})))?.email ?? null };
+  };
   const IDENTIFY = {
     google: (p, token) => googleAccount({ fetchImpl, token }),
     microsoft: (p, token) => graphAccount({ fetchImpl, token }),
     teams: (p, token) => graphAccount({ fetchImpl, token }),
     mstodo: (p, token) => graphAccount({ fetchImpl, token }),
-    gtasks: async (p, token) => {
-      const r = await fetchImpl('https://openidconnect.googleapis.com/v1/userinfo', { headers: { authorization: `Bearer ${token}` } });
-      return { account: (await r.json().catch(() => ({})))?.email ?? null };
-    },
+    msmail: (p, token) => graphAccount({ fetchImpl, token }),
+    gtasks: async (p, token) => googleEmail(token),
+    gmail: async (p, token) => googleEmail(token),
     atlassian: (p, token) => atlassianSite({ fetchImpl, token }),
     gitlab: async (p, token) => {
       const r = await fetchImpl(`${gitlabBase()}/api/v4/user`, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' } });
@@ -554,6 +557,8 @@ export async function createBirddog({
     teams: { source: 'teams', on: () => ({}), uses: () => true, off: {} }, // Teams has no other way in
     mstodo: { source: 'todo', on: () => ({}), uses: () => true, off: {} },
     gtasks: { source: 'gtasks', on: () => ({}), uses: () => true, off: {} },
+    gmail: { source: 'gmail', on: () => ({}), uses: () => true, off: {} },
+    msmail: { source: 'outlook', on: () => ({}), uses: () => true, off: {} },
   };
   /** After a sign-in, point the matching source at it and switch it on. */
   function useProvider(p, info) {

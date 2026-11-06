@@ -12,7 +12,7 @@ import path from 'node:path';
 import { readJson, writeJson } from '../store.mjs';
 import { BUILT_IN, resolveClientId } from './clients.mjs';
 
-export const GITHUB_DEFAULTS = Object.freeze({ webUrl: 'https://github.com', apiUrl: 'https://api.github.com', scopes: 'repo read:org' });
+export const GITHUB_DEFAULTS = Object.freeze({ webUrl: 'https://github.com', apiUrl: 'https://api.github.com', scopes: 'repo read:org read:project' });
 const SECRET = 'github-token';
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 

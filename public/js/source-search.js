@@ -17,6 +17,13 @@ export const KEYWORDS = {
   todo: 'tasks to do todo lists reminders microsoft outlook office 365 two-way sync',
   gtasks: 'tasks to do todo lists gmail google two-way sync',
   todoist: 'tasks to do todo lists projects two-way sync',
+  dynatrace: 'incidents problems alerts monitoring apm observability ops',
+  grafana: 'alerts alerting monitoring dashboards prometheus observability ops self-hosted private',
+  jenkins: 'ci builds pipelines failing jobs self-hosted private',
+  ghprojects: 'github projects boards tickets issues iterations kanban',
+  confluence: 'wiki pages docs mentions comments tasks atlassian',
+  gmail: 'email mail inbox google important noise newsletters',
+  outlook: 'email mail inbox microsoft office 365 focused noise newsletters',
   thunderbird: 'email mail inbox unread starred mozilla imap pop local home',
 };
 
