@@ -73,6 +73,12 @@ export const api = {
   workspaceSettings: (s) => call('PUT', '/api/workspace/settings', s),
   claimSlot: (kind, id, body) => call('PUT', `/api/workspace/slots/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, body),
   releaseSlot: (kind, id) => call('DELETE', `/api/workspace/slots/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, {}),
+  standup: async () => {
+    let res;
+    try { res = await fetch('/api/standup'); } catch { throw new Error('Birddog server is not reachable. Is it still running?'); }
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Request failed (${res.status})`); }
+    return res.text();
+  },
   me: () => call('GET', '/api/me'),
   logout: () => call('POST', '/auth/logout', {}),
   github: () => call('GET', '/api/connections/github'),
