@@ -1026,6 +1026,14 @@ function signInRow(p, { label, fallback = 'use a token below', compact = false }
   return `<div class="signin-row"><button class="btn primary" data-oauth="${esc(p)}">${esc(label)}</button><span class="consent">Birddog will read ${READS[p] ?? 'your data, read-only'}. ${writes}, and the tokens stay in your keychain.</span></div>${p === 'google' && o.unverified ? googleNoticeHTML(o.googleStatus) : ''}`;
 }
 
+function renderJiraBoards(boards) {
+  if (!boards?.length) return '<div class="msg">No board filter — all sprint tickets shown. Click Detect to see your boards.</div>';
+  return boards.map((b) => `<div class="board-row">
+    <button class="btn small toggle ${b.enabled !== false ? 'on' : ''}" data-board-toggle="${b.id}">${b.enabled !== false ? 'On' : 'Off'}</button>
+    <span>${esc(b.name)}${b.project ? ` <span class="msg">${esc(b.project)}</span>` : ''}</span>
+  </div>`).join('');
+}
+
 function jiraCardHTML(src) {
   const ui = st.cards.jira ?? {};
   const s = src.settings ?? {};
@@ -1040,8 +1048,10 @@ function jiraCardHTML(src) {
       <div class="row-btns"><button class="btn" data-test="jira" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-oauth-off="atlassian" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
   }
   if (connected && !ui.editing && status !== 'stale') {
+    const activeBoardNames = (s.boards ?? []).filter((b) => b.enabled !== false).map((b) => esc(b.name));
+    const boardLine = activeBoardNames.length ? `<div class="msg">Boards: ${activeBoardNames.join(', ')}</div>` : '';
     return `${cardTop('jira', src.name, label, cls)}<div class="msg">${esc(src.description)}</div>
-      <div class="msg">Signed in to <b>${esc(new URL(s.site).host)}</b> as <b>${esc(s.email)}</b>, ${envSecret('jira-token') ? `token from <code>${esc(envSecret('jira-token').from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`}${summary.replace(/^ · [^ ]+/, '')}</div>${msg}
+      <div class="msg">Signed in to <b>${esc(new URL(s.site).host)}</b> as <b>${esc(s.email)}</b>, ${envSecret('jira-token') ? `token from <code>${esc(envSecret('jira-token').from)}</code>` : `token kept in ${esc(st.setup.secretStore)}`}${summary.replace(/^ · [^ ]+/, '')}</div>${boardLine}${msg}
       <div class="row-btns"><button class="btn" data-edit="jira">Change</button><button class="btn" data-test="jira" ${ui.busy ? 'disabled' : ''}>Test again</button><button class="btn" data-disconnect="jira" ${ui.busy ? 'disabled' : ''}>Disconnect</button></div></div>`;
   }
   const d = ui.draft ?? { site: s.site ? new URL(s.site).host : '', email: s.email ?? '', token: '' };
@@ -1055,7 +1065,11 @@ function jiraCardHTML(src) {
       <label><span>Email</span><input data-f="jira.email" type="email" value="${esc(d.email)}" placeholder="you@acme.com" autocomplete="off" spellcheck="false"></label>
       ${envSecret('jira-token') ? '' : `<label class="full"><span>API token · <a href="${JIRA_TOKEN_URL}" target="_blank" rel="noopener noreferrer">create one on Atlassian ↗</a></span><input data-f="jira.token" type="password" value="${esc(d.token)}" placeholder="${hasToken ? `Saved in ${esc(st.setup.secretStore)} · leave blank to keep it` : 'Paste your API token'}" autocomplete="off"></label>`}
     </div>
-    ${envSecret('jira-token') ? envSecretHTML('jira-token', 'The API token') : `<div class="msg">The token is stored in ${esc(st.setup.secretStore)}, never in config.json. Birddog only reads from Jira.</div>`}${msg}
+    ${envSecret('jira-token') ? envSecretHTML('jira-token', 'The API token') : `<div class="msg">The token is stored in ${esc(st.setup.secretStore)}, never in config.json. Birddog only reads from Jira.</div>`}
+    <div class="boards-wrap">
+      <div class="boards-hd"><span>Boards <span class="msg">· restrict to open sprints for specific boards</span></span> <button class="btn small" data-detect-jira-boards ${off}>Detect</button></div>
+      <div id="jira-boards-items">${renderJiraBoards(d.boards ? JSON.parse(d.boards) : (s.boards ?? null))}</div>
+      <input type="hidden" data-f="jira.boards" id="jira-boards-json" value="${esc(JSON.stringify(d.boards ? JSON.parse(d.boards) : (s.boards ?? null)))}">    </div>${msg}
     <div class="row-btns"><button class="btn primary" data-connect="jira" ${off}>Test &amp; connect <kbd>↵</kbd></button>${connected ? '<button class="btn" data-cancel="jira">Cancel</button>' : ''}${hasToken ? `<button class="btn" data-disconnect="jira" ${off}>Disconnect</button>` : ''}</div></div>`;
 }
 
@@ -1614,7 +1628,7 @@ async function disconnectCard(id) {
 
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('scrim')) { closeAll(); return; }
-  const t = e.target.closest('[data-read-mail],[data-cal-remove],[data-sync-done],[data-allow-replies],[data-reply-send],[data-reply-undo],[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],#clearQ');
+  const t = e.target.closest('[data-read-mail],[data-cal-remove],[data-sync-done],[data-allow-replies],[data-reply-send],[data-reply-undo],[data-oauth],[data-oauth-off],[data-calmode],[data-guide-link],[data-ov-item],[data-view],[data-src],[data-soon],[data-act],.row,[data-close-drawer],[data-d],[data-sn],[data-p],[data-test],[data-save],[data-edit],[data-cancel],[data-connect],[data-disconnect],[data-retry],[data-enable],[data-wiz],[data-fr-go],[data-next],[data-only-all],[data-close],[data-setup],[data-copy],[data-gh],[data-logout],[data-detect-jira-boards],[data-board-toggle],#clearQ');
   if (!t) { if (snoozeOpen() && !e.target.closest('#snooze')) closeSnooze(); return; }
   const d = t.dataset;
   if (d.allowReplies) return setAllowReplies(d.allowReplies, t.checked, t);
@@ -1666,7 +1680,34 @@ document.addEventListener('click', (e) => {
   if ('close' in d) return closeAll();
   if ('setup' in d) { e.preventDefault(); closeDrawer(); return openSetup(); }
   if (d.copy) { const i = drawerItem(); return copy(d.copy === 'path' ? i?.meta?.path : i?.meta?.command, d.copy); }
+  if ('detectJiraBoards' in d) return detectJiraBoards(t);
+  if (d.boardToggle) return toggleBoard(+d.boardToggle);
 });
+
+async function detectJiraBoards(btn) {
+  btn.disabled = true; btn.textContent = 'Detecting…';
+  try {
+    const { boards } = await api.jiraBoards();
+    const existing = tryParseBoardsJSON(document.getElementById('jira-boards-json')?.value);
+    const exMap = new Map((existing ?? []).map((b) => [b.id, b.enabled !== false]));
+    const merged = boards.map((b) => ({ ...b, enabled: exMap.has(b.id) ? exMap.get(b.id) : true }));
+    const j = document.getElementById('jira-boards-json'); if (j) j.value = JSON.stringify(merged);
+    const list = document.getElementById('jira-boards-items'); if (list) list.innerHTML = renderJiraBoards(merged);
+  } catch (err) { toast(`⚠ ${esc(err.message)}`); }
+  btn.disabled = false; btn.textContent = 'Detect';
+}
+
+function toggleBoard(id) {
+  const j = document.getElementById('jira-boards-json'); if (!j) return;
+  const boards = tryParseBoardsJSON(j.value); if (!boards) return;
+  const updated = boards.map((b) => b.id === id ? { ...b, enabled: !b.enabled } : b);
+  j.value = JSON.stringify(updated);
+  const list = document.getElementById('jira-boards-items'); if (list) list.innerHTML = renderJiraBoards(updated);
+}
+
+function tryParseBoardsJSON(v) {
+  try { const p = JSON.parse(v ?? 'null'); return Array.isArray(p) ? p : null; } catch { return null; }
+}
 
 document.addEventListener('input', (e) => {
   if (!e.target.matches?.('textarea[data-reply]')) return;

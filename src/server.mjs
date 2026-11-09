@@ -839,6 +839,11 @@ export async function createBirddog({
       await refresh();
       return setupPayload();
     }],
+    ['GET', /^\/api\/sources\/jira\/boards$/, async () => {
+      const src = findSource('jira');
+      if (typeof src.getBoards !== 'function') throw new HttpError(404, 'Boards not supported');
+      return src.getBoards(config.sources?.jira ?? {}, { ...context, now: Date.now() });
+    }],
     ['GET', /^\/api\/connections\/github$/, () => github.status()],
     ['POST', /^\/api\/connections\/github\/device$/, asBadRequest(() => github.startDevice())],
     ['POST', /^\/api\/connections\/github\/gh-cli$/, asBadRequest(() => github.useGhCli())],

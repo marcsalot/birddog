@@ -41,6 +41,23 @@ export const DEFAULT_ADVANCING = ['Ready for Deployment', 'Ready for QA', 'In QA
 export const DEFAULT_IN_PROGRESS = ['In Development', 'In Progress', 'In Dev'];
 
 // ---------------------------------------------------------------------------
+// Boards helpers
+
+/** Parse and validate a boards array coming from the settings form or API. */
+function normBoards(raw) {
+  if (!Array.isArray(raw)) return undefined;
+  const boards = raw
+    .map((b) => ({ id: Number(b.id), name: String(b.name ?? ''), type: String(b.type ?? 'scrum'), enabled: b.enabled !== false }))
+    .filter((b) => b.id > 0);
+  return boards.length ? boards : undefined;
+}
+
+function tryParseBoards(v) {
+  if (Array.isArray(v)) return v;
+  try { const p = JSON.parse(v ?? 'null'); return Array.isArray(p) ? p : null; } catch { return null; }
+}
+
+// ---------------------------------------------------------------------------
 // Settings
 
 /** "acme", "acme.atlassian.net" or a pasted ticket URL → "https://acme.atlassian.net". */
@@ -57,11 +74,12 @@ export function normalizeSite(input) {
 }
 
 export function normalizeSettings(input = {}) {
-  if (input.auth === 'oauth') return { auth: 'oauth' };
+  const boards = normBoards(tryParseBoards(input.boards));
+  if (input.auth === 'oauth') return { auth: 'oauth', ...(boards ? { boards } : {}) };
   const site = normalizeSite(input.site);
   const email = String(input.email ?? '').trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new TypeError('Enter the email address you use to sign in to Atlassian');
-  return { site, email, auth: 'token' };
+  return { site, email, auth: 'token', ...(boards ? { boards } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +388,16 @@ export function buildNoProgressItems(issues, fieldIds, ctx, config, now, site, h
 // ---------------------------------------------------------------------------
 // Plugin interface
 
+/** Fetch boards available to this account via the Jira Agile API. */
+export async function getBoards(config, ctx) {
+  const jira = await jiraClient(config, ctx);
+  const data = await jira.get('/rest/agile/1.0/board?maxResults=50&orderBy=name');
+  const boards = (data?.values ?? []).map((b) => ({
+    id: b.id, name: b.name, type: b.type ?? 'scrum', project: b.location?.projectName ?? null,
+  }));
+  return { boards };
+}
+
 export async function test(config = {}, ctx = {}) {
   try {
     const jira = await jiraClient(config, ctx);
@@ -387,7 +415,12 @@ export async function collect(config = {}, ctx = {}) {
   const fieldIds = await customFields(jira, warn, now);
   const fields = ['summary', 'status', 'priority', 'duedate', 'updated', 'issuetype', 'project', 'issuelinks', fieldIds.sprint, fieldIds.flagged]
     .filter(Boolean).join(',');
-  const jql = typeof config.jql === 'string' && config.jql.trim() ? config.jql : DEFAULT_JQL;
+  const enabledBoards = (config.boards ?? []).filter((b) => b.enabled !== false);
+  let jql = typeof config.jql === 'string' && config.jql.trim() ? config.jql : DEFAULT_JQL;
+  if (enabledBoards.length > 0 && jql === DEFAULT_JQL) {
+    const bf = enabledBoards.map((b) => `sprint in boardSprints(${b.id})`).join(' OR ');
+    jql = `assignee = currentUser() AND statusCategory != Done AND (${bf}) ORDER BY updated DESC`;
+  }
 
   const issues = [];
   let pageToken = null;

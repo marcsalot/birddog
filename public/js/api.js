@@ -79,6 +79,7 @@ export const api = {
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Request failed (${res.status})`); }
     return res.text();
   },
+  jiraBoards: () => call('GET', '/api/sources/jira/boards'),
   me: () => call('GET', '/api/me'),
   logout: () => call('POST', '/auth/logout', {}),
   github: () => call('GET', '/api/connections/github'),
