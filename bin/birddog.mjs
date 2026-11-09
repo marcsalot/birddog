@@ -293,7 +293,7 @@ async function main() {
 
      config   ${tildify(app.configFile)}${app.firstRun ? '  (created just now)' : ''}
      scanning ${roots.join(', ') || 'nothing yet'}
-     login    ${app.authEnabled ? `on · ${new URL(auth.issuer).host} · allowed: ${who}${app.authFile ? ' (from auth.json)' : ''}` : container ? 'off (anyone who can reach the published port can read your inbox, so publish it on 127.0.0.1 only)' : 'off (only this machine can reach Birddog)'}
+     login    ${app.authEnabled ? `on · ${auth.issuer ? new URL(auth.issuer).host : (auth.provider ?? 'github') + '.com'} · allowed: ${who}${app.authFile ? ' (from auth.json)' : ''}` : container ? 'off (anyone who can reach the published port can read your inbox, so publish it on 127.0.0.1 only)' : 'off (only this machine can reach Birddog)'}
      ${container ? `docker   publish with -p 127.0.0.1:4747:4747 (loopback only); repos go in /repos, tokens in env vars\n     ` : ''}secrets  ${app.secrets.kind}${app.secrets.warning ? `\n              ⚠ ${app.secrets.warning}` : ''}
 
   Press Ctrl+C to stop.
