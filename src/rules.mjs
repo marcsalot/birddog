@@ -202,6 +202,18 @@ export const RULES = [
     why: (s) => `**Merge conflicts** with ${s.base ? `**${s.base}**` : 'its base branch'} · merge or rebase to unblock it`,
   },
   {
+    id: 'rebase-conflicts', kind: 'rebase-request', urgency: 'today',
+    text: 'Your PR has merge conflicts with its target branch → Today',
+    when: (s) => !s.draft && s.conflict,
+    why: (s) => `**Merge conflicts** with **${s.targetBranch}** · rebase or merge to unblock it`,
+  },
+  {
+    id: 'reply-owed', kind: 'reply-owed', urgency: 'today',
+    text: 'Open review thread on your PR where the reviewer spoke last → Today',
+    when: () => true,
+    why: (s) => `${s.threadCount > 1 ? `**${plural(s.threadCount, 'open thread')}**` : '**Open thread**'} waiting for your reply${s.by ? ` · ${who(s.by)} spoke last` : ''}${s.ageDays >= 1 ? ` · ${ago(s.ageDays)} ago` : ''}`,
+  },
+  {
     id: 'issue-due-soon', kind: 'issue', urgency: 'today',
     text: 'Assigned issue in a milestone due within 3 days → Today',
     when: (s) => s.dueDays !== null && s.dueDays < 3,
@@ -219,6 +231,12 @@ export const RULES = [
     when: (s) => s.ageDays < 3,
     why: (s) => `${who(s.by)} mentioned ${s.team ? 'your team' : 'you'} **${ago(s.ageDays)}** ago`,
   },
+  {
+    id: 'pr-ready', kind: 'pr-ready', urgency: 'today',
+    text: 'Your PR has all required approvals and is ready to merge → Today',
+    when: () => true,
+    why: (s) => `**Ready to merge** into **${s.targetBranch}**${s.approverCount ? ` · ${plural(s.approverCount, 'approval')}` : ''}`,
+  },
   // ---- Jira: today -------------------------------------------------------------
   {
     id: 'jira-blocked', kind: 'ticket', urgency: 'today',
@@ -228,6 +246,20 @@ export const RULES = [
       ? `**Blocked** by ${list(s.blockedBy)} · chase it or pick up something else`
       : s.flagged ? '**Flagged** as an impediment · find out what it needs'
         : `Status is **${s.status}** · find out what it is waiting for`),
+  },
+  {
+    id: 'unblock-done', kind: 'unblock', urgency: 'today',
+    text: 'A ticket blocking yours has reached Done → Today',
+    when: (s) => s.done,
+    why: (s) => `**${s.blockerKey}** is now **${s.blockerStatus}** · your blocker may be resolved`,
+  },
+  {
+    id: 'no-progress', kind: 'no-progress', urgency: 'today',
+    text: 'Ticket in development with no commits for several days → Today',
+    when: () => true,
+    why: (s) => s.days === null
+      ? `**${s.status}** · no matching branch found locally · start a worktree or update the ticket`
+      : `**${s.status}** for ${plural(s.days, 'day')} with no commits · commit, update, or move it back`,
   },
   {
     id: 'jira-due-soon', kind: 'ticket', urgency: 'today',
@@ -333,6 +365,14 @@ export const RULES = [
     ].filter(Boolean).join(', ')}`,
   },
   {
+    id: 'rebase-behind', kind: 'rebase-request', urgency: 'later',
+    text: 'Your PR is behind its target branch → Later',
+    when: () => true,
+    why: (s) => s.draft
+      ? `Draft · ${s.commitsBehind > 0 ? `${plural(s.commitsBehind, 'commit')} behind` : 'behind'} **${s.targetBranch}**`
+      : `**${s.commitsBehind > 0 ? `${plural(s.commitsBehind, 'commit')} behind` : 'Behind'} ${s.targetBranch}** · rebase before you merge`,
+  },
+  {
     id: 'mention', kind: 'mention', urgency: 'later',
     text: 'Older unread @mention → Later',
     when: () => true,
@@ -349,6 +389,12 @@ export const RULES = [
     text: 'Other open tickets assigned to you → Later',
     when: () => true,
     why: (s) => `**${s.status}** · last updated **${ago(s.ageDays)}** ago`,
+  },
+  {
+    id: 'unblock-advancing', kind: 'unblock', urgency: 'later',
+    text: 'A ticket blocking yours is advancing toward completion → Later',
+    when: () => true,
+    why: (s) => `**${s.blockerKey}** moved to **${s.blockerStatus}** · check if you can proceed`,
   },
   // ---- Local git ---------------------------------------------------------------
   {
