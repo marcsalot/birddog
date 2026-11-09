@@ -89,12 +89,16 @@ describe('Azure DevOps', () => {
       assert.equal(init.headers.authorization, `Basic ${Buffer.from(':pat').toString('base64')}`);
       const p = u.pathname;
       if (p === '/contoso/_apis/connectionData') return { body: { authenticatedUser: { id: 'me-1', providerDisplayName: 'Sam' } } };
-      if (p === '/contoso/Payments/_apis/git/pullrequests') {
+      if (p === '/contoso/Payments/_apis/git/pullrequests' && u.searchParams.get('searchCriteria.reviewerId')) {
         assert.equal(u.searchParams.get('searchCriteria.reviewerId'), 'me-1');
         return { body: { value: [
           { pullRequestId: 5, title: 'Add retries', createdBy: { displayName: 'Ana', uniqueName: 'ana@contoso.com' }, creationDate: ago(40), repository: { name: 'api', webUrl: 'https://dev.azure.com/contoso/Payments/_git/api' }, reviewers: [{ id: 'me-1', vote: 0 }] },
           { pullRequestId: 6, title: 'Voted', creationDate: ago(40), repository: { name: 'api' }, reviewers: [{ id: 'me-1', vote: 10 }] },
         ] } };
+      }
+      // My own PRs (new creatorId path) — none in this test
+      if (p === '/contoso/Payments/_apis/git/pullrequests' && u.searchParams.get('searchCriteria.creatorId')) {
+        return { body: { value: [] } };
       }
       if (p === '/contoso/Payments/_apis/wit/wiql') {
         assert.equal(init.method, 'POST');

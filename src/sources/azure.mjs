@@ -68,6 +68,33 @@ export async function test(config = {}, ctx = {}) {
   } catch (err) { return { ok: false, message: err.message }; }
 }
 
+// ---------------------------------------------------------------------------
+// Helpers for the new MY-PR signals
+
+/**
+ * Returns true when the thread is an active, human (non-system) thread and the
+ * last comment was written by someone other than `myId`.
+ * Exported so unit tests can call it directly.
+ */
+export function isReplyOwed(thread, myId) {
+  if (thread.status !== 'active') return false;
+  // System threads (vote cast, PR created, etc.) have no comments or only system comments.
+  const comments = (thread.comments ?? []).filter((c) => c.commentType !== 'system');
+  if (!comments.length) return false;
+  const last = comments[comments.length - 1];
+  return last.author?.id !== myId;
+}
+
+/**
+ * Returns true when the PR target branch has moved ahead of the merge base
+ * recorded in the PR payload, i.e. the PR is behind.
+ * Exported for unit tests.
+ */
+export function isBehind(pr, targetTipSha) {
+  if (!targetTipSha || !pr.lastMergeTargetCommit?.commitId) return false;
+  return pr.lastMergeTargetCommit.commitId !== targetTipSha;
+}
+
 export async function collect(config = {}, ctx = {}) {
   const now = ctx.now ?? Date.now();
   const { http, org, proj } = await client(config, ctx);
@@ -76,6 +103,7 @@ export async function collect(config = {}, ctx = {}) {
   if (!myId) throw new Error('Azure DevOps did not say who this token belongs to.');
   const items = [];
 
+  // ---- PRs where I am a reviewer (existing signal) -------------------------
   const prs = (await http.get(`${proj}/_apis/git/pullrequests?searchCriteria.reviewerId=${encodeURIComponent(myId)}&searchCriteria.status=active&api-version=${API}`))?.value ?? [];
   for (const pr of prs) {
     const mine = (pr.reviewers ?? []).find((r) => r.id === myId);
@@ -89,6 +117,129 @@ export async function collect(config = {}, ctx = {}) {
       why: r.why, urgency: r.urgency, updatedAt: pr.creationDate,
       meta: { rule: r.rule, fingerprint: String(pr.lastMergeSourceCommit?.commitId ?? pr.pullRequestId), fields: { Repo: repo, 'Pull request': `!${pr.pullRequestId}`, Author: pr.createdBy?.displayName ?? 'unknown', Draft: pr.isDraft ? 'yes' : 'no' } },
     }));
+  }
+
+  // ---- MY open PRs: rebase poll, replies owed, ready to merge --------------
+  const myPrs = (await http.get(`${proj}/_apis/git/pullrequests?searchCriteria.creatorId=${encodeURIComponent(myId)}&searchCriteria.status=active&api-version=${API}`))?.value ?? [];
+
+  // Fetch threads for all my PRs in parallel (capped by ADO's default rate limits;
+  // the existing reviewer-PR loop is already unbounded so we match that pattern).
+  const threadResults = await Promise.all(
+    myPrs.map((pr) => {
+      const repo = pr.repository?.name ?? 'repo';
+      return http.get(`${proj}/_apis/git/repositories/${encodeURIComponent(repo)}/pullRequests/${pr.pullRequestId}/threads?api-version=${API}`)
+        .then((res) => res?.value ?? [])
+        .catch((err) => { ctx.warn?.(`azure: threads for !${pr.pullRequestId}: ${err.message}`); return []; });
+    }),
+  );
+
+  // Fetch target branch HEAD for non-draft PRs (rebase / ready checks).
+  const targetTipMap = new Map(); // key: `${repo}:${targetBranch}` → sha
+  await Promise.all(
+    myPrs
+      .filter((pr) => !pr.isDraft)
+      .map((pr) => {
+        const repo = pr.repository?.name ?? 'repo';
+        const branch = pr.targetRefName?.replace(/^refs\/heads\//, '') ?? '';
+        const key = `${repo}:${branch}`;
+        if (!branch || targetTipMap.has(key)) return Promise.resolve();
+        targetTipMap.set(key, null); // mark as in-flight to avoid duplicate fetches
+        return http.get(`${proj}/_apis/git/repositories/${encodeURIComponent(repo)}/stats/branches?name=${encodeURIComponent(branch)}&api-version=${API}`)
+          .then((res) => { targetTipMap.set(key, res?.commit?.commitId ?? null); })
+          .catch((err) => { ctx.warn?.(`azure: branch stat for ${repo}/${branch}: ${err.message}`); });
+      }),
+  );
+
+  for (let i = 0; i < myPrs.length; i++) {
+    const pr = myPrs[i];
+    const repo = pr.repository?.name ?? 'repo';
+    const prId = pr.pullRequestId;
+    const url = pr.repository?.webUrl
+      ? `${pr.repository.webUrl}/pullrequest/${prId}`
+      : `${proj}/_git/${encodeURIComponent(repo)}/pullrequest/${prId}`;
+    const threads = threadResults[i];
+
+    // --- Replies owed -------------------------------------------------------
+    const owedThreads = threads.filter((t) => isReplyOwed(t, myId));
+    if (owedThreads.length > 0) {
+      // Sort oldest first to find the oldest active thread and the last author.
+      const sorted = [...owedThreads].sort((a, b) => Date.parse(a.publishedDate ?? 0) - Date.parse(b.publishedDate ?? 0));
+      const oldest = sorted[0];
+      const newest = sorted[sorted.length - 1];
+      // Last comment author across all owed threads (most recent thread's last comment).
+      const newestComments = (newest.comments ?? []).filter((c) => c.commentType !== 'system');
+      const lastAuthor = newestComments[newestComments.length - 1]?.author?.displayName ?? null;
+      const latestUpdated = owedThreads.reduce((best, t) => {
+        const d = t.lastUpdatedDate ?? t.publishedDate ?? '';
+        return d > best ? d : best;
+      }, '');
+      const signal = {
+        threadCount: owedThreads.length,
+        by: lastAuthor,
+        ageDays: daysSince(now, oldest.publishedDate ?? new Date(now).toISOString()),
+      };
+      const r = rank('reply-owed', signal);
+      items.push(createItem({
+        id: `azure:reply:${repo}!${prId}`, source: id, kind: 'reply-owed',
+        title: `${repo}!${prId} · ${pr.title}`, url,
+        why: r.why, urgency: r.urgency, updatedAt: pr.updatedDate ?? pr.creationDate,
+        meta: {
+          rule: r.rule,
+          fingerprint: `${owedThreads.length}:${latestUpdated}`,
+          fields: { Repo: repo, 'Pull request': `!${prId}`, 'Open threads': String(owedThreads.length), 'Last reply by': lastAuthor ?? 'unknown' },
+        },
+      }));
+    }
+
+    // Rebase and ready-to-merge only apply to non-draft PRs.
+    if (pr.isDraft) continue;
+
+    const targetBranch = pr.targetRefName?.replace(/^refs\/heads\//, '') ?? '';
+    const targetTipSha = targetTipMap.get(`${repo}:${targetBranch}`) ?? null;
+
+    // --- Rebase poll --------------------------------------------------------
+    const conflict = pr.mergeStatus === 'conflicts';
+    const behind = isBehind(pr, targetTipSha);
+    if (conflict || behind) {
+      const signal = {
+        conflict,
+        behind,
+        commitsBehind: 1, // ADO doesn't expose exact count cheaply; use 1 as minimum
+        targetBranch: targetBranch || 'target',
+        draft: false,
+      };
+      const r = rank('rebase-request', signal);
+      items.push(createItem({
+        id: `azure:rebase:${repo}!${prId}:${targetTipSha ?? 'unknown'}`, source: id, kind: 'rebase-request',
+        title: `${repo}!${prId} · ${pr.title}`, url,
+        why: r.why, urgency: r.urgency, updatedAt: pr.updatedDate ?? pr.creationDate,
+        meta: {
+          rule: r.rule,
+          fingerprint: `${pr.mergeStatus ?? ''}:${targetTipSha ?? ''}`,
+          fields: { Repo: repo, 'Pull request': `!${prId}`, 'Target branch': targetBranch, 'Merge status': pr.mergeStatus ?? 'unknown', Behind: behind ? 'yes' : 'no' },
+        },
+      }));
+    }
+
+    // --- Ready to merge -----------------------------------------------------
+    const requiredReviewers = (pr.reviewers ?? []).filter((rv) => rv.isRequired);
+    const allApproved = requiredReviewers.length > 0 && requiredReviewers.every((rv) => (rv.vote ?? 0) >= 10);
+    const hasOwedThreads = owedThreads.length > 0;
+    if (pr.mergeStatus === 'succeeded' && allApproved && !hasOwedThreads) {
+      const signal = { targetBranch: targetBranch || 'target', approverCount: requiredReviewers.length };
+      const r = rank('pr-ready', signal);
+      const approverVotes = requiredReviewers.map((rv) => `${rv.id}:${rv.vote}`).sort().join(',');
+      items.push(createItem({
+        id: `azure:ready:${repo}!${prId}`, source: id, kind: 'pr-ready',
+        title: `${repo}!${prId} · ${pr.title}`, url,
+        why: r.why, urgency: r.urgency, updatedAt: pr.updatedDate ?? pr.creationDate,
+        meta: {
+          rule: r.rule,
+          fingerprint: `${pr.mergeStatus ?? ''}:${approverVotes}`,
+          fields: { Repo: repo, 'Pull request': `!${prId}`, 'Target branch': targetBranch, Approvals: String(requiredReviewers.length) },
+        },
+      }));
+    }
   }
 
   const wiql = await http.query(`${proj}/_apis/wit/wiql?api-version=${API}`, {
