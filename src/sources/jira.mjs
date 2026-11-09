@@ -332,7 +332,8 @@ export function buildNoProgressItems(issues, fieldIds, ctx, config, now, site, h
       }
     }
 
-    // Days since the latest matching commit (null = no branch found)
+    // days=null: no uncommitted/unpushed activity for this key; also fires when the branch is clean.
+    // Will improve once git items expose per-branch last-commit data regardless of push state.
     const rawDays = latestCommitMs !== null ? Math.max(0, (now - latestCommitMs) / DAY) : null;
     const days = rawDays !== null ? Math.floor(rawDays) : null;
 
