@@ -29,6 +29,7 @@ import { loadConfig, saveConfig } from './config.mjs';
 import { repoFolders } from './firstrun.mjs';
 import { canReply, createReplies, ReplyError } from './replies.mjs';
 import { RULES } from './rules.mjs';
+import { generateStandup } from './standup.mjs';
 import { createSecretStore } from './secrets.mjs';
 import { COMING_SOON, isEnabled, SOURCES, validateSource } from './sources/index.mjs';
 import { Triage } from './triage.mjs';
@@ -772,6 +773,18 @@ export async function createBirddog({
         await refresh({ only: src }).catch(() => {});
       }
       return { ...r, status: await oauth.status(p) };
+    }],
+    ['GET', /^\/api\/standup$/, async () => {
+      await triage.sync();
+      const snap = collector.snapshot();
+      // Build an acks Map from triage state: map the stored ISO timestamp (at) to doneAt ms.
+      const acks = new Map(
+        Object.entries(triage.data.items).map(([id, e]) => [
+          id,
+          { status: e.status, doneAt: e.at ? Date.parse(e.at) : null },
+        ]),
+      );
+      return generateStandup(snap, acks, { now: now?.() ?? Date.now() });
     }],
     ['GET', /^\/api\/history$/, async (_m, _b, ctx) => {
       const n = Math.min(60, Math.max(1, Number(ctx.query.get('days')) || 14));

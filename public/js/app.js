@@ -413,6 +413,21 @@ async function copy(text, what) {
   toast(`📋 Copied ${what}: <code>${esc(text.length > 60 ? `${text.slice(0, 60)}…` : text)}</code>`);
 }
 
+async function copyStandup() {
+  try {
+    const text = await api.standup();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    }
+    toast('📋 Standup copied to clipboard');
+  } catch (err) {
+    toast(`⚠ Standup failed: ${esc(err.message)}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Email: open it in Birddog, or in your mail app (a preference). When your app can't take
 // this message (no web link, no Message-ID), it opens in Birddog instead.
@@ -812,6 +827,7 @@ function commands() {
     { label: 'Run the setup wizard', run: openWizard },
     ...st.sources.filter((s) => s.status === 'stale').map((s) => ({ label: `Retry ${s.name}`, run: () => retrySource(s.id) })),
     { label: 'Keyboard shortcuts', k: '?', run: () => openOverlay('#helpScrim') },
+    { label: 'Copy standup to clipboard', k: 'S', run: () => copyStandup() },
     ...(st.me?.authEnabled ? [{ label: `Sign out (${st.me.user?.email ?? ''})`, run: signOut }] : []),
     { sec: 'Filter by source' },
     ...st.sources.map((s) => ({ label: `Only show ${s.name}`, run: () => setHidden(st.sources.filter((x) => x.id !== s.id).map((x) => x.id)) })),
@@ -1757,6 +1773,7 @@ document.addEventListener('keydown', (e) => {
     case 'P': e.preventDefault(); return prof.cycle();
     case '/': e.preventDefault(); return openPalette();
     case '?': return openOverlay('#helpScrim');
+    case 'S': e.preventDefault(); return copyStandup();
     case 'b': return setView('board');
     case 'w': return setView('worktrees');
     default: {
