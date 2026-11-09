@@ -248,7 +248,8 @@ export async function createBirddog({
   if (problems.length) throw new Error(`Login is enabled in config.json but not set up yet:\n  - ${problems.join('\n  - ')}`);
   let oidc = null;
   let sessions = null;
-  const publicHost = auth.enabled && auth.publicUrl ? new URL(auth.publicUrl).host.toLowerCase() : null;
+  // publicUrl sets the allowed host for external access; it works with or without auth.enabled.
+  const publicHost = auth.publicUrl ? new URL(auth.publicUrl).host.toLowerCase() : null;
   if (auth.enabled) {
     let key = await secrets.get('session-key');
     if (!key) {
