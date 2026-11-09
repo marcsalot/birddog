@@ -249,7 +249,12 @@ export async function createBirddog({
   let oidc = null;
   let sessions = null;
   // publicUrl sets the allowed host for external access; it works with or without auth.enabled.
-  const publicHost = auth.publicUrl ? new URL(auth.publicUrl).host.toLowerCase() : null;
+  // We match both host (hostname:port) and hostname alone — nginx's $host strips the port,
+  // so the Host header may arrive without it even when the URL includes a non-standard port.
+  let publicHost = null, publicHostname = null;
+  if (auth.publicUrl) {
+    try { const u = new URL(auth.publicUrl); publicHost = u.host.toLowerCase(); publicHostname = u.hostname.toLowerCase(); } catch {}
+  }
   if (auth.enabled) {
     let key = await secrets.get('session-key');
     if (!key) {
@@ -276,7 +281,10 @@ export async function createBirddog({
       oidc = createOidc({ issuer: auth.issuer, clientId: auth.clientId, clientSecret, scopes: auth.scopes, fetchImpl, now });
     }
   }
-  const hostAllowed = (host) => LOCAL_HOST.test(host) || (!!publicHost && host.toLowerCase() === publicHost);
+  const hostAllowed = (host) => {
+    const h = host.toLowerCase();
+    return LOCAL_HOST.test(h) || (!!publicHost && h === publicHost) || (!!publicHostname && h === publicHostname);
+  };
   const baseUrl = (req) => (auth.publicUrl ? auth.publicUrl.replace(/\/+$/, '') : `http://${req.headers.host}`);
 
   const findSource = (id) => {
