@@ -30,6 +30,26 @@ function withTimeout(promise, ms, label) {
   ]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * Build a Map<branchName, lastCommitMs> from cached git source items.
+ * Uses items of kind 'unpushed' or 'uncommitted', which carry branch info
+ * in meta.fields.Branch and a timestamp in updatedAt.
+ * Exported for unit testing.
+ */
+export function buildGitActivity(items) {
+  const map = new Map();
+  for (const item of items) {
+    if (item.kind !== 'unpushed' && item.kind !== 'uncommitted') continue;
+    const branch = item.meta?.fields?.Branch;
+    if (!branch || branch === 'detached HEAD') continue;
+    const t = Date.parse(item.updatedAt);
+    if (!Number.isFinite(t)) continue;
+    const existing = map.get(branch);
+    if (existing === undefined || t > existing) map.set(branch, t);
+  }
+  return map;
+}
+
 export class Collector {
   /**
    * @param {object} opts
@@ -95,6 +115,11 @@ export class Collector {
       const next = this.state[src.id]?.nextRetryAt;
       return !(scheduled && next && this.now() < next);
     });
+
+    // Derive branch activity from the previous git run so cross-source
+    // context is available without serialising the parallel source execution.
+    const gitActivity = buildGitActivity(this.state['git']?.items ?? []);
+
     await Promise.all(due.map(async (src) => {
       const prev = this.state[src.id] ?? { items: [] };
       const warnings = [];
@@ -104,6 +129,7 @@ export class Collector {
         const raw = await withTimeout(
           Promise.resolve().then(() => src.collect(config.sources?.[src.id] ?? {}, {
             ...this.context,
+            gitActivity,
             now: started, warn: (w) => warnings.push(String(w)), summary: (s) => { summary = String(s); },
           })),
           this.timeoutMs, src.name);

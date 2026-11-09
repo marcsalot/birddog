@@ -5,6 +5,8 @@
 //   • in a sprint that ends soon
 //   • blocked (by a linked ticket, flagged, or in a "Blocked" status)
 //   • high priority
+//   • a blocker has reached done or is advancing (unblock signal)
+//   • in-progress ticket with no recent git commits (no-progress nudge)
 //
 // Signs in with your Atlassian email and an API token. The token lives in your
 // OS keychain (secret "jira-token"), never in config.json.
@@ -31,6 +33,12 @@ const MAX_PAGES = 3;
 const FIELD_CACHE_MS = 3_600_000;
 const BLOCKED_STATUS = /\b(blocked|impeded|on hold)\b/i;
 const fieldCache = new Map(); // site → { at, fields }
+
+/** Late-stage statuses that signal a blocker is about to be resolved. */
+export const DEFAULT_ADVANCING = ['Ready for Deployment', 'Ready for QA', 'In QA', 'UAT', 'Done', 'Closed'];
+
+/** In-progress statuses that should have recent commits. */
+export const DEFAULT_IN_PROGRESS = ['In Development', 'In Progress', 'In Dev'];
 
 // ---------------------------------------------------------------------------
 // Settings
@@ -124,6 +132,21 @@ async function customFields(jira, warn, now) {
 }
 
 // ---------------------------------------------------------------------------
+// Concurrency helper
+
+async function mapLimit(list, limit, fn) {
+  const out = new Array(list.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, async () => {
+    while (next < list.length) {
+      const i = next++;
+      out[i] = await fn(list[i], i);
+    }
+  }));
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Turning tickets into items (pure, unit tested)
 
 /** Days left until the end of a "YYYY-MM-DD" due date in local time (negative = overdue). */
@@ -188,6 +211,163 @@ export function issueItem(issue, { site, host, fieldIds, now }) {
 }
 
 // ---------------------------------------------------------------------------
+// Unblock signals
+
+/**
+ * For each blocked (non-done) ticket, fetch the current status of its blockers.
+ * Emit an unblock item when a blocker has reached done or is advancing.
+ */
+export async function buildUnblockItems(issues, fieldIds, jira, config, now) {
+  const advancingStatuses = new Set(config.advancingStatuses ?? DEFAULT_ADVANCING);
+
+  // Collect unique blocker keys and which of my tickets each one blocks.
+  // We look at ALL "blocked by" inward links (not just non-done ones),
+  // so we surface unblock signals even when the blocker was already done
+  // in the JQL snapshot.
+  const blockerToMyTickets = new Map(); // blockerKey → Set<myKey>
+  for (const issue of issues) {
+    const f = issue.fields ?? {};
+    // Skip tickets that are themselves done
+    if (f.status?.statusCategory?.key === 'done') continue;
+
+    const s = signalOf(issue, fieldIds, now);
+    if (!(s.blockedBy.length > 0 || s.flagged || s.blockedStatus)) continue;
+
+    const blockerLinks = (f.issuelinks ?? [])
+      .filter((l) => l.inwardIssue && /blocked by/i.test(l.type?.inward ?? ''));
+
+    for (const link of blockerLinks) {
+      const blockerKey = link.inwardIssue.key;
+      if (!blockerToMyTickets.has(blockerKey)) blockerToMyTickets.set(blockerKey, new Set());
+      blockerToMyTickets.get(blockerKey).add(issue.key);
+    }
+  }
+
+  if (!blockerToMyTickets.size) return [];
+
+  // Fetch current status for each unique blocker (max 5 parallel to avoid rate-limiting)
+  const blockerKeys = [...blockerToMyTickets.keys()];
+  const statuses = await mapLimit(blockerKeys, 5, async (key) => {
+    try {
+      const r = await jira.get(`/rest/api/3/issue/${encodeURIComponent(key)}?fields=status,summary`);
+      const statusName = r?.fields?.status?.name ?? 'Unknown';
+      const categoryKey = r?.fields?.status?.statusCategory?.key ?? '';
+      return { key, statusName, categoryKey };
+    } catch {
+      return { key, statusName: null, categoryKey: null };
+    }
+  });
+
+  // Build one item per (blockerKey, myKey) pair when the blocker is done or advancing
+  const items = [];
+  for (const { key: blockerKey, statusName: blockerStatus, categoryKey } of statuses) {
+    if (!blockerStatus) continue;
+
+    const done = categoryKey === 'done';
+    const advancing = advancingStatuses.has(blockerStatus);
+    if (!done && !advancing) continue;
+
+    for (const myKey of blockerToMyTickets.get(blockerKey)) {
+      const myIssue = issues.find((i) => i.key === myKey);
+      const f = myIssue?.fields ?? {};
+      const signal = { blockerKey, blockerStatus, done };
+      const r = rank('unblock', signal);
+      items.push(createItem({
+        id: `jira:${jira.host}:unblock:${myKey}:${blockerKey}`,
+        source: id,
+        kind: 'unblock',
+        title: `${myKey} · blocker ${blockerKey} ${done ? 'is done' : 'is advancing'}`,
+        url: `${jira.site}/browse/${encodeURIComponent(myKey)}`,
+        why: r.why,
+        urgency: r.urgency,
+        updatedAt: f.updated ?? new Date(now).toISOString(),
+        meta: {
+          rule: r.rule,
+          fingerprint: `${blockerKey}:${blockerStatus}`,
+          fields: {
+            Ticket: myKey,
+            Blocker: blockerKey,
+            'Blocker status': blockerStatus,
+          },
+        },
+      }));
+    }
+  }
+
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// No-progress nudge
+
+/**
+ * For each in-progress ticket, check whether a matching local branch has had
+ * a recent commit. Emits a no-progress item if the branch is stale or missing.
+ * Gracefully skips when ctx.gitActivity is not provided.
+ */
+export function buildNoProgressItems(issues, fieldIds, ctx, config, now, site, host) {
+  if (!ctx.gitActivity) return [];
+
+  const inProgressStatuses = new Set(config.inProgressStatuses ?? DEFAULT_IN_PROGRESS);
+  const threshold = config.noProgressDays ?? 3;
+  const { gitActivity } = ctx;
+  const items = [];
+
+  for (const issue of issues) {
+    const f = issue.fields ?? {};
+    // Skip done tickets
+    if (f.status?.statusCategory?.key === 'done') continue;
+
+    const status = f.status?.name ?? 'Unknown';
+    if (!inProgressStatuses.has(status)) continue;
+
+    // Find any branch whose name contains the ticket key (case-insensitive)
+    const keyLower = issue.key.toLowerCase();
+    let latestCommitMs = null;
+    for (const [branch, commitMs] of gitActivity) {
+      if (branch.toLowerCase().includes(keyLower)) {
+        if (latestCommitMs === null || commitMs > latestCommitMs) {
+          latestCommitMs = commitMs;
+        }
+      }
+    }
+
+    // days=null: no uncommitted/unpushed activity for this key; also fires when the branch is clean.
+    // Will improve once git items expose per-branch last-commit data regardless of push state.
+    const rawDays = latestCommitMs !== null ? Math.max(0, (now - latestCommitMs) / DAY) : null;
+    const days = rawDays !== null ? Math.floor(rawDays) : null;
+
+    // Only nudge when stale or no branch
+    if (rawDays !== null && rawDays < threshold) continue;
+
+    const signal = { status, days, threshold };
+    const r = rank('no-progress', signal);
+    items.push(createItem({
+      id: `jira:${host}:noprogress:${issue.key}`,
+      source: id,
+      kind: 'no-progress',
+      title: `${issue.key} · ${status} with no recent commits`,
+      url: `${site}/browse/${encodeURIComponent(issue.key)}`,
+      why: r.why,
+      urgency: r.urgency,
+      updatedAt: f.updated ?? new Date(now).toISOString(),
+      meta: {
+        rule: r.rule,
+        fingerprint: `${status}:${days}`,
+        fields: {
+          Ticket: issue.key,
+          Status: status,
+          'Days since commit': days !== null ? days : 'no branch found',
+          Threshold: `${threshold} days`,
+        },
+      },
+    }));
+  }
+
+  return items;
+}
+
+// ---------------------------------------------------------------------------
 // Plugin interface
 
 export async function test(config = {}, ctx = {}) {
@@ -223,6 +403,16 @@ export async function collect(config = {}, ctx = {}) {
 
   const items = issues.map((issue) => issueItem(issue, { site: jira.site, host: jira.host, fieldIds, now }));
   const blocked = items.filter((i) => i.meta.rule.id === 'jira-blocked').length;
+
+  // Unblock signals: fetch blocker statuses and emit items when a blocker advances
+  const unblockItems = await buildUnblockItems(issues, fieldIds, jira, config, now).catch((err) => {
+    warn(`Could not fetch blocker statuses: ${err.message}`);
+    return [];
+  });
+
+  // No-progress nudge: check ctx.gitActivity for in-progress tickets
+  const noProgressItems = buildNoProgressItems(issues, fieldIds, ctx, config, now, jira.site, jira.host);
+
   ctx.summary?.(`${jira.host} · ${plural(items.length, 'open ticket')}${blocked ? ` · ${blocked} blocked` : ''}`);
-  return items;
+  return [...items, ...unblockItems, ...noProgressItems];
 }
